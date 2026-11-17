@@ -1,0 +1,34 @@
+OS: Windows
+
+Artifacts:
+ Windows.Triage.Targets:
+   HighLevelTargets: '["_SANS_Triage"]'
+   Devices: '["C:"]'
+   # Exclusions : index Windows Search (Windows.db / Windows.edb, plusieurs Go)
+   # et binaires d'installation OneDrive (~3 Go) - responsables du depassement FAT32 de 4 Go
+   ExcludePathRegex: '(?i)(\\ProgramData\\Microsoft\\Search\\Data\\Applications\\Windows\\|\\AppData\\Local\\Microsoft\\OneDrive\\[0-9][0-9.]+\\|\\AppData\\Local\\Microsoft\\OneDrive\\[^\\]+\.(exe|dll|pri)$)'
+   ExcludeDirectoryRegex: '(?i)(\\ProgramData\\Microsoft\\Search\\Data\\Applications\\Windows$|\\AppData\\Local\\Microsoft\\OneDrive\\[0-9][0-9.]+$)'
+ Windows.Sysinternals.Autoruns:
+   All: "Y"
+ Windows.Forensics.SRUM: {}
+
+Target: ZIP
+EncryptionScheme: None
+EncryptionArgs: {}
+
+OptVerbose: Y
+OptBanner: N
+OptPrompt: N
+OptAdmin: Y
+OptTempdir: ""
+OptLevel: 5
+OptConcurrency: 2
+OptFilenameTemplate: "Velociraptor-%Hostname%-%TIMESTAMP%"
+OptCollectorTemplate: "Collecteur-Velociraptor.exe"
+OptFormat: csv
+OptOutputDirectory: ""
+OptCpuLimit: 0
+OptProgressTimeout: 1800
+OptTimeout: 0
+OptVersion: ""
+OptDeleteAtExit: N

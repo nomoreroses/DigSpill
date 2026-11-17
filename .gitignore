@@ -1,0 +1,12 @@
+# Donnees collectees : jamais dans le depot
+Collecte/
+MEMOIRE/
+*.raw
+*.zip
+*.7z
+
+# Binaires tiers et collecteur genere
+*.exe
+outils/*
+!outils/.gitkeep
+_config_velociraptor/
