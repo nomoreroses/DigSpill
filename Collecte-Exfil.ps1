@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-    Collecte-Exfil.ps1 v2.1 - Collecte de triage forensique pour suspicion d'intrusion / exfiltration / rancongiciel.
+    Collecte-Exfil.ps1 v2.2 - Collecte de triage forensique pour suspicion d'intrusion / exfiltration / rancongiciel.
     A lancer EN ADMINISTRATEUR sur le poste suspect (via LANCER_COLLECTE.bat ou LANCER_COLLECTE_LEGERE.bat).
     Les resultats sont ecrits sur la cle : <cle>\Collecte\<NOMPC>_<date>\
 
@@ -16,6 +16,9 @@
 
     Outils attendus dans <cle>\outils\ : winpmem_mini_x64_rc2.exe, 7zr.exe
     Velociraptor (<cle>\Collecteur-Velociraptor.exe) sert aussi de moteur SQLite / lecture NTFS brute.
+
+    L'analyse orientee exfiltration (Analyse-Exfil.ps1) est lancee par LANCER_COLLECTE.bat apres Velociraptor,
+    ou a posteriori par ANALYSER_COLLECTE.bat (glisser-deposer d'un dossier de collecte).
 #>
 [CmdletBinding()]
 param(
@@ -27,7 +30,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
-$ScriptVersion = '2.1'
+$ScriptVersion = '2.2'
 $StartTime = Get-Date
 $Full = ($Mode -eq 'Complet')
 
@@ -41,7 +44,7 @@ $Since    = (Get-Date).AddDays(-$Days)
 $UsbQ     = Split-Path $Root -Qualifier
 $IsAdmin  = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-foreach ($d in 'volatile','memoire','systeme','comptes','connexions','exposition','persistance','reseau','evenements','evenements\evtx','artefacts','utilisateurs','fichiers','rancon') {
+foreach ($d in 'volatile','memoire','systeme','comptes','connexions','exposition','persistance','reseau','evenements','evenements\evtx','artefacts','utilisateurs','fichiers','rancon','outils_distants') {
     New-Item -ItemType Directory -Force -Path (Join-Path $Out $d) | Out-Null
 }
 $LogFile = Join-Path $Out 'collecte.log'
@@ -66,17 +69,24 @@ function Save-Csv([string]$rel, [scriptblock]$sb) {
     catch { Log "    [!] $rel : $($_.Exception.Message)" }
 }
 function Copy-Locked([string]$src, [string]$destDir) {
+    # Copie normale, puis cliche VSS (esentutl), puis lecture NTFS brute (Velociraptor).
+    # Chaque echec est journalise : un fichier absent de la collecte ne doit jamais passer inapercu.
     if (-not (Test-Path -LiteralPath $src)) { return }
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     $dst = Join-Path $destDir (Split-Path $src -Leaf)
-    try { Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop }
-    catch {
-        if ($IsAdmin) {
-            # Copie via cliche VSS pour les fichiers verrouilles (ruches, bases ESE, bases navigateur)
-            & esentutl.exe /y "$src" /vss /d "$dst" | Out-Null
-            if (-not (Test-Path -LiteralPath $dst)) { Log "    [!] Copie impossible : $src" }
-        } else { Log "    [!] Copie impossible (fichier verrouille, pas admin) : $src" }
+    $how = 'copie'
+    try { Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop } catch {}
+    if (-not (Test-Path -LiteralPath $dst) -and $IsAdmin) {
+        $how = 'VSS'
+        & esentutl.exe /y "$src" /vss /d "$dst" 2>&1 | Out-Null
     }
+    if (-not (Test-Path -LiteralPath $dst) -and $IsAdmin -and (Test-Path -LiteralPath $Velo)) {
+        $how = 'NTFS brut'
+        $q = Split-Path $src -Qualifier; $rest = $src.Substring($q.Length)
+        Invoke-Vql "SELECT copy(filename='''\\.\$q$rest''', accessor='ntfs', dest='''$dst''') AS Copie FROM scope()" | Out-Null
+    }
+    if (Test-Path -LiteralPath $dst) { if ($how -ne 'copie') { Log "    [i] $src copie par $how" } }
+    else { Log "    [!] Copie impossible (copie, VSS et NTFS brut en echec$(if (-not $IsAdmin) { ', pas admin' })) : $src" }
 }
 function Copy-Dir([string]$src, [string]$dst) {
     if (Test-Path -LiteralPath $src) {
@@ -286,6 +296,14 @@ Save-Text 'infos_collecte.txt' {
     "Periode analysee : $Days jours (depuis $($Since.ToString('yyyy-MM-dd')))"
     "Lecteurs USB     : $($script:UsbLetters -join ', ')"
     "Version script   : $ScriptVersion"
+    "Velociraptor     : $(if (Test-Path -LiteralPath $Velo) { "SHA256 $((Get-FileHash -LiteralPath $Velo -Algorithm SHA256).Hash)" } else { 'absent' })"
+    ''
+    '### Decalage horaire sur la periode analysee (pour convertir les heures du rapport en UTC)'
+    $tz = [TimeZoneInfo]::Local; $prev = $null
+    for ($d = $Since.Date; $d -le (Get-Date).Date.AddDays(1); $d = $d.AddDays(1)) {
+        $o = $tz.GetUtcOffset($d.AddHours(12))
+        if ($o -ne $prev) { "  a partir du {0} : UTC{1}{2}" -f $d.ToString('yyyy-MM-dd'), $(if ($o -ge [TimeSpan]::Zero) { '+' } else { '-' }), $o.ToString('hh\:mm'); $prev = $o }
+    }
 }
 
 # =================================================================== 1. VOLATILE (en premier)
@@ -735,6 +753,42 @@ Step 'Configuration reseau, proxy, hosts, partages, pare-feu' {
     }
     Save-Text 'reseau\parefeu_profils.txt' { netsh advfirewall show allprofiles }
     Save-Text 'reseau\parefeu_regles.txt' { netsh advfirewall firewall show rule name=all verbose }
+    # Journalisation du pare-feu : activee ou non, et copie du journal s'il est hors du dossier par defaut
+    Save-Csv 'reseau\parefeu_journalisation.csv' {
+        Get-NetFirewallProfile -ErrorAction Stop | Select-Object Name, Enabled, DefaultOutboundAction, LogAllowed, LogBlocked, LogIgnored, LogFileName, LogMaxSizeKilobytes,
+            @{n='FichierPresent';e={ Test-Path -LiteralPath ([Environment]::ExpandEnvironmentVariables($_.LogFileName)) }}
+    }
+    foreach ($fw in @(Get-NetFirewallProfile -ErrorAction SilentlyContinue)) {
+        $lf = [Environment]::ExpandEnvironmentVariables("$($fw.LogFileName)")
+        if ($lf -and $lf -notlike '*\System32\LogFiles\Firewall\*') { Copy-Locked $lf (P 'connexions\parefeu_journal') }
+    }
+    # Redirections Bureau a distance (lecteurs \\tsclient, presse-papier...) : 0 ou absent = autorise
+    Save-Text 'reseau\rdp_redirections.txt' {
+        foreach ($k in 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services', 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp') {
+            "### $k"
+            $v = Get-ItemProperty $k -ErrorAction SilentlyContinue
+            foreach ($n in 'fDisableCdm', 'fDisableClip', 'fDisableCcm', 'fDisableLPT', 'fDisablePNPRedir', 'fDisableCpm', 'fDisableAudioCapture', 'fDisableCam') {
+                '{0,-22}: {1}' -f $n, $(if ($v -and $null -ne $v.$n) { $v.$n } else { '(absent)' })
+            }
+        }
+    }
+}
+
+Step 'Etat des journaux et politique d''audit (journal desactive = piste verifiee mais non exploitable)' {
+    Save-Csv 'evenements\etat_journaux.csv' {
+        foreach ($l in @('Security', 'System', 'Microsoft-Windows-DNS-Client/Operational', 'Microsoft-Windows-SMBServer/Security', 'Microsoft-Windows-SMBServer/Operational',
+                         'Microsoft-Windows-SMBClient/Security', 'Microsoft-Windows-Bits-Client/Operational', 'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall',
+                         'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational', 'Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational',
+                         'Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational', 'Microsoft-Windows-TerminalServices-PnPDevices/Admin',
+                         'Microsoft-Windows-PowerShell/Operational', 'Microsoft-Windows-Sysmon/Operational', 'Microsoft-Windows-Partition/Diagnostic',
+                         'Microsoft-Windows-Kernel-PnP/Configuration', 'Microsoft-Windows-Windows Defender/Operational')) {
+            $i = Get-WinEvent -ListLog $l -ErrorAction SilentlyContinue
+            $old = if ($i -and $i.RecordCount) { try { (Get-WinEvent -LogName $l -Oldest -MaxEvents 1 -ErrorAction Stop).TimeCreated.ToString('yyyy-MM-dd HH:mm:ss') } catch { '' } }
+            [pscustomobject]@{ Journal = $l; Existe = [bool]$i; Active = $(if ($i) { $i.IsEnabled }); NbEvenements = $(if ($i) { $i.RecordCount }); PlusAncien = $old
+                TailleMo = $(if ($i) { [math]::Round($i.FileSize / 1MB, 1) }); TailleMaxMo = $(if ($i) { [math]::Round($i.MaximumSizeInBytes / 1MB, 1) }); Mode = $(if ($i) { $i.LogMode }) }
+        }
+    }
+    Save-Text 'systeme\auditpol.txt' { auditpol /get /category:* }
 }
 
 # =================================================================== 7. JOURNAUX D'EVENEMENTS
@@ -749,7 +803,10 @@ Step 'Export des journaux .evtx' {
         'Microsoft-Windows-DriverFrameworks-UserMode/Operational', 'Microsoft-Windows-Kernel-PnP/Configuration',
         'Microsoft-Windows-WMI-Activity/Operational', 'Microsoft-Windows-NTLM/Operational', 'Microsoft-Windows-Shell-Core/Operational',
         'Microsoft-Windows-CodeIntegrity/Operational', 'Microsoft-Windows-WLAN-AutoConfig/Operational', 'OpenSSH/Operational',
-        'Microsoft-Windows-VolumeSnapshot-Driver/Operational')
+        'Microsoft-Windows-VolumeSnapshot-Driver/Operational', 'Microsoft-Windows-SMBServer/Operational', 'Microsoft-Windows-SMBServer/Audit',
+        'Microsoft-Windows-SmbClient/Connectivity', 'Microsoft-Windows-TerminalServices-PnPDevices/Admin', 'Microsoft-Windows-TerminalServices-PnPDevices/Operational',
+        'Microsoft-Windows-TerminalServices-RDPClient/Operational', 'Microsoft-Windows-TerminalServices-Printers/Admin',
+        'Splashtop-Splashtop Streamer-Remote Session/Operational', 'Splashtop-Splashtop Streamer-Status/Operational')
     foreach ($l in $logs) {
         $info = Get-WinEvent -ListLog $l -ErrorAction SilentlyContinue
         if ($info -and $info.RecordCount -gt 0) {
@@ -827,6 +884,17 @@ Step 'Historique peripheriques USB, cache URL certutil, corbeille' {
             }
         }
     }
+    # Dates de premiere installation, dernier branchement et dernier retrait de chaque stockage USB / appareil portable
+    Save-Csv 'artefacts\usb_peripheriques_dates.csv' {
+        $keys = 'DEVPKEY_Device_FirstInstallDate', 'DEVPKEY_Device_InstallDate', 'DEVPKEY_Device_LastArrivalDate', 'DEVPKEY_Device_LastRemovalDate'
+        Get-PnpDevice -ErrorAction Stop | Where-Object { $_.InstanceId -match '^(USBSTOR|SWD\\WPDBUSENUM|USB\\VID)' -and ($_.InstanceId -notmatch '^USB\\VID' -or $_.Class -in 'WPD', 'DiskDrive', 'Image') } | ForEach-Object {
+            $p = @{}
+            foreach ($x in @(Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName $keys -ErrorAction SilentlyContinue)) { $p[$x.KeyName] = $x.Data }
+            [pscustomobject]@{ Nom = $_.FriendlyName; Classe = $_.Class; Present = $_.Present; InstanceId = $_.InstanceId
+                PremiereInstallation = $p['DEVPKEY_Device_FirstInstallDate']; Installation = $p['DEVPKEY_Device_InstallDate']
+                DernierBranchement = $p['DEVPKEY_Device_LastArrivalDate']; DernierRetrait = $p['DEVPKEY_Device_LastRemovalDate'] }
+        }
+    }
     Save-Text 'artefacts\certutil_urlcache.txt' { certutil -urlcache * }
     Save-Csv  'artefacts\corbeille.csv' { Get-ChildItem 'C:\$Recycle.Bin' -Recurse -Force -File -ErrorAction SilentlyContinue | Select-Object FullName, Length, CreationTime, LastWriteTime }
 }
@@ -845,6 +913,7 @@ Step 'Artefacts utilisateurs (registre, historiques, navigateurs, outils distant
 
         Copy-Locked "$lp\NTUSER.DAT" "$d\registre"
         Copy-Locked "$lp\AppData\Local\Microsoft\Windows\UsrClass.dat" "$d\registre"
+        if (-not (Test-Path -LiteralPath "$d\registre\NTUSER.DAT")) { Log "    [!] $u : NTUSER.DAT NON collecte (RecentDocs, ShellBags, TypedPaths indisponibles hors conteneur Velociraptor)" }
         Copy-Locked "$lp\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" "$d\powershell"
         Copy-Dir "$lp\AppData\Roaming\Microsoft\Windows\Recent" "$d\recent"
 
@@ -868,6 +937,10 @@ Step 'Artefacts utilisateurs (registre, historiques, navigateurs, outils distant
         )
         foreach ($t in $tl) { Copy-Locked $t "$d\outils" }
         Get-ChildItem "$lp\AppData\Roaming\TeamViewer" -Filter '*.log' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Locked $_.FullName "$d\outils" }
+        foreach ($rd in "$lp\AppData\Roaming\RustDesk\log", "$lp\AppData\Local\Splashtop", "$lp\AppData\Roaming\Netbird") {
+            Get-ChildItem -LiteralPath $rd -Recurse -File -Include '*.log', '*.txt' -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB } |
+                ForEach-Object { Copy-Locked $_.FullName "$d\outils\$(Split-Path $rd -Leaf)" }
+        }
 
         Save-Csv "utilisateurs\$u\appdata_dossiers.csv" {
             Get-ChildItem "$lp\AppData\Local", "$lp\AppData\Roaming", "$lp\AppData\LocalLow" -Directory -Force -ErrorAction SilentlyContinue |
@@ -880,6 +953,53 @@ Step 'Artefacts utilisateurs (registre, historiques, navigateurs, outils distant
     }
     Get-ChildItem 'C:\Program Files\TeamViewer', 'C:\Program Files (x86)\TeamViewer' -Filter '*.log' -ErrorAction SilentlyContinue |
         ForEach-Object { Copy-Locked $_.FullName (P 'artefacts\acces_distant') }
+}
+
+Step "Outils d'acces distant : journaux propres (NetBird, Splashtop, TSplus, Datto RMM, RustDesk...) et pairs NetBird" {
+    # Journaux texte modifies sur la periode, 50 Mo max par fichier, 400 Mo max au total
+    $script:ToolBytes = [int64]0
+    function Copy-ToolLogs([string]$src, [string]$name, [string[]]$inc = @('*.log', '*.txt', '*.log.*', '*.trace', '*.csv', '*.sqlite3', '*.db')) {
+        if (-not (Test-Path -LiteralPath $src)) { return }
+        Get-ChildItem -LiteralPath $src -Recurse -File -Force -Include $inc -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB -and $_.Name -notmatch '(?i)HowToRecover|readme' -and $_.FullName -notmatch '\\(Packages|Cache|Code Cache)\\' } | ForEach-Object {
+                if (($script:ToolBytes + $_.Length) -gt 400MB) { return }
+                $script:ToolBytes += $_.Length
+                Copy-Locked $_.FullName (Join-Path (P "outils_distants\$name") (Split-Path $_.FullName.Substring($src.TrimEnd('\').Length) -Parent))
+            }
+    }
+    $pf = $env:ProgramFiles; $pf86 = ${env:ProgramFiles(x86)}; $pd = $env:ProgramData
+    Copy-ToolLogs "$pd\Netbird" 'netbird'
+    Copy-ToolLogs "$pf\Netbird" 'netbird'
+    Copy-ToolLogs "$pf86\Splashtop\Splashtop Remote\Server\log" 'splashtop'
+    Copy-ToolLogs "$pf86\Splashtop\Splashtop Remote\Server\db" 'splashtop_db'
+    Copy-ToolLogs "$pd\Splashtop" 'splashtop_programdata'
+    foreach ($r in "$pf86\TSplus", "$pf\TSplus", "$pf86\TSplus-Security", "$pf\TSplus-Security") { Copy-ToolLogs $r ("tsplus_" + (Split-Path $r -Leaf)) }
+    Copy-ToolLogs "$pd\CentraStage" 'datto_rmm'
+    Copy-ToolLogs "$pf86\CentraStage" 'datto_rmm_programfiles'
+    Copy-ToolLogs "$pd\RustDesk" 'rustdesk'
+    Get-ChildItem $pf86, $pf -Directory -Filter 'ScreenConnect Client*' -ErrorAction SilentlyContinue | ForEach-Object { Copy-ToolLogs $_.FullName "screenconnect_$($_.Name)" }
+
+    # NetBird : configuration (cles privees masquees) et liste des pairs du tunnel
+    foreach ($cfg in @(Get-ChildItem "$pd\Netbird" -Filter '*.json' -ErrorAction SilentlyContinue)) {
+        try {
+            (Get-Content -LiteralPath $cfg.FullName -Raw -ErrorAction Stop) -replace '"(PrivateKey|PreSharedKey|SSHKey|PrivateSSHKey|SetupKey)"\s*:\s*"[^"]*"', '"$1": "<masque>"' |
+                Out-File (P "outils_distants\netbird\$($cfg.Name)") -Encoding utf8
+        } catch { Log "    [!] NetBird $($cfg.Name) : $($_.Exception.Message)" }
+    }
+    $nb = @((Get-Command netbird.exe -ErrorAction SilentlyContinue).Source, "$pf\Netbird\netbird.exe") | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    if ($nb) {
+        New-Item -ItemType Directory -Force -Path (P 'outils_distants') | Out-Null
+        $job = Start-Job -ScriptBlock { param($exe) & $exe status --detail 2>&1; '====== JSON'; & $exe status --json 2>&1 } -ArgumentList $nb
+        if (Wait-Job $job -Timeout 30) { Receive-Job $job | Out-File (P 'outils_distants\netbird_status.txt') -Encoding utf8 }
+        else { 'netbird status : pas de reponse en 30 s (service arrete ?)' | Out-File (P 'outils_distants\netbird_status.txt') -Encoding utf8 }
+        Remove-Job $job -Force -ErrorAction SilentlyContinue
+        Log '    NetBird : etat et pairs dans outils_distants\netbird_status.txt'
+    }
+    # Splashtop : parametres du serveur (identifiants de compte, derniers clients connectes)
+    foreach ($k in 'HKLM\SOFTWARE\WOW6432Node\Splashtop Inc.', 'HKLM\SOFTWARE\Splashtop Inc.') {
+        & reg.exe query $k /s 2>$null | Out-File -Append (P 'outils_distants\splashtop_registre.txt') -Encoding utf8
+    }
+    Log ("    {0:N1} Mo de journaux d'outils d'acces distant copies" -f ($script:ToolBytes / 1MB))
 }
 
 # =================================================================== 10. IDENTIFIANTS EXPOSES (sans lire les mots de passe)
@@ -1158,7 +1278,15 @@ Step 'Fiche a completer par le technicien (heure, box, pare-feu)' {
     $gw = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
     $gwMac = if ($gw) { (Get-NetNeighbor -IPAddress $gw.NextHop -ErrorAction SilentlyContinue | Select-Object -First 1).LinkLayerAddress }
     $pubIp = try { Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5 -UseBasicParsing } catch { 'inconnue (poste isole ?)' }
+    # Ecart d'horloge mesure contre l'en-tete Date d'un serveur web (independant de la configuration NTP)
+    $skew = try {
+        $r = Invoke-WebRequest 'https://www.google.com' -Method Head -UseBasicParsing -TimeoutSec 5
+        $srv = [datetime]::Parse("$($r.Headers['Date'])", [Globalization.CultureInfo]::InvariantCulture).ToUniversalTime()
+        '{0:+0;-0;0} s (heure du poste moins heure du serveur web, precision ~1 s)' -f ((Get-Date).ToUniversalTime() - $srv).TotalSeconds
+    } catch { 'non mesure (poste isole ?) : noter l''heure d''une horloge de reference ci-dessous' }
     $now = Get-Date
+    $offs = @(for ($d = $Since.Date; $d -le $now.Date; $d = $d.AddDays(1)) { [TimeZoneInfo]::Local.GetUtcOffset($d.AddHours(12)) }) | Select-Object -Unique
+    $offTxt = ($offs | ForEach-Object { 'UTC' + $(if ($_ -ge [TimeSpan]::Zero) { '+' } else { '-' }) + $_.ToString('hh\:mm') }) -join ' puis '
     $txt = @"
 FICHE A COMPLETER SUR PLACE - $Computer
 =======================================================================
@@ -1167,6 +1295,8 @@ Releve automatique au moment de la collecte
   Heure UTC du poste    : $($now.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'))
   Passerelle (box)      : $(if ($gw) { "$($gw.NextHop) via $($gw.InterfaceAlias)" })  MAC $gwMac
   IP publique vue       : $pubIp
+  Ecart d'horloge       : $skew
+  Decalage UTC          : $offTxt sur la periode analysee (detail dans infos_collecte.txt)
   Synchronisation NTP   : voir plus bas (w32tm)
 
 A completer par le technicien
@@ -1177,8 +1307,28 @@ A completer par le technicien
   [ ] Redirections de ports (NAT/PAT) : capture d'ecran. Port 3389 ou autre port RDP ouvert ?  OUI / NON
   [ ] Export des journaux de la box / du pare-feu du $($Since.ToString('dd/MM/yyyy')) a aujourd'hui :
       connexions entrantes et sortantes, volumes montants par IP, alertes. Format fichier, pas de capture.
-  [ ] Si la box ne garde pas d'historique : demander a l'operateur les volumes montants par jour.
+  [ ] Compteurs de trafic de la box (page statistiques) : capture des volumes montants / descendants.
   [ ] Autres postes du reseau a controler (mode leger) : ______________________
+
+Incident (necessaire a la notification CNIL : le delai de 72 h court a partir de la DECOUVERTE)
+  [ ] Date et heure de decouverte : ____/____/______ a ____:____   par : ______________________
+      Comment (ecran de rancon, appel du cabinet, alerte antivirus...) : ______________________
+  [ ] Logiciel metier et base(s) concernee(s) : ______________________
+  [ ] Nombre estime de PATIENTS dans la base (pas de fichiers) : ________  source : ______________
+  [ ] Categories de donnees : identite / NIR / donnees de sante / documents scannes / courriers / autres : ______
+  [ ] Comptes de l'identifiant Windows a lister : ouvrir la session de chaque compte et lancer
+      LISTER_IDENTIFIANTS.bat (cibles du gestionnaire d'identifiants : NAS, serveur, sites web).
+
+Preuves
+  [ ] Seconde copie des preuves sur un autre support, hachee et verifiee (Copier-Preuves.ps1),
+      conservee separement de la cle. Support : ______________  lieu : ______________
+
+Demande a l'operateur (FAI) si la box ne garde pas d'historique - a envoyer vite, la retention est courte
+  "Pour la ligne ______________ (IP publique $pubIp), merci de nous communiquer, du ____/____ au ____/____ :
+   - le volume de donnees MONTANT (upload) par jour, et si possible par heure les jours ____ et ____ ;
+   - les connexions sortantes vers des adresses IP inhabituelles ou etrangeres (adresse, port, volume) ;
+   - les connexions entrantes sur le port ______ (Bureau a distance) avec leur adresse source.
+   Contexte : incident de securite (rancongiciel), plainte deposee / en cours."
 
 Ces journaux sont la seule source capable de trancher sur une exfiltration vers Internet :
 le poste ne distingue pas le trafic local du trafic Internet.
@@ -1265,7 +1415,8 @@ Step 'Synthese automatique (SYNTHESE.txt)' {
         A "$($tools.Count) outil(s) sensible(s) trouve(s) : $names"
     }
     $S.Add('')
-    $S.Add("$alerts alerte(s). Penser a remplir A_COMPLETER_TECHNICIEN.txt (journaux box / pare-feu).")
+    $S.Add("$alerts alerte(s). Penser a remplir A_COMPLETER_TECHNICIEN.txt (decouverte, patients, journaux box / pare-feu).")
+    $S.Add("Exfiltration : voir $(Split-Path $Out -Leaf)_analyse\SYNTHESE_EXFILTRATION.txt (Analyse-Exfil.ps1, lance apres Velociraptor).")
     $S | Out-File (P 'SYNTHESE.txt') -Encoding utf8
     Log "    $alerts alerte(s) dans SYNTHESE.txt"
 }

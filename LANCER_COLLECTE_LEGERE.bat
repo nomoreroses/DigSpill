@@ -15,6 +15,11 @@ echo.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Collecte-Exfil.ps1" -Mode Leger
 
 echo.
+echo  === Analyse exfiltration (sessions, SRUM, executions, navigation) ===
+echo.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Analyse-Exfil.ps1" -Collecte "%~dp0Collecte" -DerniereDuPoste -SansMFT -SansHashConteneurs
+
+echo.
 echo  ===================================================================
 echo   COLLECTE LEGERE TERMINEE. Vous pouvez retirer la cle.
 echo  ===================================================================

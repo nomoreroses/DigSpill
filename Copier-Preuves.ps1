@@ -1,0 +1,88 @@
+#Requires -Version 5.1
+<#
+    Copier-Preuves.ps1 v2.2 - Seconde copie des preuves, verifiee par hachage, avec proces-verbal.
+
+      powershell -ExecutionPolicy Bypass -File Copier-Preuves.ps1 -Source E:\Collecte -Destination F:\PREUVES_cabinet
+
+    - Copie tout le dossier source (collectes, analyses, conteneurs Velociraptor, RAM...) vers la destination.
+    - Calcule le SHA256 de chaque fichier source et copie, et le compare au manifeste de la collecte s'il existe.
+    - Ecrit PV_COPIE_<date>.txt et hachages_<date>.csv dans la destination (et une copie du PV dans la source).
+    La destination doit etre un support distinct (disque externe chiffre, NAS hors reseau du client), conserve a part.
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)][string]$Source,
+    [Parameter(Mandatory = $true)][string]$Destination,
+    [string]$Operateur = "$env:USERDOMAIN\$env:USERNAME"
+)
+$ErrorActionPreference = 'Stop'
+$Source = (Resolve-Path -LiteralPath $Source).ProviderPath.TrimEnd('\')
+New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+$Destination = (Resolve-Path -LiteralPath $Destination).ProviderPath.TrimEnd('\')
+if ($Destination.StartsWith($Source, [StringComparison]::OrdinalIgnoreCase)) { throw 'La destination ne peut pas etre dans la source.' }
+if ((Split-Path $Source -Qualifier) -eq (Split-Path $Destination -Qualifier)) { Write-Warning 'Source et destination sur le meme volume : la copie ne protege pas contre la perte du support.' }
+
+$stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+$dst = Join-Path $Destination (Split-Path $Source -Leaf)
+$files = @(Get-ChildItem -LiteralPath $Source -Recurse -File -Force)
+$total = ($files | Measure-Object Length -Sum).Sum
+$free = (Get-PSDrive -Name (Split-Path $Destination -Qualifier).TrimEnd(':')).Free
+if ($free -lt $total) { throw ('Espace insuffisant : {0:N1} Go necessaires, {1:N1} Go libres' -f ($total / 1GB), ($free / 1GB)) }
+$fs = (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$(Split-Path $Destination -Qualifier)'").FileSystem
+$big = @($files | Where-Object { $_.Length -ge 4GB })
+if ($fs -match '^FAT' -and $big.Count) { throw "Destination FAT32 : $($big.Count) fichier(s) de 4 Go ou plus ne peuvent pas y etre copies. Utiliser NTFS ou exFAT." }
+
+Write-Host ('Copie de {0} fichiers ({1:N1} Go) de {2} vers {3}' -f $files.Count, ($total / 1GB), $Source, $dst)
+& robocopy.exe $Source $dst /E /COPY:DT /DCOPY:T /R:2 /W:2 /NP /NFL /NDL /NJH | Out-Null
+if ($LASTEXITCODE -ge 8) { throw "robocopy a echoue (code $LASTEXITCODE)" }
+
+# Manifestes de collecte (SHA256 attendus)
+$expected = @{}
+foreach ($m in (Get-ChildItem -LiteralPath $Source -Recurse -File -Include 'manifeste_sha256.csv', 'manifeste_analyse_sha256.csv' -ErrorAction SilentlyContinue)) {
+    $base = Split-Path $m.FullName -Parent
+    foreach ($r in (Import-Csv -LiteralPath $m.FullName -Encoding UTF8)) { $expected[(Join-Path $base $r.Fichier).ToLower()] = $r.SHA256 }
+}
+
+$rows = New-Object System.Collections.Generic.List[object]
+$i = 0
+foreach ($f in $files) {
+    $i++
+    if ($i % 200 -eq 0) { Write-Host "  verification $i / $($files.Count)" }
+    $rel = $f.FullName.Substring($Source.Length + 1)
+    $c = Join-Path $dst $rel
+    $hs = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash
+    $hc = if (Test-Path -LiteralPath $c) { (Get-FileHash -LiteralPath $c -Algorithm SHA256).Hash } else { '' }
+    $exp = $expected[$f.FullName.ToLower()]
+    $etat = if (-not $hc) { 'ABSENT DE LA COPIE' } elseif ($hs -ne $hc) { 'COPIE DIFFERENTE' } elseif ($exp -and $exp -ne $hs) { 'SOURCE DIFFERENTE DU MANIFESTE' } else { 'OK' }
+    $rows.Add([pscustomobject]@{ Fichier = $rel; Octets = $f.Length; SHA256 = $hs; SHA256Copie = $hc; SHA256Manifeste = $exp; Etat = $etat })
+}
+$csv = Join-Path $Destination "hachages_$stamp.csv"
+$rows | Export-Csv -LiteralPath $csv -NoTypeInformation -Encoding UTF8
+$bad = @($rows | Where-Object { $_.Etat -ne 'OK' })
+$csvHash = (Get-FileHash -LiteralPath $csv -Algorithm SHA256).Hash
+$vol = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$(Split-Path $Destination -Qualifier)'"
+$pv = @(
+    'PROCES-VERBAL DE COPIE DE PREUVES'
+    '================================================================='
+    "Date / heure     : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')"
+    "Operateur        : $Operateur"
+    "Poste de copie   : $env:COMPUTERNAME"
+    "Source           : $Source"
+    "Destination      : $dst"
+    "Support          : $($vol.VolumeName) ($fs), n. de serie de volume $($vol.VolumeSerialNumber)"
+    "Fichiers         : $($files.Count) ($('{0:N0}' -f $total) octets)"
+    "Verification     : SHA256 de chaque fichier source et copie ; comparaison aux manifestes de collecte ($($expected.Count) empreintes)"
+    "Resultat         : $(if ($bad.Count) { "$($bad.Count) ANOMALIE(S) - voir hachages_$stamp.csv" } else { 'toutes les copies sont identiques aux originaux' })"
+    "Liste des hachages : hachages_$stamp.csv  SHA256 $csvHash"
+    ''
+    'Conteneurs et captures (empreintes completes) :'
+) + @($rows | Where-Object { $_.Fichier -match '(?i)\.(zip|raw|7z|aff4)$' } | ForEach-Object { "  $($_.SHA256)  $($_.Fichier)  ($('{0:N0}' -f $_.Octets) octets) $($_.Etat)" }) + @(
+    ''
+    'Conserver ce support separement de la cle de collecte (lieu different, acces restreint).'
+    'Signature : ____________________'
+)
+$pvFile = Join-Path $Destination "PV_COPIE_$stamp.txt"
+$pv | Out-File -LiteralPath $pvFile -Encoding utf8
+try { Copy-Item -LiteralPath $pvFile -Destination (Join-Path $Source "PV_COPIE_$stamp.txt") -ErrorAction Stop } catch { Write-Warning "PV non copie dans la source (support protege en ecriture ?)" }
+$pv | ForEach-Object { Write-Host $_ }
+if ($bad.Count) { exit 2 }
