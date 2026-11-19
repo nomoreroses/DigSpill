@@ -10,3 +10,7 @@ MEMOIRE/
 outils/*
 !outils/.gitkeep
 _config_velociraptor/
+
+# Interface : collecte fictive de demonstration generee, fichiers HTML produits
+interface/dev/demo/
+*_INTERFACE.html

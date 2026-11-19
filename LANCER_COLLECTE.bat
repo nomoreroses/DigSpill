@@ -37,6 +37,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Analyse-Exfil.ps1"
 if %errorlevel% neq 0 echo  Analyse en echec : lancer ANALYSER_COLLECTE.bat plus tard sur le poste d'analyse.
 
 echo.
+echo  Interface autonome sur la cle (sans Internet depuis ce poste : bases deja presentes sur la cle)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Generer-Interface.ps1" -Collecte "%~dp0Collecte" -SansInternet -SansOuvrir
+
+echo.
 echo  ===================================================================
 echo   COLLECTE TERMINEE. Vous pouvez retirer la cle (ejection securisee).
 echo.
@@ -46,6 +50,7 @@ echo   Dans la session de CHAQUE compte : LISTER_IDENTIFIANTS.bat
 echo.
 echo   AU BUREAU : seconde copie hachee des preuves (Copier-Preuves.ps1),
 echo   puis ANALYSER_COLLECTE.bat pour l'analyse complete ($MFT).
+echo   Lecture rapide sur un autre PC : Collecte\^<POSTE^>_^<date^>_INTERFACE.html
 echo  ===================================================================
 echo.
 pause

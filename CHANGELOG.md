@@ -1,5 +1,20 @@
 # Journal des versions
 
+## 2.3 (bêta)
+Interface autonome : un seul fichier HTML pour lire une collecte sur n'importe quel PC, sans serveur ni installation.
+
+- **`GENERER_INTERFACE.bat`** / **`Generer-Interface.ps1`** (nouveaux) : assemblent `Collecte\<POSTE>_<date>_INTERFACE.html` (interface, graphiques ECharts, carte du monde et données embarquées). Lancé aussi à la fin de `ANALYSER_COLLECTE.bat` et de `LANCER_COLLECTE.bat` (sans Internet depuis le poste suspect).
+- Bases publiques téléchargées entières dans `outils\bases` puis comparées en local : pays et opérateur (IPtoASN), villes (DB-IP Lite, option `-AvecVilles`), Tor, FireHOL, blocklist.de, GreenSnow, CINS, Feodo, Spamhaus DROP, victimes publiées sur ransomware.live. Aucune donnée de la collecte n'est envoyée.
+- Écrans : vue d'ensemble (alertes, compte à rebours CNIL), chronologie unifiée, IP et pays, exfiltration, visibilité, santé et RGPD, identifiants et fuites, IOC et chasse, analyse IA, rapports.
+- **Test de plausibilité de l'exfiltration** : volume envoyé (SRUM) et capacité de la ligne (débit montant × durée) comparés à la base patients compressée ; fenêtres en liste blanche et volumes habituels distingués.
+- **Carte de visibilité** : couverture de chaque source heure par heure autour des fenêtres, traces d'anti-forensique (journaux effacés, Defender désactivé ou exclu, VSS supprimés).
+- **Lecture santé** : logiciels métier (AxiSanté, MediStory, Logos_w, Julie…) et sites santé repérés, catégories de données déduites et sourcées, sessions hors horaires du cabinet.
+- **Chasse sur tout le parc** : composant PowerShell Datto RMM généré (lecture seule) ; mémoire des incidents (`memoire_incidents.json`) pour signaler les IOC déjà vus chez un autre client.
+- **Analyse IA vérifiable** : synthèse filtrée (comptes pseudonymisés, fichiers masqués), Claude cite une preuve par phrase, chaque citation est contrôlée (identifiant existant, valeurs présentes dans la ligne).
+- Have I Been Pwned par k-anonymat, Shodan InternetDB sur clic, liens VirusTotal / MalwareBazaar.
+- `GENERER_INTERFACE_PROTEGEE.bat` : fichier chiffré (AES-256-CBC + HMAC-SHA256, PBKDF2 200 000 itérations).
+- Rapports praticien (1 page) et technique sourcé (index des preuves avec SHA256 du manifeste), en PDF par l'impression.
+
 ## 2.2 (bêta)
 Analyse orientée exfiltration, pour une conclusion chiffrée et graduée plutôt qu'un « pas d'indice ».
 
