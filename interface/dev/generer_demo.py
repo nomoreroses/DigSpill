@@ -426,6 +426,7 @@ def generer(force: bool = False) -> Path:
         "  [ ] Nombre estime de PATIENTS dans la base (pas de fichiers) : ________\n", encoding="utf-8")
     (col / "infos_collecte.txt").write_text(
         "Poste            : SECRETARIAT-01 (DEMONSTRATION)\r\nMode             : complet\r\nDomaine          : CABINET\r\nLance par        : SECRETARIAT-01\\tech-msp\r\n"
+        "Technicien       : Camille Martin\r\nSociete          : MSP Démo\r\nCabinet          : Cabinet Dentaire des Lilas (demo)\r\nPresent          : Dr Durand, praticienne\r\nTicket           : T-2026-1142\r\nMotif            : Intrusion ou prise en main à distance\r\n"
         "Administrateur   : True\r\nDate locale      : 2026-11-17 14:41:03 +01:00\r\nDate UTC         : 2026-11-17 13:41:03\r\nFuseau           : Romance Standard Time\r\n"
         "Version script   : 2.2\r\nVelociraptor     : SHA256 0D3C1A7E5B9F2468ACE13579BDF02468ACE13579BDF02468ACE13579BDF0246A (demo)\r\n", encoding="utf-8")
     (col / "exposition").mkdir(exist_ok=True)

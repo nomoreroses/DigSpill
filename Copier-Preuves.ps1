@@ -8,12 +8,16 @@
     - Calcule le SHA256 de chaque fichier source et copie, et le compare au manifeste de la collecte s'il existe.
     - Ecrit PV_COPIE_<date>.txt et hachages_<date>.csv dans la destination (et une copie du PV dans la source).
     La destination doit etre un support distinct (disque externe chiffre, NAS hors reseau du client), conserve a part.
+
+    -Collecte POSTE_AAAAMMJJ_HHMMSS : ne copie que cette collecte (dossiers _analyse et _scelles, interface,
+    reglages et conteneurs Velociraptor du meme poste), et pose aussi le PV dans la collecte copiee (chaine de possession).
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Source,
     [Parameter(Mandatory = $true)][string]$Destination,
-    [string]$Operateur = "$env:USERDOMAIN\$env:USERNAME"
+    [string]$Operateur = "$env:USERDOMAIN\$env:USERNAME",
+    [string]$Collecte
 )
 $ErrorActionPreference = 'Stop'
 $Source = (Resolve-Path -LiteralPath $Source).ProviderPath.TrimEnd('\')
@@ -24,7 +28,20 @@ if ((Split-Path $Source -Qualifier) -eq (Split-Path $Destination -Qualifier)) { 
 
 $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 $dst = Join-Path $Destination (Split-Path $Source -Leaf)
-$files = @(Get-ChildItem -LiteralPath $Source -Recurse -File -Force)
+if ($Collecte) {
+    $poste = $Collecte -replace '_\d{8}_\d{6}(_leger)?$', ''
+    $files = @()
+    foreach ($d in @($Collecte, "${Collecte}_analyse", "${Collecte}_scelles")) {
+        $p = Join-Path $Source $d
+        if (Test-Path -LiteralPath $p -PathType Container) { $files += @(Get-ChildItem -LiteralPath $p -Recurse -File -Force) }
+    }
+    $files += @(Get-ChildItem -LiteralPath $Source -File -Force | Where-Object { $_.Name -like "${Collecte}_*" })
+    $pv = Join-Path $Source 'Velociraptor'
+    if (Test-Path -LiteralPath $pv) { $files += @(Get-ChildItem -LiteralPath $pv -File -Force | Where-Object { $_.Name -like "Velociraptor-$poste-*" }) }
+    if (-not (Test-Path -LiteralPath (Join-Path $Source $Collecte))) { throw "Collecte $Collecte introuvable dans $Source" }
+} else {
+    $files = @(Get-ChildItem -LiteralPath $Source -Recurse -File -Force)
+}
 $total = ($files | Measure-Object Length -Sum).Sum
 $free = (Get-PSDrive -Name (Split-Path $Destination -Qualifier).TrimEnd(':')).Free
 if ($free -lt $total) { throw ('Espace insuffisant : {0:N1} Go necessaires, {1:N1} Go libres' -f ($total / 1GB), ($free / 1GB)) }
@@ -33,8 +50,21 @@ $big = @($files | Where-Object { $_.Length -ge 4GB })
 if ($fs -match '^FAT' -and $big.Count) { throw "Destination FAT32 : $($big.Count) fichier(s) de 4 Go ou plus ne peuvent pas y etre copies. Utiliser NTFS ou exFAT." }
 
 Write-Host ('Copie de {0} fichiers ({1:N1} Go) de {2} vers {3}' -f $files.Count, ($total / 1GB), $Source, $dst)
-& robocopy.exe $Source $dst /E /COPY:DT /DCOPY:T /R:2 /W:2 /NP /NFL /NDL /NJH | Out-Null
-if ($LASTEXITCODE -ge 8) { throw "robocopy a echoue (code $LASTEXITCODE)" }
+if ($Collecte) {
+    $copies = @()
+    foreach ($d in @($Collecte, "${Collecte}_analyse", "${Collecte}_scelles")) {
+        if (Test-Path -LiteralPath (Join-Path $Source $d) -PathType Container) { $copies += ,@((Join-Path $Source $d), (Join-Path $dst $d), '*', '/E') }
+    }
+    $copies += ,@($Source, $dst, "${Collecte}_*", '/LEV:1')
+    if (Test-Path -LiteralPath (Join-Path $Source 'Velociraptor')) { $copies += ,@((Join-Path $Source 'Velociraptor'), (Join-Path $dst 'Velociraptor'), "Velociraptor-$poste-*", '/LEV:1') }
+    foreach ($c in $copies) {
+        & robocopy.exe $c[0] $c[1] $c[2] $c[3] /COPY:DT /DCOPY:T /R:2 /W:2 /NP /NFL /NDL /NJH | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "robocopy a echoue (code $LASTEXITCODE) pour $($c[0])" }
+    }
+} else {
+    & robocopy.exe $Source $dst /E /COPY:DT /DCOPY:T /R:2 /W:2 /NP /NFL /NDL /NJH | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "robocopy a echoue (code $LASTEXITCODE)" }
+}
 
 # Manifestes de collecte (SHA256 attendus)
 $expected = @{}
@@ -84,5 +114,6 @@ $pv = @(
 $pvFile = Join-Path $Destination "PV_COPIE_$stamp.txt"
 $pv | Out-File -LiteralPath $pvFile -Encoding utf8
 try { Copy-Item -LiteralPath $pvFile -Destination (Join-Path $Source "PV_COPIE_$stamp.txt") -ErrorAction Stop } catch { Write-Warning "PV non copie dans la source (support protege en ecriture ?)" }
+if ($Collecte) { Copy-Item -LiteralPath $pvFile -Destination (Join-Path (Join-Path $dst $Collecte) "PV_COPIE_$stamp.txt") -ErrorAction SilentlyContinue }
 $pv | ForEach-Object { Write-Host $_ }
 if ($bad.Count) { exit 2 }

@@ -14,3 +14,6 @@ _config_velociraptor/
 # Interface : collecte fictive de demonstration generee, fichiers HTML produits
 interface/dev/demo/
 *_INTERFACE.html
+app/bin/
+/DigSpill.exe
+digspill.ini

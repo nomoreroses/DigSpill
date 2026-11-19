@@ -45,6 +45,7 @@ param(
     [switch]$SansOuvrir,
     [switch]$SansHorodatage,
     [string]$Horodateur = 'http://timestamp.sectigo.com/qualified',
+    [string]$Bases,
     [int]$MaxMoParFichier = 12
 )
 
@@ -53,8 +54,8 @@ $ProgressPreference = 'SilentlyContinue'
 $Version = '1.1'
 $Ici = $PSScriptRoot
 $Interface = Join-Path $Ici 'interface'
-$Bases = Join-Path $Ici 'outils\bases'
-New-Item -ItemType Directory -Force -Path $Bases | Out-Null
+if (-not $Bases) { $Bases = Join-Path $Ici 'outils\bases' }
+try { New-Item -ItemType Directory -Force -Path $Bases -ErrorAction Stop | Out-Null } catch { Write-Host "  [!] dossier des bases inaccessible en ecriture ($Bases) : bases deja presentes seulement" }
 Add-Type -AssemblyName System.Web
 $Utf8 = [System.Text.UTF8Encoding]::new($false)
 
@@ -343,7 +344,11 @@ try {
         [IO.File]::WriteAllText($actuel, (($contenu -join "`r`n") + "`r`n"), $Utf8)
         Info "[+] scelle cree : $(Split-Path $actuel -Leaf)"
     }
-    if ($actuel -and -not $SansInternet -and -not $SansHorodatage -and -not (Test-Path -LiteralPath ([IO.Path]::ChangeExtension($actuel, '.tsr')))) {
+    # tous les scelles sans jeton (dont celui ecrit sur place par DigSpill.exe hors ligne), le plus recent en dernier
+    $aHorodater = @(Get-ChildItem -LiteralPath $DossierScelles -File -Filter 'SCELLE_*.txt' | Where-Object { $_.Name -notlike '*.horodatage.txt' } | Sort-Object Name | ForEach-Object { $_.FullName })
+    foreach ($actuelH in $aHorodater) {
+    if (-not $SansInternet -and -not $SansHorodatage -and -not (Test-Path -LiteralPath ([IO.Path]::ChangeExtension($actuelH, '.tsr')))) {
+        $actuel0 = $actuel; $actuel = $actuelH
         try {
             $emp = [byte[]]::new(32)
             $hx = (Get-FileHash -LiteralPath $actuel -Algorithm SHA256).Hash
@@ -356,6 +361,8 @@ try {
                 "Verification complete : openssl ts -verify -data $(Split-Path $actuel -Leaf) -in $([IO.Path]::GetFileNameWithoutExtension($actuel)).tsr -CAfile <chaine de certificats de l'horodateur>`r`n"), $Utf8)
             Info "[+] scelle horodate par un tiers : $($h.date)"
         } catch { Info "[!] horodatage impossible ($Horodateur) : $($_.Exception.Message). Le scelle reste valable, relancer plus tard avec Internet." }
+        $actuel = $actuel0
+    }
     }
 } catch { Info "[!] scelle non cree : $($_.Exception.Message)" }
 $scellesJson = New-Object System.Collections.Generic.List[string]
@@ -389,10 +396,15 @@ $donnees = $sb.ToString()
 
 # ------------------------------------------------------------------ 7. protection par mot de passe (facultative)
 if ($Proteger) {
-    $m1 = Read-Host '  Mot de passe du fichier' -AsSecureString
-    $m2 = Read-Host '  Confirmer' -AsSecureString
-    $clair1 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($m1))
-    $clair2 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($m2))
+    if ($env:DIGSPILL_MDP) {
+        # fourni par DigSpill.exe (variable du seul processus enfant), jamais ecrit sur disque
+        $clair1 = $env:DIGSPILL_MDP; $clair2 = $env:DIGSPILL_MDP
+    } else {
+        $m1 = Read-Host '  Mot de passe du fichier' -AsSecureString
+        $m2 = Read-Host '  Confirmer' -AsSecureString
+        $clair1 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($m1))
+        $clair2 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($m2))
+    }
     if (-not $clair1 -or $clair1 -ne $clair2) { throw 'Mots de passe vides ou differents.' }
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
     $sel = New-Object byte[] 16; $rng.GetBytes($sel); $iv = New-Object byte[] 16; $rng.GetBytes($iv)
