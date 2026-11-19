@@ -1,6 +1,8 @@
 # Journal des versions
 
 ## 2.3 (bêta)
+Le projet s'appelle désormais **DigSpill** (dépôt, interface, rapports, titres des fenêtres).
+
 Interface autonome : un seul fichier HTML pour lire une collecte sur n'importe quel PC, sans serveur ni installation.
 
 - **`GENERER_INTERFACE.bat`** / **`Generer-Interface.ps1`** (nouveaux) : assemblent `Collecte\<POSTE>_<date>_INTERFACE.html` (interface, graphiques ECharts, carte du monde et données embarquées). Lancé aussi à la fin de `ANALYSER_COLLECTE.bat` et de `LANCER_COLLECTE.bat` (sans Internet depuis le poste suspect).

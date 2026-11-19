@@ -7,7 +7,7 @@ if %errorlevel% neq 0 (
     exit /b
 )
 cd /d "%~dp0"
-title Collecte forensique - NE PAS RETIRER LA CLE
+title DigSpill - Collecte forensique - NE PAS RETIRER LA CLE
 echo.
 echo  === ETAPE 1/3 : collecte PowerShell (volatile, RAM, journaux, comptes, rancongiciel, listing) ===
 echo  Capture RAM : brancher AVANT un disque externe NTFS/exFAT avec un dossier MEMOIRE a la racine.

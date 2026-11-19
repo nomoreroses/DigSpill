@@ -11,7 +11,7 @@ if "%~1"=="" (
     pause
     exit /b 1
 )
-title Analyse exfiltration - %~nx1
+title DigSpill - Analyse exfiltration - %~nx1
 if "%~2"=="" (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Analyse-Exfil.ps1" -Collecte "%~1"
 ) else (

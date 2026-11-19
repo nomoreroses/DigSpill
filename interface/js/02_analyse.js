@@ -435,7 +435,7 @@ T.scriptChasse = () => {
   const sha256 = i.hachages.filter(x => x.type === 'SHA256').map(x => x.hash), sha1 = i.hachages.filter(x => x.type === 'SHA1').map(x => x.hash);
   return `<#
   Chasse aux IOC - incident ${ref}
-  Genere le ${T.fdate(new Date()).slice(0, 16)} par l'interface de triage forensique.
+  Genere le ${T.fdate(new Date()).slice(0, 16)} par DigSpill.
   Composant Datto RMM (PowerShell, a executer en SYSTEM). LECTURE SEULE : ne supprime et ne modifie rien.
   Variables de composant facultatives :
     JoursEvt (defaut 30) : profondeur de recherche dans les journaux

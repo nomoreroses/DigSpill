@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-    Collecte-Exfil.ps1 v2.2 - Collecte de triage forensique pour suspicion d'intrusion / exfiltration / rancongiciel.
+    DigSpill - Collecte-Exfil.ps1 v2.2 - Collecte de triage forensique pour suspicion d'intrusion / exfiltration / rancongiciel.
     A lancer EN ADMINISTRATEUR sur le poste suspect (via LANCER_COLLECTE.bat ou LANCER_COLLECTE_LEGERE.bat).
     Les resultats sont ecrits sur la cle : <cle>\Collecte\<NOMPC>_<date>\
 

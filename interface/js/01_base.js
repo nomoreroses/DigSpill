@@ -1,5 +1,5 @@
 /* ============================================================================
-   Interface de triage forensique - fichier autonome (aucun serveur, aucun CDN)
+   DigSpill - interface de triage forensique, fichier autonome (aucun serveur, aucun CDN)
    01_base.js : lecture des donnees embarquees, CSV, dates, IP, preuves, reglages
    ============================================================================ */
 'use strict';
@@ -163,7 +163,7 @@ T.REGLAGES_DEFAUT = {
   horaires: { 0: '08:00-19:00', 1: '08:00-19:00', 2: '08:00-19:00', 3: '08:00-19:00', 4: '08:00-19:00', 5: '08:00-12:00', 6: '' },
   mots_cles_fuite: [], liste_blanche: [], fenetres_manuelles: [], notes: ''
 };
-T.cleStockage = () => 'triage-forensique:' + (T.D.collecte.nom || 'sans-nom');
+T.cleStockage = () => 'digspill:' + (T.D.collecte.nom || 'sans-nom');
 T.stockage = {
   lire(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } },
   ecrire(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }

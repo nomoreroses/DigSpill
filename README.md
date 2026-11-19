@@ -1,4 +1,6 @@
-# Collecte de triage forensique Windows (bêta)
+# DigSpill (bêta)
+
+**Collecte et analyse forensique Windows : ce que l'attaquant a pu creuser (*dig*) et faire sortir (*spill*).**
 
 Clé USB de collecte à lancer sur un poste Windows suspecté d'intrusion, d'exfiltration ou de rançongiciel. Un double-clic, une validation UAC, aucune autre interaction. La collecte est suivie d'une analyse orientée exfiltration, qu'on peut relancer plus tard sur le poste d'analyse.
 

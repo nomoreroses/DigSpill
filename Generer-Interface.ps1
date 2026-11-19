@@ -135,7 +135,7 @@ if (-not $SansInternet) {
         $age = if (Test-Path -LiteralPath $dest) { ((Get-Date) - (Get-Item -LiteralPath $dest).LastWriteTime).TotalDays } else { 999 }
         if (-not $MajBases -and $age -lt 7) { continue }
         try {
-            Invoke-WebRequest -Uri $s.U -OutFile "$dest.tmp" -UseBasicParsing -TimeoutSec 120 -UserAgent 'triage-forensique-windows'
+            Invoke-WebRequest -Uri $s.U -OutFile "$dest.tmp" -UseBasicParsing -TimeoutSec 120 -UserAgent 'DigSpill'
             if ((Get-Item -LiteralPath "$dest.tmp").Length -gt 50) { Move-Item -LiteralPath "$dest.tmp" -Destination $dest -Force; Info "[+] $($s.N)" }
             else { Remove-Item -LiteralPath "$dest.tmp" -Force; Info "[!] $($s.N) : reponse vide" }
         } catch { Info "[!] $($s.N) : $($_.Exception.Message)"; Remove-Item -LiteralPath "$dest.tmp" -Force -ErrorAction SilentlyContinue }

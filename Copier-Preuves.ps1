@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-    Copier-Preuves.ps1 v2.2 - Seconde copie des preuves, verifiee par hachage, avec proces-verbal.
+    DigSpill - Copier-Preuves.ps1 v2.2 - Seconde copie des preuves, verifiee par hachage, avec proces-verbal.
 
       powershell -ExecutionPolicy Bypass -File Copier-Preuves.ps1 -Source E:\Collecte -Destination F:\PREUVES_cabinet
 

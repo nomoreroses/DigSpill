@@ -56,7 +56,7 @@ T.rendreSquelette = () => {
   const app = T.$('#app'); app.innerHTML = '';
   if (T.D.demo) app.append(h('div', { class: 'demo-bandeau' }, '🧪 Démonstration : collecte FICTIVE (adresses de documentation, cabinet inventé). Aucune donnée réelle.'));
   app.append(h('header', { class: 'entete' },
-    h('div', { class: 'logo' }, '🛡️', h('span', {}, 'Triage forensique'), h('small', {}, 'v' + T.VERSION)),
+    h('div', { class: 'logo' }, '🛡️', h('span', {}, 'DigSpill'), h('small', {}, 'v' + T.VERSION)),
     h('div', { class: 'ident', id: 'ident' }), h('div', { class: 'espace' }),
     h('button', { class: 'puce-cnil', id: 'puceCnil', onclick: () => T.aller('sante') }),
     h('button', { class: 'btn-entete', onclick: () => T.ouvrirReglages() }, '⚙️ Réglages'),
@@ -378,7 +378,7 @@ T.ECRANS.ioc = c => {
 
 /* ---------------------------------------------------------------- analyse IA */
 T.ECRANS.ia = c => {
-  const cleSauv = T.stockage.lire('triage-forensique:cle-anthropic') || '';
+  const cleSauv = T.stockage.lire('digspill:cle-anthropic') || '';
   c.append(h('h1', {}, 'Analyse IA (Claude)'), h('p', { class: 'sous-titre' }, 'Claude lit une synthèse filtrée, cite une preuve pour chaque phrase, et ce fichier vérifie chaque citation.'));
   c.append(h('div', { class: 'grille g3', style: 'margin-bottom:16px' },
     T.kpi('🙈', 'Masqué', 'comptes (U1, U2…), noms de fichiers, e-mails, chemins des URL'), T.kpi('🔗', 'Sourcé', 'chaque phrase doit citer [fichier#ligne]'), T.kpi('✅', 'Vérifié', 'citation existante et valeurs retrouvées dans la ligne')));
@@ -389,7 +389,7 @@ T.ECRANS.ia = c => {
   const voir = () => { const a = T.apercuIA(); apercu.style.display = 'block'; apercu.textContent = a.texte; info.textContent = `${a.ko} Ko · ~${T.nb(a.tokens)} jetons · ${a.comptes} compte(s) pseudonymisé(s). C'est exactement ce qui partira.`; };
   const lancer = async ev => {
     if (!cle.value.trim()) { T.toast('Saisir une clé API Anthropic'); return; }
-    if (memo.checked) T.stockage.ecrire('triage-forensique:cle-anthropic', cle.value.trim()); else localStorage.removeItem('triage-forensique:cle-anthropic');
+    if (memo.checked) T.stockage.ecrire('digspill:cle-anthropic', cle.value.trim()); else localStorage.removeItem('digspill:cle-anthropic');
     ev.target.disabled = true; ev.target.textContent = '⏳ Analyse en cours (1 à 2 min)…';
     try { const r = await T.lancerIA(cle.value.trim(), modele.value); T.stockage.ecrire(T.cleStockage() + ':ia', r); afficher(r); }
     catch (e) { sortie.innerHTML = ''; sortie.append(h('div', { class: 'alerte n3' }, h('div', { class: 'ic' }, '⚠️'), h('div', {}, 'Échec : ' + e.message))); }
@@ -560,7 +560,7 @@ T.ecranOuverture = () => {
     T.lancer(d);
   } });
   app.innerHTML = '';
-  app.append(h('div', { class: 'accueil' }, h('div', { style: 'font-size:46px' }, '🛡️'), h('h1', {}, 'Triage forensique'),
+  app.append(h('div', { class: 'accueil' }, h('div', { style: 'font-size:46px' }, '🛡️'), h('h1', {}, 'DigSpill'),
     h('p', { class: 'doux' }, 'Ce fichier ne contient pas encore de collecte. Le plus simple : glisser le dossier de collecte sur GENERER_INTERFACE.bat.'),
     h('div', { class: 'zone' }, h('p', {}, 'Ou ouvrir directement le dossier Collecte (contenant POSTE_date et POSTE_date_analyse) :'), h('button', { class: 'btn primaire', onclick: () => choix.click() }, '📂 Choisir le dossier'), choix,
       h('p', { class: 'petit pale' }, 'Lecture locale dans le navigateur. Sans le .bat : pas de pays des IP, ni listes noires, ni sites de fuite.'))));
