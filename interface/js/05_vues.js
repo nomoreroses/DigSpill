@@ -436,7 +436,9 @@ T.ECRANS.rapport = c => {
     T.carte('👩‍⚕️ Rapport praticien', '1 page, sans jargon', h('ul', { class: 'lignes' }, ['Ce qui s\'est passé, en 5 lignes', 'Ce que le cabinet doit faire', 'Échéance CNIL'].map(x => h('li', {}, h('span', { class: 'ic' }, '•'), x))),
       h('button', { class: 'btn primaire', onclick: () => T.imprimer('praticien') }, '🖨️ Imprimer / PDF')),
     T.carte('🧑‍💻 Rapport technique sourcé', 'pour l\'assureur, l\'expert ou la plainte', h('ul', { class: 'lignes' }, ['Indicateurs, grille, IP, exfiltration, visibilité', 'Chaque constat avec sa preuve [fichier#ligne]', 'Index des fichiers avec leur SHA256'].map(x => h('li', {}, h('span', { class: 'ic' }, '•'), x))),
-      h('button', { class: 'btn primaire', onclick: () => T.imprimer('technique') }, '🖨️ Imprimer / PDF'))));
+      h('button', { class: 'btn primaire', onclick: () => T.imprimer('technique') }, '🖨️ Imprimer / PDF')),
+    T.carte('🔏 PV de collecte et certificat d\'intégrité', 'à signer, pour la plainte ou l\'assureur', h('ul', { class: 'lignes' }, ['Qui a collecté, quand, avec quels outils', 'Empreinte du scellé, horodatage, chaîne de possession', 'Cases de signature technicien, cabinet, témoin'].map(x => h('li', {}, h('span', { class: 'ic' }, '•'), x))),
+      h('button', { class: 'btn primaire', onclick: () => T.imprimer('pv') }, '🖨️ Imprimer / PDF'))));
   c.append(T.carte('💾 Exports', '', h('div', { class: 'filtres' },
     h('button', { class: 'btn', onclick: () => T.telecharger(`${T.D.collecte.nom}_reglages.json`, JSON.stringify(T.stockage.lire(T.cleStockage()) || {}, null, 1), 'application/json') }, '⚙️ Réglages (.json)'),
     h('button', { class: 'btn', onclick: () => T.telecharger(`${T.identite().poste}_chronologie.csv`, T.versCsv(T.chronologie().evenements.map(e => ({ Date: T.fdate(e.t), Fin: e.fin ? T.fdate(e.fin) : '', Voie: e.voie, Gravite: e.g, Evenement: e.titre, Detail: e.detail, Fenetre: e.fen, Preuve: e.id })))) }, '🕒 Chronologie (.csv)'),

@@ -424,7 +424,10 @@ def generer(force: bool = False) -> Path:
         "  [x] Date et heure de decouverte : 17/11/2026 a 08:10   par : secretaire (ecran de rancon)\n"
         "  [x] Logiciel metier et base(s) concernee(s) : Logos_w (demo)\n"
         "  [ ] Nombre estime de PATIENTS dans la base (pas de fichiers) : ________\n", encoding="utf-8")
-    (col / "infos_collecte.txt").write_text("Poste : SECRETARIAT-01 (DEMONSTRATION)\nOS : Windows 10 Pro 22H2\n", encoding="utf-8")
+    (col / "infos_collecte.txt").write_text(
+        "Poste            : SECRETARIAT-01 (DEMONSTRATION)\r\nMode             : complet\r\nDomaine          : CABINET\r\nLance par        : SECRETARIAT-01\\tech-msp\r\n"
+        "Administrateur   : True\r\nDate locale      : 2026-11-17 14:41:03 +01:00\r\nDate UTC         : 2026-11-17 13:41:03\r\nFuseau           : Romance Standard Time\r\n"
+        "Version script   : 2.2\r\nVelociraptor     : SHA256 0D3C1A7E5B9F2468ACE13579BDF02468ACE13579BDF02468ACE13579BDF0246A (demo)\r\n", encoding="utf-8")
     (col / "exposition").mkdir(exist_ok=True)
     (col / "exposition" / "wifi_profils.txt").write_text("    Profil Tous les utilisateurs : CABINET-LILAS\n    Profil Tous les utilisateurs : Livebox-DEMO\n", encoding="utf-8")
 
@@ -436,6 +439,26 @@ def generer(force: bool = False) -> Path:
                 lignes.append({"Fichier": str(p.relative_to(racine)).replace("/", "\\"), "Taille": p.stat().st_size,
                                "SHA256": hashlib.sha256(p.read_bytes()).hexdigest().upper()})
         ecrire(racine / nom, lignes)
+
+    # ------------------------------------------------------------ journaux et PV de copie (hors manifeste, comme dans la vraie collecte)
+    (col / "collecte.log").write_text("2026-11-17 14:41:03  === Collecte de triage v2.2 (complet) sur SECRETARIAT-01 ===\r\n"
+                                      "2026-11-17 14:41:03  [*] Volatile : processus, connexions TCP\r\n2026-11-17 14:58:40  [*] Memoire vive (winpmem)\r\n"
+                                      "2026-11-17 15:01:21  [*] Calcul du manifeste SHA256 des elements collectes\r\n"
+                                      "2026-11-17 15:03:02  === Collecte terminee en 21 min 59 s - 4211.6 Mo dans E:\\Collecte\\SECRETARIAT-01_20261117_150121 ===\r\n", encoding="utf-8")
+    (ana / "analyse.log").write_text("2026-11-17 16:20:10  === Analyse orientee exfiltration v2.2 ===\r\n2026-11-17 16:47:55  === Analyse terminee en 27 min 45 s ===\r\n", encoding="utf-8")
+    (col / "PV_COPIE_20261117_173500.txt").write_text(
+        "PROCES-VERBAL DE COPIE DE PREUVES\r\n=================================================================\r\n"
+        "Date / heure     : 2026-11-17 17:35:00 +01:00\r\nOperateur        : MSP-DEMO\\technicien\r\nPoste de copie   : PC-ANALYSE-DEMO\r\n"
+        "Source           : E:\\Collecte\\SECRETARIAT-01_20261117_150121\r\nDestination      : F:\\Scelles\\SECRETARIAT-01_20261117_150121\r\n"
+        "Support          : DEMO-SAUV (NTFS), n. de serie de volume 1A2B3C4D\r\nFichiers         : 1 204 (4 416 120 832 octets)\r\n"
+        "Verification     : SHA256 de chaque fichier source et copie ; comparaison aux manifestes de collecte (1 203 empreintes)\r\n"
+        "Resultat         : toutes les copies sont identiques aux originaux\r\n", encoding="utf-8")
+
+    import os as _os
+    for f_, d_ in ((col / "manifeste_sha256.csv", "2026-11-17 15:02:40"), (col / "collecte.log", "2026-11-17 15:03:02"),
+                   (ana / "manifeste_analyse_sha256.csv", "2026-11-17 16:47:50"), (ana / "analyse.log", "2026-11-17 16:47:55"), (col / "PV_COPIE_20261117_173500.txt", "2026-11-17 17:35:20")):
+        t_ = d(d_).timestamp()
+        _os.utime(f_, (t_, t_))
 
     # ------------------------------------------------------------ seconde collecte (autre client) pour la memoire des incidents
     autre = RACINE / "ACCUEIL-02_20261009_101500"

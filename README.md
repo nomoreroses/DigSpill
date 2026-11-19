@@ -55,6 +55,7 @@ Les résultats sont écrits dans `Collecte\<POSTE>_<date>\` sur la clé, avec un
 | 🔑 Identifiants et fuites | Comptes à faire changer, mot de passe testé sur Have I Been Pwned (k-anonymat), recherche du client sur les sites de fuite |
 | 🧬 IOC et chasse | Hachages, persistance, **composant Datto RMM** prêt à lancer sur tout le parc, indicateurs déjà vus chez un autre client |
 | 🤖 Analyse IA | Claude lit une synthèse **filtrée**, cite une preuve par phrase, et le fichier **vérifie chaque citation** |
+| 🔏 Intégrité et preuve | **Scellé** horodaté par un tiers, chaîne de possession, vérification des fichiers dans le navigateur, **PV de collecte** à signer |
 | 🖨️ Rapports | Rapport praticien (1 page) et rapport technique sourcé, en PDF via l'impression |
 
 Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable qui affiche la ligne du CSV d'origine et le SHA256 du fichier dans le manifeste.
@@ -70,13 +71,33 @@ Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable q
 ![Identifiants et fuites](docs/captures/fuites.png)
 ![IOC et chasse](docs/captures/ioc.png)
 ![Analyse IA : réponse d'exemple passée au vérificateur](docs/captures/ia.png)
+![Intégrité et preuve](docs/captures/integrite.png)
 
 </details>
+
+### Scellé et valeur de preuve
+
+![Intégrité et preuve](docs/captures/integrite.png)
+
+| | Ce que fait DigSpill | Ce que ça prouve |
+|---|---|---|
+| 🧾 | Manifeste SHA-256 de chaque fichier collecté et analysé | Aucun fichier n'a changé depuis |
+| 🔏 | **Scellé** `SCELLE_<date>.txt` : empreintes des manifestes, journaux et PV de copie | Un seul code de 64 caractères résume tout le dossier |
+| ⏱️ | Scellé **horodaté par un tiers** (jeton RFC 3161, `.tsr`) | Le dossier existait tel quel à cette date |
+| 🔗 | Chaîne de possession reconstituée (journaux, manifestes, PV de copie, scellés) | Qui a eu les preuves, quand, pour faire quoi |
+| 🧪 | Vérification dans le navigateur : on choisit le dossier, chaque fichier est re-haché | N'importe qui peut refaire le contrôle |
+| ✍️ | **PV de collecte et certificat d'intégrité** imprimable, à signer (technicien, cabinet, témoin) | Qui a fait quoi, avec quels outils |
+
+- Le scellé est écrit dans `Collecte\<POSTE>_<date>_scelles\`. Il n'est recréé que si un élément a changé : le premier horodatage reste valable.
+- Horodateur par défaut : `http://timestamp.sectigo.com/qualified` (Sectigo, annoncé conforme eIDAS ; conditions d'usage et éventuels frais à vérifier). Autre autorité : `-Horodateur <url>`. Sans horodatage : `-SansHorodatage`. Seule l'empreinte du scellé est envoyée.
+- Vérifier le jeton : `openssl ts -verify -data SCELLE_<date>.txt -in SCELLE_<date>.tsr -CAfile <chaîne de l'autorité>`.
+- ⚖️ En France la preuve est libre au pénal (art. 427 CPP) ; un écrit électronique vaut s'il identifie son auteur et garantit son intégrité (art. 1366 C. civ.). Un horodatage **qualifié** eIDAS est présumé exact (art. 41 du règlement UE 910/2014). Le PV reste un document de prestataire, pas un constat de commissaire de justice. À valider avec un avocat ou l'assureur.
 
 ### Ce qui part sur Internet (et ce qui ne part pas)
 
 - **Rien ne sort du fichier sans un clic.** Les données de la collecte restent dans le fichier.
 - **Bases publiques** : le `.bat` télécharge des listes publiques entières dans `outils\bases` (pays et opérateur IPtoASN, Tor, FireHOL, blocklist.de, GreenSnow, CINS, Feodo, Spamhaus DROP, victimes publiées sur ransomware.live) et les compare **en local**. Le nom du client et ses IP ne sont jamais envoyés. Option `-AvecVilles` : base des villes DB-IP Lite (~40 Mo). Option `-SansInternet` : utilise seulement les bases déjà présentes.
+- **Horodatage** : seule l'empreinte SHA-256 du scellé part vers l'autorité d'horodatage (désactivable).
 - **Sur clic seulement** : Have I Been Pwned (seuls les 5 premiers caractères du hachage SHA-1 du mot de passe), Shodan InternetDB (l'IP choisie), liens VirusTotal / MalwareBazaar (le hachage choisi), Claude (la synthèse filtrée, affichée avant l'envoi : comptes pseudonymisés U1, U2…, noms de fichiers et dossiers masqués, URL réduites au domaine, e-mails masqués).
 - Sans clé API, le bouton « Copier consignes + synthèse » permet d'utiliser claude.ai, puis de recoller la réponse pour en vérifier les citations.
 
@@ -91,7 +112,7 @@ Le fichier HTML est **aussi sensible que la collecte** (comptes, chemins, sites 
 
 ### Développement
 
-Le code de l'interface est dans `interface\` (`modele.html`, `style.css`, `js\01_base.js` à `05_vues.js`, ECharts et la carte dans `vendor\`). `interface\dev\generer_demo.py` crée une collecte fictive (adresses de documentation RFC 5737, domaines `.example`) et `interface\dev\assembler.py` produit le même fichier que le `.ps1`, pour tester sans Windows.
+Le code de l'interface est dans `interface\` (`modele.html`, `style.css`, `js\01_base.js` à `06_integrite.js`, ECharts et la carte dans `vendor\`). `interface\dev\generer_demo.py` crée une collecte fictive (adresses de documentation RFC 5737, domaines `.example`) et `interface\dev\assembler.py` produit le même fichier que le `.ps1`, pour tester sans Windows. `interface\dev\tsa_demo.sh` crée une autorité d'horodatage **fictive** (OpenSSL) pour la démo : `assembler.py --tsa-demo demo/tsa`.
 
 ## Arborescence
 
@@ -106,6 +127,8 @@ Collecte\
   <POSTE>_<date>_analyse\       analyse exfiltration
     SYNTHESE_EXFILTRATION.txt   grille par canal + conclusion graduée proposée
     00_LISEZMOI.txt             ordre de lecture des tableaux
+  <POSTE>_<date>_scelles\       SCELLE_<date>.txt + jeton d'horodatage (.tsq, .tsr, .horodatage.txt)
+  <POSTE>_<date>_INTERFACE.html interface autonome
   Velociraptor\                 conteneurs .zip (+ .sha256)
   Identifiants\                 sorties de LISTER_IDENTIFIANTS.bat
 ```

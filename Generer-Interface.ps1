@@ -16,6 +16,8 @@
       -AvecVilles           telecharge aussi la base des villes DB-IP Lite (~40 Mo, pour placer les IP sur la carte)
       -Proteger             demande un mot de passe et chiffre les donnees du fichier (AES-256 + HMAC, PBKDF2)
       -SansOuvrir           ne pas ouvrir le fichier a la fin
+      -SansHorodatage       ne pas faire horodater le scelle par un tiers
+      -Horodateur <url>     autorite d'horodatage RFC 3161 (defaut : service annonce conforme eIDAS par Sectigo)
       -MaxMoParFichier 12   au-dela, un tableau est tronque (premieres lignes seulement, signale dans l'interface)
 
     Bases publiques (outils\bases, reutilisees d'une fois sur l'autre) : AUCUNE donnee de la collecte n'est
@@ -25,6 +27,10 @@
       - ransomware.live : victimes publiees (France + recentes), cherchees en local par l'interface
     Memoire des incidents (outils\bases\memoire_incidents.json) : IOC de chaque collecte traitee, pour signaler
     les indicateurs deja vus chez un autre client.
+
+    Scelle (dossier <POSTE>_<date>_scelles a cote de la collecte) : liste des empreintes SHA256 des manifestes,
+    journaux et proces-verbaux de copie ; l'empreinte du scelle est horodatee par un tiers (jeton RFC 3161 .tsr).
+    Un nouveau scelle n'est cree que si ces fichiers ont change : le premier horodatage est conserve.
 
     Le fichier HTML est aussi sensible que la collecte : ne pas l'envoyer en clair (utiliser -Proteger).
 #>
@@ -37,12 +43,14 @@ param(
     [switch]$AvecVilles,
     [switch]$Proteger,
     [switch]$SansOuvrir,
+    [switch]$SansHorodatage,
+    [string]$Horodateur = 'http://timestamp.sectigo.com/qualified',
     [int]$MaxMoParFichier = 12
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$Version = '1.0'
+$Version = '1.1'
 $Ici = $PSScriptRoot
 $Interface = Join-Path $Ici 'interface'
 $Bases = Join-Path $Ici 'outils\bases'
@@ -90,12 +98,13 @@ foreach ($racine in @(@{ D = $Collecte; P = '' }, @{ D = $Analyse; P = 'a.' })) 
     foreach ($sd in (Get-ChildItem -LiteralPath $racine.D -Directory -Force | Where-Object { $ignorer -notcontains $_.Name.ToLower() })) { $liste += @(Get-ChildItem -LiteralPath $sd.FullName -File -Force) }
     foreach ($f in $liste) {
         $ext = $f.Extension.ToLower()
-        if (($ext -ne '.csv' -and $ext -ne '.txt') -or $f.Name -like 'listing_complet*') { continue }
+        $journal = ($ext -eq '.log' -and $f.DirectoryName -eq $racine.D)
+        if (($ext -ne '.csv' -and $ext -ne '.txt' -and -not $journal) -or $f.Name -like 'listing_complet*') { continue }
         $cle = if ($ext -eq '.csv') { [IO.Path]::GetFileNameWithoutExtension($f.Name) } else { $f.Name }
         if ($fichiers.Contains($cle)) { if ($racine.P) { $cle = $racine.P + $cle } else { continue } }
         if ($fichiers.Contains($cle)) { continue }
         try { $lu = Lire-Texte $f } catch { Info "[!] $($f.Name) illisible : $($_.Exception.Message)"; continue }
-        $fichiers[$cle] = @{ chemin = $f.FullName.Substring($Parent.Length + 1); plein = $f.FullName; taille = $f.Length; tronque = $lu[1]; texte = $lu[0] }
+        $fichiers[$cle] = @{ chemin = $f.FullName.Substring($Parent.Length + 1); plein = $f.FullName; taille = $f.Length; tronque = $lu[1]; texte = $lu[0]; modifie = $f.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss') }
         if ($lu[1]) { Info "[i] $($f.Name) tronque a $MaxMoParFichier Mo" }
     }
 }
@@ -261,6 +270,104 @@ try {
     [IO.File]::WriteAllText($fMem, ($mem | ConvertTo-Json -Depth 5), $Utf8)
 } catch { Info "[!] memoire des incidents non mise a jour : $($_.Exception.Message)" }
 
+# ------------------------------------------------------------------ 5 bis. scelle : empreinte globale + horodatage par un tiers (RFC 3161)
+$DossierScelles = "${Collecte}_scelles"
+function Hex([byte[]]$b) { [BitConverter]::ToString($b).Replace('-', '') }
+function Der([int]$tag, [byte[]]$contenu) {
+    $n = $contenu.Length
+    if ($n -lt 128) { $l = @($n) } elseif ($n -lt 256) { $l = @(0x81, $n) } else { $l = @(0x82, ($n -shr 8), ($n -band 255)) }
+    return [byte[]](@($tag) + $l + $contenu)
+}
+function DerEntete([byte[]]$b, [int]$i) {
+    # @(tag, longueur, position du contenu)
+    $l = [int]$b[$i + 1]; $d = $i + 2
+    if ($l -band 0x80) { $k = $l -band 0x7F; $l = 0; for ($j = 0; $j -lt $k; $j++) { $l = $l * 256 + $b[$d + $j] }; $d += $k }
+    return @([int]$b[$i], $l, $d)
+}
+function Horodater([byte[]]$empreinte, [string]$url) {
+    $nonce = New-Object byte[] 8
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($nonce)
+    $nonce[0] = [byte](($nonce[0] -band 0x7F) -bor 0x01)
+    $algo = Der 0x30 ([byte[]](@(0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00)))
+    $imprint = Der 0x30 ([byte[]]($algo + (Der 0x04 $empreinte)))
+    $req = Der 0x30 ([byte[]](@(0x02, 0x01, 0x01) + $imprint + (Der 0x02 $nonce) + @(0x01, 0x01, 0xFF)))
+    $wc = New-Object Net.WebClient
+    $wc.Headers.Add('Content-Type', 'application/timestamp-query')
+    $wc.Headers.Add('User-Agent', 'DigSpill')
+    [byte[]]$rep = $wc.UploadData($url, 'POST', $req)
+    # TimeStampResp ::= SEQUENCE { status PKIStatusInfo ::= SEQUENCE { status INTEGER ... }, timeStampToken }
+    $e1 = DerEntete $rep 0; $e2 = DerEntete $rep $e1[2]; $e3 = DerEntete $rep $e2[2]
+    $statut = if ($e3[0] -eq 2) { [int]$rep[$e3[2]] } else { -1 }
+    if ($statut -ne 0 -and $statut -ne 1) { throw "reponse refusee par l'horodateur (statut $statut)" }
+    if (-not (Hex $rep).Contains((Hex $empreinte))) { throw "le jeton ne contient pas l'empreinte demandee" }
+    if (-not (Hex $rep).Contains((Hex $nonce))) { throw "le jeton ne reprend pas le nonce de la requete" }
+    $date = ''
+    for ($i = 0; $i -lt $rep.Length - 20; $i++) {
+        if ($rep[$i] -eq 0x18 -and $rep[$i + 1] -ge 15 -and $rep[$i + 1] -le 23) {
+            $t = [Text.Encoding]::ASCII.GetString($rep, $i + 2, $rep[$i + 1])
+            if ($t -match '^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)(\.\d+)?Z$') { $date = "$($matches[1])-$($matches[2])-$($matches[3]) $($matches[4]):$($matches[5]):$($matches[6]) UTC"; break }
+        }
+    }
+    return @{ requete = $req; reponse = $rep; date = $date }
+}
+try {
+    New-Item -ItemType Directory -Force -Path $DossierScelles | Out-Null
+    $elements = New-Object System.Collections.Generic.List[string]
+    $candidats = @(
+        (Join-Path $Collecte 'manifeste_sha256.csv'), (Join-Path $Collecte 'collecte.log'),
+        (Join-Path $Analyse 'manifeste_analyse_sha256.csv'), (Join-Path $Analyse 'analyse.log'))
+    $candidats += @(Get-ChildItem -LiteralPath $Collecte -File -Filter 'PV_COPIE_*.txt' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    foreach ($p in $candidats) {
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        $fi = Get-Item -LiteralPath $p
+        $elements.Add(('{0}  {1}  {2}' -f (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash, $fi.Length, $fi.FullName.Substring($Parent.Length + 1)))
+    }
+    $lignes = @($elements | Sort-Object { ($_ -split '  ', 3)[2] })
+    # meme contenu que le dernier scelle : on le garde (le premier horodatage fait foi)
+    $dernier = Get-ChildItem -LiteralPath $DossierScelles -File -Filter 'SCELLE_*.txt' | Where-Object { $_.Name -notlike '*.horodatage.txt' } | Sort-Object Name | Select-Object -Last 1
+    $actuel = $null
+    if ($dernier) {
+        $anciennes = @([IO.File]::ReadAllLines($dernier.FullName) | Where-Object { $_ -match '^[0-9A-F]{64}  \d+  ' })
+        if (($anciennes -join "`n") -eq ($lignes -join "`n")) { $actuel = $dernier.FullName }
+    }
+    if (-not $actuel -and $lignes.Count) {
+        $stampS = Get-Date -Format 'yyyyMMdd_HHmmss'
+        $contenu = @('DIGSPILL - SCELLE DES PREUVES (v1)', '==================================================',
+            "Collecte   : $nom", "Cree le    : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz') (horloge de $env:COMPUTERNAME)",
+            "Par        : $env:USERDOMAIN\$env:USERNAME", "Outil      : Generer-Interface.ps1 v$Version", '',
+            'Empreintes SHA256, tailles (octets) et chemins des fichiers scelles :') + $lignes + @('',
+            'Verification : Get-FileHash -Algorithm SHA256 <fichier> doit redonner chaque empreinte ci-dessus.',
+            "L'empreinte SHA256 de CE fichier est celle qui est horodatee dans le jeton .tsr du meme nom.",
+            'Chaque manifeste liste a son tour l''empreinte de tous les fichiers de la collecte ou de l''analyse.')
+        $actuel = Join-Path $DossierScelles "SCELLE_$stampS.txt"
+        [IO.File]::WriteAllText($actuel, (($contenu -join "`r`n") + "`r`n"), $Utf8)
+        Info "[+] scelle cree : $(Split-Path $actuel -Leaf)"
+    }
+    if ($actuel -and -not $SansInternet -and -not $SansHorodatage -and -not (Test-Path -LiteralPath ([IO.Path]::ChangeExtension($actuel, '.tsr')))) {
+        try {
+            $emp = [byte[]]::new(32)
+            $hx = (Get-FileHash -LiteralPath $actuel -Algorithm SHA256).Hash
+            for ($i = 0; $i -lt 32; $i++) { $emp[$i] = [Convert]::ToByte($hx.Substring($i * 2, 2), 16) }
+            $h = Horodater $emp $Horodateur
+            [IO.File]::WriteAllBytes([IO.Path]::ChangeExtension($actuel, '.tsq'), $h.requete)
+            [IO.File]::WriteAllBytes([IO.Path]::ChangeExtension($actuel, '.tsr'), $h.reponse)
+            [IO.File]::WriteAllText([IO.Path]::ChangeExtension($actuel, '.horodatage.txt'), ("Horodateur : $Horodateur`r`nDate du jeton : $($h.date)`r`nEmpreinte horodatee : $hx`r`n" +
+                "Controle : openssl ts -reply -in $([IO.Path]::GetFileNameWithoutExtension($actuel)).tsr -text`r`n" +
+                "Verification complete : openssl ts -verify -data $(Split-Path $actuel -Leaf) -in $([IO.Path]::GetFileNameWithoutExtension($actuel)).tsr -CAfile <chaine de certificats de l'horodateur>`r`n"), $Utf8)
+            Info "[+] scelle horodate par un tiers : $($h.date)"
+        } catch { Info "[!] horodatage impossible ($Horodateur) : $($_.Exception.Message). Le scelle reste valable, relancer plus tard avec Internet." }
+    }
+} catch { Info "[!] scelle non cree : $($_.Exception.Message)" }
+$scellesJson = New-Object System.Collections.Generic.List[string]
+if (Test-Path -LiteralPath $DossierScelles) {
+    foreach ($sc in (Get-ChildItem -LiteralPath $DossierScelles -File -Filter 'SCELLE_*.txt' | Where-Object { $_.Name -notlike '*.horodatage.txt' } | Sort-Object Name)) {
+        $tsr = [IO.Path]::ChangeExtension($sc.FullName, '.tsr'); $inf = [IO.Path]::ChangeExtension($sc.FullName, '.horodatage.txt')
+        $scellesJson.Add('{"nom":' + (J $sc.BaseName) + ',"chemin":' + (J $sc.FullName.Substring($Parent.Length + 1)) + ',"sha256":' + (J (Get-FileHash -LiteralPath $sc.FullName -Algorithm SHA256).Hash) +
+            ',"texte":' + (J ([IO.File]::ReadAllText($sc.FullName))) + ',"tsr":' + $(if (Test-Path -LiteralPath $tsr) { J ([Convert]::ToBase64String([IO.File]::ReadAllBytes($tsr))) } else { 'null' }) +
+            ',"horodatage":' + $(if (Test-Path -LiteralPath $inf) { J ([IO.File]::ReadAllText($inf)) } else { 'null' }) + ',"actuel":' + (JB ($sc.FullName -eq $actuel)) + '}')
+    }
+}
+
 # ------------------------------------------------------------------ 6. charge utile JSON
 $sb = New-Object System.Text.StringBuilder
 [void]$sb.Append('{"format":1,"genere_le":' + (J (Get-Date).ToString('yyyy-MM-dd HH:mm')) + ',"generateur":' + (J "Generer-Interface.ps1 v$Version sur $env:COMPUTERNAME") + ',"demo":false')
@@ -269,7 +376,7 @@ $premier = $true
 foreach ($k in $fichiers.Keys) {
     $f = $fichiers[$k]
     if (-not $premier) { [void]$sb.Append(',') }; $premier = $false
-    [void]$sb.Append((J $k) + ':{"chemin":' + (J $f.chemin) + ',"taille":' + $f.taille + ',"tronque":' + (JB $f.tronque) + ',"texte":' + (J $f.texte) + '}')
+    [void]$sb.Append((J $k) + ':{"chemin":' + (J $f.chemin) + ',"taille":' + $f.taille + ',"tronque":' + (JB $f.tronque) + ',"modifie":' + (J $f.modifie) + ',"texte":' + (J $f.texte) + '}')
 }
 [void]$sb.Append('},"geo_asn":[' + (($geoAsn | ForEach-Object { J $_ }) -join ',') + '],"geo_ville":[' + (($geoVille | ForEach-Object { J $_ }) -join ',') + ']')
 [void]$sb.Append(',"listes":{' + ($listesJson -join ',') + '},"bases":{"asn":' + $(if (Test-Path -LiteralPath $fAsn) { '{"source":"IPtoASN","date":' + (J (Date-Fichier $fAsn)) + '}' } else { 'null' }))
@@ -277,7 +384,7 @@ foreach ($k in $fichiers.Keys) {
 $fRw = Join-Path $Bases 'ransomware_live_FR.json'
 [void]$sb.Append(',"listes":[' + ($listesMeta -join ',') + '],"ransomware":' + $(if (Test-Path -LiteralPath $fRw) { '{"date":' + (J (Date-Fichier $fRw)) + '}' } else { 'null' }) + '}')
 [void]$sb.Append(',"ransomware_brut":' + (J (Brut 'ransomware_live_FR.json')) + ',"ransomware_recent_brut":' + (J (Brut 'ransomware_live_recent.json')))
-[void]$sb.Append(',"memoire_brut":' + (J $memoireBrut) + ',"reglages_brut":' + (J $reglagesBrut) + '}')
+[void]$sb.Append(',"memoire_brut":' + (J $memoireBrut) + ',"reglages_brut":' + (J $reglagesBrut) + ',"scelles":[' + ($scellesJson -join ',') + ']}')
 $donnees = $sb.ToString()
 
 # ------------------------------------------------------------------ 7. protection par mot de passe (facultative)
@@ -312,7 +419,8 @@ $html = (Lire 'modele.html')
 $html = $html.Replace('<!--STYLE-->', "<style>`n" + (Lire 'style.css') + "`n</style>")
 $html = $html.Replace('<!--MONDE-->', '<script type="application/json" id="monde">' + (Lire 'vendor\monde.json') + '</script>')
 $html = $html.Replace('<!--DONNEES-->', '<script type="application/json" id="donnees">' + $donnees + '</script>')
-$html = $html.Replace('<!--ECHARTS-->', "<script>`n" + (Lire 'vendor\echarts.min.js').Replace('</script', '<\/script') + "`n</script>")
+$vendor = (Get-ChildItem -LiteralPath (Join-Path $Interface 'vendor') -Filter '*.js' | Sort-Object Name | ForEach-Object { [IO.File]::ReadAllText($_.FullName, [Text.Encoding]::UTF8) }) -join "`n;`n"
+$html = $html.Replace('<!--ECHARTS-->', "<script>`n" + $vendor.Replace('</script', '<\/script') + "`n</script>")
 $html = $html.Replace('<!--APP-->', "<script>`n" + $app.Replace('</script', '<\/script') + "`n</script>")
 [IO.File]::WriteAllText($Sortie, $html, $Utf8)
 $mo = [math]::Round((Get-Item -LiteralPath $Sortie).Length / 1MB, 1)

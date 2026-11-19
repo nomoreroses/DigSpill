@@ -1,6 +1,7 @@
 Composants tiers embarques dans le fichier HTML genere
 =====================================================
 
+qrcode.min.js    qrcode-generator 1.4.4 (Kazuhiko Arase) - MIT - https://github.com/kazuhikoarase/qrcode-generator
 echarts.min.js   Apache ECharts 5.6.0 - Apache License 2.0 (voir LICENSE-echarts.txt) - https://echarts.apache.org
 monde.json       Contours des pays : world-atlas 2.0.2 (countries-110m, ISC, Mike Bostock),
                  issus de Natural Earth (domaine public) - https://github.com/topojson/world-atlas

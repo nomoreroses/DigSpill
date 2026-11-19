@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 2.4 (bêta)
+Scellé de preuve : montrer que le dossier n'a pas bougé, depuis quand, et qui l'a eu entre les mains.
+
+- **Scellé** (`Generer-Interface.ps1` 1.1) : `SCELLE_<date>.txt` dans `<POSTE>_<date>_scelles\` résume en une empreinte SHA-256 les manifestes, les journaux de collecte et d'analyse et les PV de copie. Il est réutilisé tant que rien ne change.
+- **Horodatage par un tiers** (RFC 3161) : requête construite sans outil externe, envoyée à `http://timestamp.sectigo.com/qualified` par défaut (`-Horodateur`, `-SansHorodatage`). Jeton `.tsr` + fiche `.horodatage.txt` avec les commandes OpenSSL de vérification. Seule l'empreinte part.
+- Écran **🔏 Intégrité et preuve** : empreinte et QR code du scellé, lecture du jeton (date, autorité, n° de série, correspondance avec le scellé), chaîne de possession, vérification des fichiers dans le navigateur (WebCrypto, rien n'est envoyé ; commandes Get-FileHash pour les fichiers trop gros).
+- **PV de collecte et certificat d'intégrité** imprimable : identification, intervenant et méthode, empreintes, chaîne de possession, vérification par un tiers, observations, signatures. Section « Intégrité et chaîne de possession » ajoutée au rapport technique.
+- Les journaux `.log` à la racine de la collecte sont embarqués ; date de modification de chaque fichier conservée.
+
 ## 2.3 (bêta)
 Le projet s'appelle désormais **DigSpill** (dépôt, interface, rapports, titres des fenêtres).
 

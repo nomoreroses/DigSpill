@@ -159,6 +159,24 @@ pre.apercu { max-height: 420px; overflow: auto; background: #0b1220; color: #d0d
 .accueil { max-width: 760px; margin: 60px auto; text-align: center; }
 .accueil .zone { border: 2px dashed #b2ccff; border-radius: 16px; padding: 40px 20px; background: #fff; margin-top: 20px; }
 
+/* ------------------------------------------------------------ integrite et preuve */
+.scelle-carte { background: linear-gradient(135deg, #0b1220 0%, #1d2939 100%); color: #f2f4f7; border: 0; }
+.scelle-carte .pale, .scelle-carte .doux { color: #98a2b3; }
+.scelle-carte .lignes li { border-bottom-color: rgba(255,255,255,.08); }
+.scelle-carte .btn { background: rgba(255,255,255,.1); color: #fff; border-color: rgba(255,255,255,.18); }
+.scelle-carte .btn:hover { background: rgba(255,255,255,.18); }
+.scelle-carte pre.apercu { background: rgba(0,0,0,.35); }
+.scelle-grille { display: grid; grid-template-columns: 1fr 190px; gap: 20px; align-items: start; }
+.scelle-empreinte { font-size: 19px; letter-spacing: .5px; word-break: break-all; margin-top: 6px; cursor: copy; color: #fff; }
+.scelle-qr { background: #fff; border-radius: 10px; padding: 8px; }
+.scelle-qr svg { width: 100%; height: auto; display: block; }
+ol.chaine { list-style: none; margin: 0; padding: 0 0 0 4px; position: relative; }
+ol.chaine::before { content: ''; position: absolute; left: 18px; top: 8px; bottom: 8px; width: 2px; background: #d0d5dd; }
+ol.chaine li { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; position: relative; }
+ol.chaine li .droite { margin-left: auto; }
+.chaine-ic { width: 30px; height: 30px; border-radius: 50%; background: #fff; border: 2px solid #d0d5dd; display: flex; align-items: center; justify-content: center; flex: none; z-index: 1; font-size: 14px; }
+@media (max-width: 900px) { .scelle-grille { grid-template-columns: 1fr; } }
+
 /* ------------------------------------------------------------ rapport imprimable */
 #impression { display: none; }
 @media print {
@@ -171,6 +189,14 @@ pre.apercu { max-height: 420px; overflow: auto; background: #0b1220; color: #d0d
   #impression .bloc { border: 1px solid #ccc; border-radius: 6px; padding: 8px 10px; margin: 6px 0; break-inside: avoid; }
   #impression .note { color: #444; font-size: 9pt; }
   #impression .pid { font-family: var(--mono); font-size: 8pt; color: #333; }
+  #impression .pv-tete { display: flex; justify-content: space-between; gap: 16px; border-bottom: 3px solid #000; padding-bottom: 8px; margin-bottom: 6px; }
+  #impression .pv-marque { font-weight: 800; letter-spacing: 2px; text-transform: uppercase; font-size: 9pt; }
+  #impression .pv-qr { width: 30mm; flex: none; } #impression .pv-qr svg { width: 100%; height: auto; }
+  #impression .pv th { background: #f2f2f2; font-weight: 600; }
+  #impression .pv-lignes { height: 28mm; background: repeating-linear-gradient(#fff 0, #fff 6.5mm, #bbb 6.5mm, #bbb 6.8mm); }
+  #impression .pv-signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; break-inside: avoid; }
+  #impression .pv-sig { border: 1px solid #999; border-radius: 4px; padding: 6px 8px; font-size: 9pt; }
+  #impression .pv-sig div { margin-top: 4px; } #impression .pv-zone { height: 22mm; border-top: 1px dashed #999; margin-top: 8px !important; color: #888; font-size: 8pt; }
   @page { margin: 14mm; }
 }
 .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #101828; color: #fff; padding: 10px 16px; border-radius: 10px; z-index: 90; font-size: 13.5px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }

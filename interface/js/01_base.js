@@ -5,7 +5,7 @@
 'use strict';
 
 const T = {};                       // espace de noms global de l'interface
-T.VERSION = '1.0-beta';
+T.VERSION = '1.1-beta';
 
 /* ---------------------------------------------------------------- DOM */
 T.$ = (s, r = document) => r.querySelector(s);

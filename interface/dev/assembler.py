@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 INTERFACE = Path(__file__).resolve().parent.parent
-JS = ["01_base.js", "02_analyse.js", "03_ia.js", "04_graphiques.js", "05_vues.js"]
+JS = sorted(p.name for p in (Path(__file__).resolve().parent.parent / "js").glob("*.js"))
 IGNORER = {"evtx", "utilisateurs", "registre", "prefetch", "srum", "amcache", "defender_logs", "defender_quarantaine", "binaires_neutralises",
            "memoire", "navigateurs", "parefeu_journal", "lnk", "jumplists", "usn", "_extraits", "tasks_xml"}
 MAX_OCTETS = 12 * 1024 * 1024
@@ -52,7 +52,8 @@ def fichiers(collecte: Path):
         for p in sorted(racine.iterdir(), key=lambda x: x.name.lower()):
             liste = [p] if p.is_file() else (sorted(p.iterdir(), key=lambda x: x.name.lower()) if p.is_dir() and p.name.lower() not in IGNORER else [])
             for f in liste:
-                if not f.is_file() or f.suffix.lower() not in (".csv", ".txt") or f.name.lower().startswith("listing_complet"):
+                journal = f.suffix.lower() == ".log" and f.parent == racine
+                if not f.is_file() or (f.suffix.lower() not in (".csv", ".txt") and not journal) or f.name.lower().startswith("listing_complet"):
                     continue
                 cle = f.stem if f.suffix.lower() == ".csv" else f.name
                 if cle in out:
@@ -60,7 +61,8 @@ def fichiers(collecte: Path):
                 if cle in out:
                     continue
                 texte, tronque = lire_texte(f)
-                out[cle] = {"chemin": str(f.relative_to(collecte.parent)).replace("/", "\\"), "taille": f.stat().st_size, "tronque": tronque, "texte": texte}
+                out[cle] = {"chemin": str(f.relative_to(collecte.parent)).replace("/", "\\"), "taille": f.stat().st_size, "tronque": tronque,
+                            "modifie": datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"), "texte": texte}
     return out, analyse.is_dir()
 
 
@@ -143,7 +145,7 @@ def listes(bases: Path, ips):
     return out, meta
 
 
-def charge_utile(collecte: Path, bases: Path, demo=False):
+def charge_utile(collecte: Path, bases: Path, demo=False, tsa: Path | None = None):
     fich, analyse = fichiers(collecte)
     ips = ips_collecte(fich)
     asn = bases / "ip2asn-combined.tsv.gz"
@@ -159,7 +161,73 @@ def charge_utile(collecte: Path, bases: Path, demo=False):
                   "listes": meta, "ransomware": {"date": date(bases / "ransomware_live_FR.json")} if (bases / "ransomware_live_FR.json").is_file() else None},
         "ransomware_brut": lire(bases / "ransomware_live_FR.json"), "ransomware_recent_brut": lire(bases / "ransomware_live_recent.json"),
         "memoire_brut": lire(bases / "memoire_incidents.json"), "reglages_brut": lire(collecte.parent / (collecte.name + "_reglages.json")),
+        "scelles": sceller(collecte, tsa),
     }
+
+
+# ==================================================================== scelle (meme format que le .ps1)
+def _der(tag: int, contenu: bytes) -> bytes:
+    n = len(contenu)
+    l = bytes([n]) if n < 128 else bytes([0x81, n]) if n < 256 else bytes([0x82, n >> 8, n & 255])
+    return bytes([tag]) + l + contenu
+
+
+def requete_tsa(empreinte: bytes, nonce: bytes) -> bytes:
+    algo = _der(0x30, bytes([0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00]))
+    imprint = _der(0x30, algo + _der(0x04, empreinte))
+    return _der(0x30, bytes([0x02, 0x01, 0x01]) + imprint + _der(0x02, nonce) + bytes([0x01, 0x01, 0xFF]))
+
+
+def sceller(collecte: Path, tsa_openssl: Path | None = None, date_fixe: str | None = None):
+    """Cree le scelle si les fichiers scelles ont change ; horodatage par une AUTORITE DE DEMONSTRATION (openssl) en dev."""
+    import subprocess
+    collecte = collecte.resolve()
+    tsa_openssl = tsa_openssl.resolve() if tsa_openssl else None
+    parent, nom = collecte.parent, collecte.name
+    analyse = parent / (nom + "_analyse")
+    dossier = parent / (nom + "_scelles")
+    dossier.mkdir(exist_ok=True)
+    cand = [collecte / "manifeste_sha256.csv", collecte / "collecte.log", analyse / "manifeste_analyse_sha256.csv", analyse / "analyse.log"]
+    cand += sorted(collecte.glob("PV_COPIE_*.txt"))
+    lignes = []
+    for p in cand:
+        if p.is_file():
+            lignes.append(f"{hashlib.sha256(p.read_bytes()).hexdigest().upper()}  {p.stat().st_size}  {str(p.relative_to(parent)).replace('/', chr(92))}")
+    lignes.sort(key=lambda l: l.split("  ", 2)[2])
+    existants = sorted(x for x in dossier.glob("SCELLE_*.txt") if not x.name.endswith(".horodatage.txt"))
+    actuel = None
+    if existants:
+        anc = [l for l in existants[-1].read_text(encoding="utf-8").splitlines() if re.match(r"^[0-9A-F]{64}  \d+  ", l)]
+        if anc == lignes:
+            actuel = existants[-1]
+    if actuel is None and lignes:
+        d = datetime.strptime(date_fixe, "%Y-%m-%d %H:%M:%S") if date_fixe else datetime.now()
+        contenu = ["DIGSPILL - SCELLE DES PREUVES (v1)", "=" * 50, f"Collecte   : {nom}", f"Cree le    : {d.strftime('%Y-%m-%d %H:%M:%S')} +01:00 (horloge de PC-ANALYSE-DEMO)",
+                   "Par        : MSP-DEMO\\technicien", "Outil      : Generer-Interface.ps1 v1.1", "", "Empreintes SHA256, tailles (octets) et chemins des fichiers scelles :"] + lignes + [
+                   "", "Verification : Get-FileHash -Algorithm SHA256 <fichier> doit redonner chaque empreinte ci-dessus.",
+                   "L'empreinte SHA256 de CE fichier est celle qui est horodatee dans le jeton .tsr du meme nom.",
+                   "Chaque manifeste liste a son tour l'empreinte de tous les fichiers de la collecte ou de l'analyse."]
+        actuel = dossier / f"SCELLE_{d.strftime('%Y%m%d_%H%M%S')}.txt"
+        actuel.write_bytes(("\r\n".join(contenu) + "\r\n").encode("utf-8"))
+    if actuel and tsa_openssl and not actuel.with_suffix(".tsr").exists():
+        emp = hashlib.sha256(actuel.read_bytes()).digest()
+        tsq = requete_tsa(emp, bytes([0x5A]) + os.urandom(7))
+        actuel.with_suffix(".tsq").write_bytes(tsq)
+        subprocess.run(["openssl", "ts", "-reply", "-config", str(tsa_openssl / "tsa.cnf"), "-queryfile", str(actuel.with_suffix(".tsq")),
+                        "-out", str(actuel.with_suffix(".tsr"))], check=True, capture_output=True, cwd=tsa_openssl)
+        txt = subprocess.run(["openssl", "ts", "-reply", "-in", str(actuel.with_suffix(".tsr")), "-text"], capture_output=True, text=True).stdout
+        m = re.search(r"Time stamp: (.+)", txt)
+        g = datetime.strptime(m.group(1).strip().replace(" GMT", ""), "%b %d %H:%M:%S %Y") if m else None
+        (dossier / (actuel.stem + ".horodatage.txt")).write_text(
+            f"Horodateur : AUTORITE DE DEMONSTRATION (fictive, non qualifiee)\r\nDate du jeton : {g.strftime('%Y-%m-%d %H:%M:%S') + ' UTC' if g else ''}\r\n"
+            f"Empreinte horodatee : {emp.hex().upper()}\r\n", encoding="utf-8")
+    out = []
+    for sc in sorted(x for x in dossier.glob("SCELLE_*.txt") if not x.name.endswith(".horodatage.txt")):
+        tsr, inf = sc.with_suffix(".tsr"), dossier / (sc.stem + ".horodatage.txt")
+        out.append({"nom": sc.stem, "chemin": str(sc.relative_to(parent)).replace("/", "\\"), "sha256": hashlib.sha256(sc.read_bytes()).hexdigest().upper(),
+                    "texte": sc.read_text(encoding="utf-8"), "tsr": base64.b64encode(tsr.read_bytes()).decode() if tsr.exists() else None,
+                    "horodatage": inf.read_text(encoding="utf-8") if inf.exists() else None, "actuel": sc == actuel})
+    return out
 
 
 def chiffrer(texte: str, mot_de_passe: str) -> dict:
@@ -190,7 +258,8 @@ def assembler(charge: dict, sortie: Path, mot_de_passe: str | None = None):
     html = html.replace("<!--STYLE-->", "<style>\n" + lire("style.css") + "\n</style>", 1)
     html = html.replace("<!--MONDE-->", '<script type="application/json" id="monde">' + lire("vendor/monde.json") + "</script>", 1)
     html = html.replace("<!--DONNEES-->", '<script type="application/json" id="donnees">' + donnees + "</script>", 1)
-    html = html.replace("<!--ECHARTS-->", "<script>\n" + lire("vendor/echarts.min.js").replace("</script", "<\\/script") + "\n</script>", 1)
+    vendor = "\n;\n".join(p.read_text(encoding="utf-8") for p in sorted((INTERFACE / "vendor").glob("*.js")))
+    html = html.replace("<!--ECHARTS-->", "<script>\n" + vendor.replace("</script", "<\\/script") + "\n</script>", 1)
     html = html.replace("<!--APP-->", "<script>\n" + app + "\n</script>", 1)
     sortie.write_text(html, encoding="utf-8")
     return sortie
@@ -204,15 +273,17 @@ if __name__ == "__main__":
     ap.add_argument("--demo", action="store_true")
     ap.add_argument("--mot-de-passe", default="")
     ap.add_argument("--vide", action="store_true", help="modele sans donnees (ecran d'ouverture)")
+    ap.add_argument("--tsa-demo", default="", help="dossier d'une autorite d'horodatage de DEMONSTRATION (openssl), voir tsa_demo.sh")
     a = ap.parse_args()
     if a.vide:
         charge = None
         lire = lambda p: (INTERFACE / p).read_text(encoding="utf-8")
         html = lire("modele.html").replace("<!--STYLE-->", "<style>\n" + lire("style.css") + "\n</style>").replace("<!--MONDE-->", '<script type="application/json" id="monde">' + lire("vendor/monde.json") + "</script>")
-        html = html.replace("<!--DONNEES-->", '<script type="application/json" id="donnees"></script>').replace("<!--ECHARTS-->", "<script>\n" + lire("vendor/echarts.min.js") + "\n</script>")
+        vendor = "\n;\n".join(p.read_text(encoding="utf-8") for p in sorted((INTERFACE / "vendor").glob("*.js")))
+        html = html.replace("<!--DONNEES-->", '<script type="application/json" id="donnees"></script>').replace("<!--ECHARTS-->", "<script>\n" + vendor + "\n</script>")
         html = html.replace("<!--APP-->", "<script>\n" + "\n".join(lire("js/" + j) for j in JS) + "\n</script>")
         Path(a.sortie).write_text(html, encoding="utf-8")
     else:
-        charge = charge_utile(Path(a.collecte), Path(a.bases) if a.bases else Path("/nonexistent"), a.demo)
+        charge = charge_utile(Path(a.collecte), Path(a.bases) if a.bases else Path("/nonexistent"), a.demo, Path(a.tsa_demo) if a.tsa_demo else None)
         assembler(charge, Path(a.sortie), a.mot_de_passe or None)
     print(a.sortie, round(Path(a.sortie).stat().st_size / 1024), "Ko")
