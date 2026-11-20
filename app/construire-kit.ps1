@@ -91,9 +91,15 @@ if (-not $SansOutilsTiers) {
     $notes.Add('')
 
     # Velociraptor : binaire officiel + definitions Windows.Triage.Targets, puis collecteur genere avec spec.yaml
-    $rel = Release 'Velocidex/velociraptor' $null
-    $a = $rel.assets | Where-Object { $_.name -match '-windows-amd64\.exe$' } | Select-Object -First 1
-    if (-not $a) { throw "Velociraptor : binaire windows-amd64 introuvable dans $($rel.tag_name)" }
+    # derniere release stable qui publie un binaire Windows 64 bits (une release de correctif peut n'avoir que quelques plateformes)
+    $rel = $null; $a = $null
+    foreach ($r in @(Invoke-RestMethod -Uri 'https://api.github.com/repos/Velocidex/velociraptor/releases?per_page=15' -Headers $entetes)) {
+        if ($r.prerelease -or $r.draft) { continue }
+        $exe = @($r.assets | Where-Object { $_.name -match '(?i)windows-amd64.*\.exe$' -and $_.name -notmatch '(?i)legacy|debug|\.sig' })
+        Info "   Velociraptor $($r.tag_name) : $(@($r.assets).Count) fichiers, $($exe.Count) binaire(s) Windows 64 bits"
+        if ($exe.Count) { $rel = $r; $a = ($exe | Sort-Object @{ Expression = { $_.name -match '(?i)-windows-amd64\.exe$' }; Descending = $true } | Select-Object -First 1); break }
+    }
+    if (-not $a) { throw 'Velociraptor : aucun binaire windows-amd64 dans les 15 dernieres releases' }
     $velo = Join-Path $Tmp $a.name
     Telecharger $a.browser_download_url $velo
     $defs = Join-Path $Tmp 'defs'
