@@ -93,10 +93,13 @@ if (-not $SansOutilsTiers) {
     # Velociraptor : binaire officiel + definitions Windows.Triage.Targets, puis collecteur genere avec spec.yaml
     # derniere release stable qui publie un binaire Windows 64 bits (une release de correctif peut n'avoir que quelques plateformes)
     $rel = $null; $a = $null
-    foreach ($r in @(Invoke-RestMethod -Uri 'https://api.github.com/repos/Velocidex/velociraptor/releases?per_page=15' -Headers $entetes)) {
+    # PowerShell 5.1 ne deroule pas un tableau JSON renvoye par Invoke-RestMethod : passer par une variable
+    $liste = Invoke-RestMethod -Uri 'https://api.github.com/repos/Velocidex/velociraptor/releases?per_page=15' -Headers $entetes
+    foreach ($r in $liste) {
         if ($r.prerelease -or $r.draft) { continue }
         $exe = @($r.assets | Where-Object { $_.name -match '(?i)windows-amd64.*\.exe$' -and $_.name -notmatch '(?i)legacy|debug|\.sig' })
         Info "   Velociraptor $($r.tag_name) : $(@($r.assets).Count) fichiers, $($exe.Count) binaire(s) Windows 64 bits"
+        if (-not $exe.Count) { Info ('     ' + ((@($r.assets) | ForEach-Object { $_.name }) -join ', ')) }
         if ($exe.Count) { $rel = $r; $a = ($exe | Sort-Object @{ Expression = { $_.name -match '(?i)-windows-amd64\.exe$' }; Descending = $true } | Select-Object -First 1); break }
     }
     if (-not $a) { throw 'Velociraptor : aucun binaire windows-amd64 dans les 15 dernieres releases' }
