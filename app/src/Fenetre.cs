@@ -30,6 +30,7 @@ namespace DigSpill
             Corps.Espace = 16;
             Corps.Padding = new Padding(0, 4, 8, 16);
             Controls.Add(Corps);
+            Theme.Sombre(this);
         }
 
         public virtual IEnumerable<Control> Boutons() { return new Control[0]; }
@@ -73,21 +74,23 @@ namespace DigSpill
             MinimumSize = new Size(1000, 680);
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Theme.Papier;
+            Theme.BarreTitreSombre(this);
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
             // ---------------------------------------------------------- barre laterale
-            laterale = new Panel { Dock = DockStyle.Left, Width = 270, BackColor = Theme.Nuit };
-            var logo = new Logo { Bounds = new Rectangle(26, 28, 236, 76) };
-            etapes = new ListeEtapes { Bounds = new Rectangle(26, 138, 230, 280), Anchor = AnchorStyles.Top | AnchorStyles.Left };
-            infoCle = Mise.Texte("", Theme.Police(8.5f), Theme.DouxNuit);
+            laterale = new Panel { Dock = DockStyle.Left, Width = 270, BackColor = Theme.Fond };
+            var logo = new Logo { Bounds = new Rectangle(28, 30, 160, 40) };
+            etapes = new ListeEtapes { Bounds = new Rectangle(28, 118, 228, 280), Anchor = AnchorStyles.Top | AnchorStyles.Left };
+            infoCle = Mise.Texte("", Theme.Mono(8f), Theme.Texte3);
             infoCle.Dock = DockStyle.Bottom; infoCle.Height = 112; infoCle.Padding = new Padding(26, 0, 16, 18);
             laterale.Controls.Add(logo); laterale.Controls.Add(etapes); laterale.Controls.Add(infoCle);
+            laterale.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 1, BackColor = Theme.Ligne }); // filet sur toute la hauteur (ajoute en dernier : ancre en premier)
 
             // ---------------------------------------------------------- zone principale
             zone = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Papier, Padding = new Padding(44, 30, 40, 0) };
             entete = new Panel { Dock = DockStyle.Top, Height = 92, BackColor = Theme.Papier };
-            titre = Mise.Texte("", Theme.Police(21f, FontStyle.Bold), Theme.Encre);
-            sousTitre = Mise.Texte("", Theme.Police(10.5f), Theme.Doux);
+            titre = Mise.Texte("", Theme.Police(22f, FontStyle.Bold), Theme.Texte);
+            sousTitre = Mise.Texte("", Theme.Police(11f), Theme.Texte2);
             entete.Controls.Add(titre); entete.Controls.Add(sousTitre);
             entete.Layout += delegate
             {
@@ -172,18 +175,14 @@ namespace DigSpill
             base.WndProc(ref m);
         }
 
+        /// <summary>Logo « digspill » au point rouge, vectoriel (meme trace que le SVG de l'interface HTML).</summary>
         class Logo : Control
         {
-            readonly Font f = Theme.Police(22f, FontStyle.Bold), s = Theme.Police(7.5f, FontStyle.Bold);
-            public Logo() { SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true); }
+            public Logo() { SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true); }
             protected override void OnPaint(PaintEventArgs e)
             {
-                var g = e.Graphics;
-                g.Clear(Theme.Nuit);
-                Theme.Qualite(g);
-                using (var b = new SolidBrush(Theme.Accent)) g.FillRectangle(b, 0, 6, 6, 40);
-                TextRenderer.DrawText(g, "DigSpill", f, new Point(16, 0), Color.White, TextFormatFlags.NoPadding);
-                TextRenderer.DrawText(g, "COLLECTER · COMPRENDRE · PROUVER", s, new Point(18, 52), Theme.Accent, TextFormatFlags.NoPadding);
+                e.Graphics.Clear(Theme.Fond);
+                Theme.DessinerLogo(e.Graphics, new PointF(0, 4), Math.Min(Height - 8, Width / 3.6f), Theme.Texte);
             }
         }
 

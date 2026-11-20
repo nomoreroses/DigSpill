@@ -84,24 +84,26 @@ namespace DigSpill
         }
     }
 
-    /// <summary>Carte arrondie qui contient une colonne.</summary>
+    /// <summary>Section de page : un filet de 1 px en haut, pas de cadre (comme l'interface HTML).
+    /// Avec Couleurs(), un bloc plein arrondi (scelle, alerte).</summary>
     class Carte : Panel, IHauteur
     {
         public readonly Colonne Contenu = new Colonne();
-        Color fond = Theme.Blanc, bord = Theme.Trait;
-        public int Rayon = 12;
+        Color fond = Theme.Fond, bord = Theme.Ligne;
+        bool plein;
+        public int Rayon = 10;
         public float Epaisseur = 1f;
 
         public Carte()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-            Padding = new Padding(20, 18, 20, 18);
+            Padding = new Padding(0, 20, 0, 6);
             BackColor = fond;
             Contenu.Dock = DockStyle.Fill;
             Controls.Add(Contenu);
         }
 
-        public Carte Couleurs(Color f, Color b) { fond = f; bord = b; BackColor = f; Invalidate(true); return this; }
+        public Carte Couleurs(Color f, Color b) { fond = f; bord = b; plein = true; BackColor = f; Padding = new Padding(26, 22, 26, 22); Invalidate(true); return this; }
         public Color Fond { get { return fond; } }
 
         public int HauteurPour(int largeur) { return Padding.Vertical + Contenu.HauteurPour(largeur - Padding.Horizontal); }
@@ -110,6 +112,7 @@ namespace DigSpill
         {
             var g = e.Graphics;
             g.Clear(Parent != null ? FondDe(Parent) : Theme.Papier);
+            if (!plein) { using (var pen = new Pen(bord, 1f)) g.DrawLine(pen, 0, 0, Width, 0); return; }
             Theme.Qualite(g);
             var r = new RectangleF(Epaisseur / 2, Epaisseur / 2, Width - Epaisseur - 1, Height - Epaisseur - 1);
             using (var p = Theme.Arrondi(r, Rayon))
@@ -224,12 +227,12 @@ namespace DigSpill
                      ControlStyles.ResizeRedraw | ControlStyles.Selectable | ControlStyles.StandardClick, true);
             genre = g;
             this.icone = icone;
-            Font = Theme.Police(10f, FontStyle.Bold);
+            Font = Theme.Police(10.5f, FontStyle.Bold);
             Cursor = Cursors.Hand;
             TabStop = true;
             Margin = new Padding(10, 0, 0, 0);
             Text = texte;
-            Height = 42;
+            Height = 44;
             Ajuster();
         }
 
@@ -264,20 +267,21 @@ namespace DigSpill
             Color fond, texte, bord;
             switch (genre)
             {
-                case Genre.Primaire: fond = Theme.Accent; texte = Theme.Nuit; bord = fond; break;
+                case Genre.Primaire: fond = Theme.Rouge; texte = Color.White; bord = fond; break;
                 case Genre.Danger: fond = Theme.Rouge; texte = Color.White; bord = fond; break;
-                case Genre.Succes: fond = Theme.Vert; texte = Color.White; bord = fond; break;
-                case Genre.Discret: fond = Carte.FondDe(Parent); texte = Theme.Doux; bord = fond; break;
-                default: fond = Theme.Blanc; texte = Theme.Encre; bord = Theme.Trait; break;
+                case Genre.Succes: fond = Theme.Texte; texte = Theme.Fond; bord = fond; break;
+                case Genre.Discret: fond = Carte.FondDe(Parent); texte = Theme.Texte2; bord = fond; break;
+                default: fond = Carte.FondDe(Parent); texte = Theme.Texte; bord = Theme.Ligne2; break;
             }
-            if (Enabled && (survol || appui)) fond = Melanger(fond, genre == Genre.Secondaire || genre == Genre.Discret ? Theme.Trait : Color.Black, appui ? 0.18f : 0.08f);
-            if (!Enabled) { fond = Color.FromArgb(228, 224, 214); texte = Color.FromArgb(140, 140, 140); bord = fond; }
+            bool clair = genre == Genre.Secondaire || genre == Genre.Discret;
+            if (Enabled && (survol || appui)) { if (clair) { fond = Theme.Panneau2; if (genre == Genre.Discret) texte = Theme.Texte; } else fond = Melanger(fond, Color.White, appui ? 0.04f : 0.1f); }
+            if (!Enabled) { fond = Theme.Panneau2; texte = Theme.Texte3; bord = fond; }
             var r = new RectangleF(1, 1, Width - 3, Height - 3);
-            using (var p = Theme.Arrondi(r, 9))
+            using (var p = Theme.Arrondi(r, 10))
             using (var b = new SolidBrush(fond))
             {
                 g.FillPath(b, p);
-                if (bord != fond) using (var pen = new Pen(bord, 1.5f)) g.DrawPath(pen, p);
+                if (bord != fond) using (var pen = new Pen(bord, 1f)) g.DrawPath(pen, p);
                 if (Focused && ShowFocusCues) using (var pen = new Pen(Theme.Bleu, 2f)) g.DrawPath(pen, p);
             }
             var tt = TextRenderer.MeasureText(Text ?? "", Font);
@@ -309,9 +313,9 @@ namespace DigSpill
                 case Niveau.Ok: return Theme.Vert;
                 case Niveau.Attention: return Theme.Orange;
                 case Niveau.Danger: return Theme.Rouge;
-                case Niveau.EnCours: return Theme.AccentEncre;
+                case Niveau.EnCours: return Theme.Texte;
                 case Niveau.Info: return Theme.Bleu;
-                default: return Theme.Doux;
+                default: return Theme.Texte3;
             }
         }
         public static Color Fond(Niveau n)
@@ -321,9 +325,9 @@ namespace DigSpill
                 case Niveau.Ok: return Theme.VertFond;
                 case Niveau.Attention: return Theme.OrangeFond;
                 case Niveau.Danger: return Theme.RougeFond;
-                case Niveau.EnCours: return Theme.AccentClair;
+                case Niveau.EnCours: return Theme.Panneau2;
                 case Niveau.Info: return Theme.BleuFond;
-                default: return Color.FromArgb(236, 232, 222);
+                default: return Theme.Panneau2;
             }
         }
         public static string Icone(Niveau n)
@@ -354,14 +358,14 @@ namespace DigSpill
         }
     }
 
-    /// <summary>Pastille : petit libelle arrondi colore.</summary>
+    /// <summary>Pastille : petite etiquette en Geist Mono, contour et texte de la couleur du niveau (comme .pill).</summary>
     class Pastille : Control
     {
         Color fond, texte;
         public Pastille(string t, Color texte, Color fond)
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
-            Font = Theme.Police(9f, FontStyle.Bold);
+            Font = Theme.MonoMoyen(8.5f);
             Margin = new Padding(0, 0, 8, 6);
             Definir(t, texte, fond);
         }
@@ -370,7 +374,7 @@ namespace DigSpill
         {
             this.texte = texte; this.fond = fond; Text = t;
             var s = TextRenderer.MeasureText(t ?? "", Font);
-            Size = new Size(s.Width + 22, Math.Max(26, s.Height + 8));
+            Size = new Size(s.Width + 16, Math.Max(24, s.Height + 8));
             Invalidate();
         }
         public void Definir(string t, Niveau n) { Definir(t, Niveaux.Couleur(n), Niveaux.Fond(n)); }
@@ -379,8 +383,9 @@ namespace DigSpill
             var g = e.Graphics;
             g.Clear(Carte.FondDe(Parent));
             Theme.Qualite(g);
-            using (var p = Theme.Arrondi(new RectangleF(0, 0, Width - 1, Height - 1), Height / 2f))
-            using (var b = new SolidBrush(fond)) g.FillPath(b, p);
+            using (var p = Theme.Arrondi(new RectangleF(0.5f, 0.5f, Width - 2, Height - 2), 5))
+            using (var b = new SolidBrush(fond))
+            using (var pen = new Pen(Color.FromArgb(150, texte), 1f)) { g.FillPath(b, p); g.DrawPath(pen, p); }
             TextRenderer.DrawText(g, Text, Font, ClientRectangle, texte, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
     }
@@ -390,7 +395,7 @@ namespace DigSpill
     {
         Niveau niveau;
         string titre, detail;
-        readonly Font fTitre = Theme.Police(10.5f, FontStyle.Bold), fDetail = Theme.Police(9.5f), fIcone = Theme.Icones(11f);
+        readonly Font fTitre = Theme.Police(11f, FontStyle.Bold), fDetail = Theme.Police(10f), fIcone = Theme.Icones(10.5f);
         public LigneInfo(Niveau n, string titre, string detail)
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
@@ -436,13 +441,13 @@ namespace DigSpill
         bool indeterminee;
         int phase;
         readonly Timer minuterie = new Timer { Interval = 40 };
-        public Color Couleur = Theme.Accent;
+        public Color Couleur = Theme.Texte;
         public Barre()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
             minuterie.Tick += delegate { phase = (phase + 6) % 1000; Invalidate(); };
         }
-        public int HauteurPour(int largeur) { return 10; }
+        public int HauteurPour(int largeur) { return 6; }
         public double Valeur { get { return valeur; } set { valeur = Math.Max(0, Math.Min(1, value)); if (indeterminee) Indeterminee = false; Invalidate(); } }
         public bool Indeterminee
         {
@@ -461,7 +466,7 @@ namespace DigSpill
             g.Clear(Carte.FondDe(Parent));
             Theme.Qualite(g);
             var r = new RectangleF(0, 0, Width - 1, Height - 1);
-            using (var p = Theme.Arrondi(r, Height / 2f)) using (var b = new SolidBrush(Color.FromArgb(232, 226, 212))) g.FillPath(b, p);
+            using (var p = Theme.Arrondi(r, Height / 2f)) using (var b = new SolidBrush(Theme.Ligne)) g.FillPath(b, p);
             RectangleF plein;
             if (indeterminee) { float l = Width * 0.25f; float x = (Width + l) * phase / 1000f - l; plein = new RectangleF(Math.Max(0, x), 0, Math.Min(l, Width - Math.Max(0, x)), Height - 1); }
             else plein = new RectangleF(0, 0, (float)((Width - 1) * valeur), Height - 1);
@@ -475,7 +480,7 @@ namespace DigSpill
     {
         string[] etapes = new string[0];
         int courante = -1;
-        readonly Font f = Theme.Police(10.5f), fg = Theme.Police(10.5f, FontStyle.Bold), fn = Theme.Police(9f, FontStyle.Bold), fi = Theme.Icones(9f);
+        readonly Font f = Theme.Police(10.5f), fg = Theme.Police(10.5f, FontStyle.Bold), fn = Theme.Mono(8.5f);
         public ListeEtapes() { SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true); }
         public void Definir(string[] e, int c) { etapes = e ?? new string[0]; courante = c; Invalidate(); }
         protected override void OnPaint(PaintEventArgs e)
@@ -485,15 +490,14 @@ namespace DigSpill
             Theme.Qualite(g);
             for (int i = 0; i < etapes.Length; i++)
             {
-                int y = i * 52;
+                int y = i * 44;
                 bool fait = i < courante, cour = i == courante;
-                if (i < etapes.Length - 1) using (var p = new Pen(fait ? Theme.Accent : Theme.TraitNuit, 2f)) g.DrawLine(p, 15, y + 30, 15, y + 52);
-                var rond = new Rectangle(1, y, 28, 28);
-                if (cour || fait) using (var b = new SolidBrush(Theme.Accent)) g.FillEllipse(b, rond);
-                else using (var p = new Pen(Theme.TraitNuit, 2f)) g.DrawEllipse(p, rond);
-                if (fait) TextRenderer.DrawText(g, Ic.Ok, fi, rond, Theme.Nuit, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-                else TextRenderer.DrawText(g, (i + 1).ToString(), fn, rond, cour ? Theme.Nuit : Theme.DouxNuit, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-                TextRenderer.DrawText(g, etapes[i], cour ? fg : f, new Rectangle(42, y, Width - 44, 28), cour ? Color.White : (fait ? Theme.DouxNuit : Color.FromArgb(130, 142, 162)), TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+                if (i < etapes.Length - 1) using (var p = new Pen(Theme.Ligne2, 1f)) g.DrawLine(p, 36, y + 18, 36, y + 44 + 8);
+                TextRenderer.DrawText(g, (i + 1).ToString("00"), fn, new Rectangle(0, y, 24, 26), cour ? Theme.Texte : Theme.Texte3, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding);
+                var puce = new RectangleF(32, y + 8.5f, 9, 9);
+                using (var b = new SolidBrush(cour ? Theme.Rouge : fait ? Theme.Texte2 : Theme.Fond)) g.FillEllipse(b, puce);
+                if (!cour && !fait) using (var p = new Pen(Theme.Texte3, 1.5f)) g.DrawEllipse(p, puce);
+                TextRenderer.DrawText(g, etapes[i], cour ? fg : f, new Rectangle(54, y, Width - 56, 26), cour ? Theme.Texte : (fait ? Theme.Texte2 : Theme.Texte3), TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
             }
         }
     }
@@ -503,14 +507,14 @@ namespace DigSpill
     {
         readonly string icone, titre, texte, note;
         bool survol;
-        readonly Font fIcone = Theme.Icones(26f), fTitre = Theme.Police(15f, FontStyle.Bold), fTexte = Theme.Police(10.5f), fNote = Theme.Police(9f, FontStyle.Bold);
+        readonly Font fIcone = Theme.Icones(17f), fTitre = Theme.Police(15f, FontStyle.Bold), fTexte = Theme.Police(10.5f), fNote = Theme.Mono(8.5f);
         public CarteChoix(string icone, string titre, string texte, string note)
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
             this.icone = icone; this.titre = titre; this.texte = texte; this.note = note;
             Cursor = Cursors.Hand; TabStop = true;
         }
-        public int HauteurPour(int largeur) { return 140 + Mise.HauteurTexte(texte, fTexte, largeur - 56) + (string.IsNullOrEmpty(note) ? 24 : 58); }
+        public int HauteurPour(int largeur) { return 124 + Mise.HauteurTexte(texte, fTexte, largeur - 56) + (string.IsNullOrEmpty(note) ? 24 : 58); }
         protected override void OnMouseEnter(EventArgs e) { survol = true; Invalidate(); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { survol = false; Invalidate(); base.OnMouseLeave(e); }
         protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space) OnClick(EventArgs.Empty); base.OnKeyDown(e); }
@@ -522,17 +526,17 @@ namespace DigSpill
             g.Clear(Carte.FondDe(Parent));
             Theme.Qualite(g);
             var r = new RectangleF(1, 1, Width - 3, Height - 3);
-            using (var p = Theme.Arrondi(r, 16))
-            using (var b = new SolidBrush(survol ? Color.White : Theme.Blanc))
-            using (var pen = new Pen(survol || Focused ? Theme.Accent : Theme.Trait, survol || Focused ? 2.5f : 1.5f))
+            using (var p = Theme.Arrondi(r, 10))
+            using (var b = new SolidBrush(survol ? Theme.Panneau2 : Theme.Panneau))
+            using (var pen = new Pen(Focused && ShowFocusCues ? Theme.Bleu : survol ? Theme.Ligne2 : Theme.Ligne, Focused && ShowFocusCues ? 2f : 1f))
             { g.FillPath(b, p); g.DrawPath(pen, p); }
-            var rond = new Rectangle(28, 28, 60, 60);
-            using (var b = new SolidBrush(Theme.AccentClair)) g.FillEllipse(b, rond);
-            TextRenderer.DrawText(g, icone, fIcone, rond, Theme.AccentEncre, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-            TextRenderer.DrawText(g, titre, fTitre, new Rectangle(28, 104, Width - 56, 34), Theme.Encre, TextFormatFlags.NoPadding);
-            TextRenderer.DrawText(g, texte, fTexte, new Rectangle(28, 140, Width - 56, Mise.HauteurTexte(texte, fTexte, Width - 56) + 4), Theme.Doux, Mise.Flux);
+            var rond = new Rectangle(28, 28, 44, 44);
+            using (var b = new SolidBrush(survol ? Theme.Ligne2 : Theme.Panneau2)) g.FillEllipse(b, rond);
+            TextRenderer.DrawText(g, icone, fIcone, rond, Theme.Texte, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, titre, fTitre, new Rectangle(28, 88, Width - 56, 34), Theme.Texte, TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, texte, fTexte, new Rectangle(28, 124, Width - 56, Mise.HauteurTexte(texte, fTexte, Width - 56) + 4), Theme.Texte2, Mise.Flux);
             if (!string.IsNullOrEmpty(note))
-                TextRenderer.DrawText(g, note, fNote, new Rectangle(28, Height - 36, Width - 56, 24), Theme.AccentEncre, TextFormatFlags.NoPadding);
+                TextRenderer.DrawText(g, note.ToUpperInvariant(), fNote, new Rectangle(28, Height - 36, Width - 56, 24), Theme.Texte3, TextFormatFlags.NoPadding);
         }
     }
 
@@ -546,12 +550,16 @@ namespace DigSpill
         {
             BackColor = Color.Transparent;
             SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.OptimizedDoubleBuffer, true);
-            etiquette = Mise.Texte(libelle + (obligatoire ? " *" : ""), Theme.Police(9.5f, FontStyle.Bold), Theme.Encre);
+            etiquette = Mise.Texte((libelle + (obligatoire ? " *" : "")).ToUpperInvariant(), Theme.MonoMoyen(8f), Theme.Texte3);
             cadre = new CadreSaisie();
             Saisie = saisie;
             saisie.Font = Theme.Police(10.5f);
+            saisie.BackColor = Theme.Panneau; saisie.ForeColor = Theme.Texte;
             var tb = saisie as TextBox;
-            if (tb != null) { tb.BorderStyle = BorderStyle.None; tb.BackColor = Color.White; }
+            if (tb != null) tb.BorderStyle = BorderStyle.None;
+            Theme.Sombre(saisie, saisie is ComboBox ? "DarkMode_CFD" : "DarkMode_Explorer");
+            var dtp = saisie as DateTimePicker;
+            if (dtp != null) { dtp.CalendarMonthBackground = Theme.Panneau; dtp.CalendarForeColor = Theme.Texte; dtp.CalendarTitleBackColor = Theme.Panneau2; dtp.CalendarTitleForeColor = Theme.Texte; }
             cadre.Controls.Add(saisie);
             Controls.Add(etiquette);
             Controls.Add(cadre);
@@ -579,7 +587,7 @@ namespace DigSpill
             public CadreSaisie()
             {
                 SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-                BackColor = Color.White;
+                BackColor = Theme.Panneau;
             }
             protected override void OnPaintBackground(PaintEventArgs e)
             {
@@ -588,32 +596,62 @@ namespace DigSpill
                 Theme.Qualite(g);
                 bool focus = Controls.Count > 0 && Controls[0].ContainsFocus;
                 using (var p = Theme.Arrondi(new RectangleF(1, 1, Width - 3, Height - 3), 8))
-                using (var b = new SolidBrush(Color.White))
-                using (var pen = new Pen(focus ? Theme.Accent : Theme.Trait, focus ? 2f : 1.2f))
+                using (var b = new SolidBrush(Theme.Panneau))
+                using (var pen = new Pen(focus ? Theme.Bleu : Theme.Ligne2, focus ? 2f : 1f))
                 { g.FillPath(b, p); g.DrawPath(pen, p); }
             }
         }
     }
 
-    /// <summary>Case a cocher sur fond transparent, avec texte qui passe a la ligne.</summary>
+    /// <summary>Dessin commun des cases et des choix : marque a gauche, texte qui passe a la ligne.</summary>
+    static class Coche
+    {
+        public const int Marge = 30;
+        public static void Dessiner(ButtonBase c, Graphics g, bool coche, bool rond, bool focus)
+        {
+            g.Clear(Carte.FondDe(c.Parent));
+            Theme.Qualite(g);
+            var r = new RectangleF(1, 2, 18, 18);
+            using (var p = rond ? new System.Drawing.Drawing2D.GraphicsPath() : Theme.Arrondi(r, 4))
+            {
+                if (rond) p.AddEllipse(r);
+                using (var b = new SolidBrush(coche && !rond ? Theme.Texte : Theme.Fond)) g.FillPath(b, p);
+                using (var pen = new Pen(focus ? Theme.Bleu : coche ? Theme.Texte : Theme.Texte3, focus ? 2f : 1.5f)) g.DrawPath(pen, p);
+            }
+            if (coche && rond) using (var b = new SolidBrush(Theme.Texte)) g.FillEllipse(b, r.X + 5, r.Y + 5, 8, 8);
+            if (coche && !rond) using (var pen = new Pen(Theme.Fond, 2f)) g.DrawLines(pen, new[] { new PointF(r.X + 4.5f, r.Y + 9.5f), new PointF(r.X + 7.8f, r.Y + 12.8f), new PointF(r.X + 13.5f, r.Y + 6) });
+            TextRenderer.DrawText(g, c.Text, c.Font, new Rectangle(Marge, 2, c.Width - Marge, c.Height), c.Enabled ? Theme.Texte : Theme.Texte3, Mise.Flux);
+        }
+        public static void Preparer(ButtonBase c)
+        {
+            c.Font = Theme.Police(10.5f); c.ForeColor = Theme.Texte; c.Cursor = Cursors.Hand;
+            c.BackColor = Color.Transparent; c.AutoSize = false; c.UseMnemonic = false;
+        }
+    }
+
+    /// <summary>Case a cocher sur fond noir, avec texte qui passe a la ligne.</summary>
     class Case : CheckBox, IHauteur
     {
         public Case(string texte, bool coche)
         {
-            Text = texte; Checked = coche; Font = Theme.Police(10f); ForeColor = Theme.Encre;
-            BackColor = Color.Transparent; AutoSize = false; UseMnemonic = false; TextAlign = ContentAlignment.TopLeft; CheckAlign = ContentAlignment.TopLeft;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+            Text = texte; Checked = coche; Coche.Preparer(this);
         }
-        public int HauteurPour(int largeur) { return Math.Max(24, Mise.HauteurTexte(Text, Font, largeur - 24) + 6); }
+        public int HauteurPour(int largeur) { return Math.Max(24, Mise.HauteurTexte(Text, Font, largeur - Coche.Marge) + 6); }
+        protected override void OnPaint(PaintEventArgs e) { Coche.Dessiner(this, e.Graphics, Checked, false, Focused && ShowFocusCues); }
+        protected override void OnCheckedChanged(EventArgs e) { base.OnCheckedChanged(e); Invalidate(); }
     }
 
     class Choix : RadioButton, IHauteur
     {
         public Choix(string texte, bool coche)
         {
-            Text = texte; Checked = coche; Font = Theme.Police(10f); ForeColor = Theme.Encre;
-            BackColor = Color.Transparent; AutoSize = false; UseMnemonic = false; TextAlign = ContentAlignment.TopLeft; CheckAlign = ContentAlignment.TopLeft;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+            Text = texte; Checked = coche; Coche.Preparer(this);
         }
-        public int HauteurPour(int largeur) { return Math.Max(24, Mise.HauteurTexte(Text, Font, largeur - 24) + 6); }
+        public int HauteurPour(int largeur) { return Math.Max(24, Mise.HauteurTexte(Text, Font, largeur - Coche.Marge) + 6); }
+        protected override void OnPaint(PaintEventArgs e) { Coche.Dessiner(this, e.Graphics, Checked, true, Focused && ShowFocusCues); }
+        protected override void OnCheckedChanged(EventArgs e) { base.OnCheckedChanged(e); Invalidate(); }
     }
 
     /// <summary>Journal defilant (fond sombre).</summary>
@@ -626,10 +664,11 @@ namespace DigSpill
         readonly List<string> enAttente = new List<string>();
         public Journal()
         {
-            BackColor = Theme.Nuit2;
-            Padding = new Padding(12, 10, 6, 10);
-            boite = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None, BackColor = Theme.Nuit2, ForeColor = Theme.DouxNuit, Font = Theme.Mono(8.5f), Dock = DockStyle.Fill, WordWrap = false };
+            BackColor = Theme.Panneau;
+            Padding = new Padding(14, 12, 6, 12);
+            boite = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None, BackColor = Theme.Panneau, ForeColor = Theme.Texte2, Font = Theme.Mono(9f), Dock = DockStyle.Fill, WordWrap = false };
             Controls.Add(boite);
+            Theme.Sombre(boite);
             vidage.Tick += delegate { Vider(); };
             vidage.Start();
         }
@@ -654,7 +693,7 @@ namespace DigSpill
     /// <summary>Texte d'empreinte en gros caracteres a chasse fixe.</summary>
     class Empreinte : Control, IHauteur
     {
-        readonly Font f = Theme.Mono(15f);
+        readonly Font f = Theme.MonoMoyen(15f);
         public Empreinte() { SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true); }
         string Groupes()
         {
@@ -668,7 +707,7 @@ namespace DigSpill
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.Clear(Carte.FondDe(Parent));
-            TextRenderer.DrawText(e.Graphics, Groupes(), f, ClientRectangle, Color.White, Mise.Flux);
+            TextRenderer.DrawText(e.Graphics, Groupes(), f, ClientRectangle, Theme.Texte, Mise.Flux);
         }
     }
 }

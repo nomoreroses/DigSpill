@@ -51,7 +51,7 @@ Les résultats sont écrits dans `Collecte\<POSTE>_<date>\` sur la clé PREUVES,
 
 ## Appli DigSpill.exe
 
-Une vraie fenêtre Windows à la place de la console : on saisit l'intervention, on suit la collecte, on repart avec le scellé.
+Une vraie fenêtre Windows à la place de la console, avec la même direction artistique que l'interface : on saisit l'intervention, on suit la collecte, on repart avec le scellé.
 
 ![DigSpill.exe : accueil](docs/captures/appli_accueil.png)
 
@@ -72,10 +72,10 @@ Une vraie fenêtre Windows à la place de la console : on saisit l'intervention,
 - 🆘 Secours : `moteur\secours\*.bat` (mode console), si un poste bloque DigSpill.exe.
 
 <details>
-<summary>Autres écrans (rendu de test sous Linux : les polices diffèrent de Windows)</summary>
+<summary>Autres écrans de l'appli (rendu de test sous Linux, mode démonstration)</summary>
 
 ![Feu vert](docs/captures/appli_feuvert.png)
-![Collecte en cours](docs/captures/appli_collecte.png)
+![Clé PREUVES](docs/captures/appli_support.png)
 ![Fin de collecte : scellé et éjection](docs/captures/appli_fin.png)
 
 </details>
@@ -127,7 +127,6 @@ Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable q
 ![IOC et chasse](docs/captures/ioc.png)
 ![Analyse IA : réponse d'exemple passée au vérificateur](docs/captures/ia.png)
 ![Tous les événements](docs/captures/evenements.png)
-![Thème clair](docs/captures/clair.png)
 <img src="docs/captures/mobile.png" alt="Téléphone (390 px)" width="300">
 
 </details>

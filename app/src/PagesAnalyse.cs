@@ -294,14 +294,14 @@ namespace DigSpill
             SousTitre = "Un seul fichier HTML : il s'ouvre sur n'importe quel PC, sans installation ni Internet.";
             Parcours = ParcoursAnalyse; Etape = 2;
             var c = Corps.Ajouter(NouvelleCarte());
-            c.Couleurs(Theme.Nuit, Theme.Nuit);
-            c.Contenu.Ajouter(Mise.Texte("INTERFACE", Theme.Police(9f, FontStyle.Bold), Theme.Accent));
-            c.Contenu.Ajouter(Mise.Texte(Path.GetFileName(Ctx.Interface ?? ""), Theme.Police(14f, FontStyle.Bold), Color.White));
-            c.Contenu.Ajouter(Mise.Texte(Ctx.Interface ?? "", Theme.Police(9.5f), Theme.DouxNuit));
+            c.Couleurs(Theme.Panneau, Theme.Ligne);
+            c.Contenu.Ajouter(Mise.Texte("INTERFACE", Theme.MonoMoyen(8.5f), Theme.Texte3));
+            c.Contenu.Ajouter(Mise.Texte(Path.GetFileName(Ctx.Interface ?? ""), Theme.Police(14f, FontStyle.Bold), Theme.Texte));
+            c.Contenu.Ajouter(Mise.Texte(Ctx.Interface ?? "", Theme.Mono(8.5f), Theme.Texte3));
             var a = Corps.Ajouter(NouvelleCarte());
             a.Contenu.Ajouter(Intertitre("Ensuite"));
-            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "PV de collecte", "Dans l'interface : écran « Intégrité et preuve » → « PV de collecte et certificat d'intégrité ». À imprimer et faire signer."));
-            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Rapports", "Écran « Rapports » : rapport praticien (1 page) et rapport technique sourcé, en PDF."));
+            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "PV de collecte", "Dans l'interface : onglet Preuves › Rapports › « PV de collecte ». À imprimer et faire signer."));
+            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Rapports", "Onglet Preuves › Rapports : rapport praticien (1 page) et rapport technique sourcé, en PDF."));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Attention, "Fichier sensible", "Il contient les traces du poste (comptes, chemins, sites). Pour l'envoyer : version protégée par mot de passe, mot de passe par un autre canal."));
         }
 

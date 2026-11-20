@@ -7,6 +7,7 @@ Un seul clic : la clé ne montre plus que `DigSpill.exe` et un dossier `moteur\`
 - **Rangement** : scripts, interface, outils, `spec.yaml` et `digspill.ini` dans `moteur\` ; `Collecteur-Velociraptor.exe` dans `moteur\outils\`. Les résultats restent dans `Collecte\` à la racine de la clé. L'ancien rangement (tout à la racine) fonctionne encore.
 - Les `.bat` passent dans `moteur\secours\`, chemins ajustés, pour un poste qui bloquerait DigSpill.exe.
 - **DigSpill.exe 1.1** : lit les identifiants enregistrés du compte de la session avant l'élévation (sous manifeste, dans `exposition\`) ; bouton « Identifiants de ce compte » pour les autres sessions (remplace LISTER_IDENTIFIANTS.bat) ; technicien retenu dans `moteur\digspill.ini`.
+- **DigSpill.exe en noir**, même direction artistique que l'interface HTML : fond `#0b0b0c`, logo vectoriel au point rouge, polices Geist et Geist Mono embarquées dans l'exe (OFL), sections à filets au lieu de cartes, bouton principal rouge, étapes à puces comme la Chronologie, pastilles en Geist Mono, barre de titre et barres de défilement sombres sous Windows 10/11. La date de découverte se saisit au clavier (JJ/MM/AAAA HH:MM) au lieu du calendrier Windows, resté clair.
 - `SIGNER.bat E:\DigSpill.exe` signe directement l'exe de la clé. Les messages des scripts et de l'interface renvoient à DigSpill.exe au lieu des `.bat`.
 
 ## 2.6 (bêta)
