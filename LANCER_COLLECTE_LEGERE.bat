@@ -8,7 +8,7 @@ if %errorlevel% neq 0 (
     exit /b
 )
 cd /d "%~dp0"
-title Collecte forensique LEGERE - NE PAS RETIRER LA CLE
+title DigSpill - Collecte forensique LEGERE - NE PAS RETIRER LA CLE
 echo.
 echo  === Collecte legere (connexions, executions, identifiants) ===
 echo.

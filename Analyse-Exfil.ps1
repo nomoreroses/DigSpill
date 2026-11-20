@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Analyse-Exfil.ps1 v2.2 - Analyse d'une collecte (Collecte-Exfil.ps1) orientee EXFILTRATION.
+    DigSpill - Analyse-Exfil.ps1 v2.2 - Analyse d'une collecte (Collecte-Exfil.ps1) orientee EXFILTRATION.
     Lance automatiquement en fin de collecte, ou a posteriori sur une collecte existante (poste d'analyse) :
 
       powershell -ExecutionPolicy Bypass -File Analyse-Exfil.ps1 -Collecte E:\Collecte\POSTE_20261117_150121
@@ -240,7 +240,7 @@ function G([string]$canal, [string]$statut, [string]$constat, [string]$fichier) 
     $Grid.Add([pscustomobject]@{ Canal = $canal; Statut = $statut; Constat = $constat; Fichier = $fichier })
 }
 
-Log "=== Analyse exfiltration v$Version - $Computer ==="
+Log "=== DigSpill - analyse exfiltration v$Version - $Computer ==="
 Log "    Collecte : $Collecte"
 Log "    Sortie   : $Sortie"
 Log "    Conteneur Velociraptor : $(if ($script:Zip) { $Velociraptor } else { 'aucun (complements indisponibles)' })"
@@ -1116,7 +1116,7 @@ Step 'Synthese (SYNTHESE_EXFILTRATION.txt) et lisez-moi' {
     $tzc = $Info['Fuseau']; $tza = [TimeZoneInfo]::Local
     $off = foreach ($w in $script:Win) { "$($w.Id) : UTC$(if ($tza.GetUtcOffset($w.Debut) -ge [TimeSpan]::Zero) { '+' })$($tza.GetUtcOffset($w.Debut).ToString('hh\:mm'))" }
     $S = New-Object System.Collections.Generic.List[string]
-    $S.Add("SYNTHESE EXFILTRATION - $Computer - analyse du $(Get-Date -Format 'yyyy-MM-dd HH:mm') (v$Version)")
+    $S.Add("DigSpill - SYNTHESE EXFILTRATION - $Computer - analyse du $(Get-Date -Format 'yyyy-MM-dd HH:mm') (v$Version)")
     $S.Add('Grille de verification, pas une conclusion. Chaque ligne renvoie a un fichier chiffre.')
     $S.Add("Heures : heure locale de la machine d'analyse ($($tza.Id)). $($off -join ' ; ')$(if ($tzc -and $tzc -ne $tza.Id) { " ATTENTION : fuseau du poste collecte = $tzc" })")
     $S.Add("Horloge du poste : voir A_COMPLETER_TECHNICIEN.txt de la collecte (ecart avec la box / serveur de temps).")

@@ -1,4 +1,6 @@
-# Collecte de triage forensique Windows (bêta)
+# DigSpill (bêta)
+
+**Collecte et analyse forensique Windows : ce que l'attaquant a pu creuser (*dig*) et faire sortir (*spill*).**
 
 Clé USB de collecte à lancer sur un poste Windows suspecté d'intrusion, d'exfiltration ou de rançongiciel. Un double-clic, une validation UAC, aucune autre interaction. La collecte est suivie d'une analyse orientée exfiltration, qu'on peut relancer plus tard sur le poste d'analyse.
 
@@ -10,10 +12,15 @@ Clé USB de collecte à lancer sur un poste Windows suspecté d'intrusion, d'exf
 LANCER_COLLECTE.bat           collecte complète : PowerShell, Velociraptor, puis analyse exfiltration
 LANCER_COLLECTE_LEGERE.bat    autres postes du réseau : connexions, exécutions, identifiants
 LISTER_IDENTIFIANTS.bat       cibles du gestionnaire d'identifiants (à lancer dans chaque session, sans élévation)
-ANALYSER_COLLECTE.bat         analyse a posteriori d'une collecte (glisser-déposer le dossier)
+ANALYSER_COLLECTE.bat         analyse a posteriori d'une collecte (glisser-déposer le dossier), puis interface HTML
+GENERER_INTERFACE.bat         crée UN fichier HTML autonome pour lire la collecte sur n'importe quel PC
+GENERER_INTERFACE_PROTEGEE.bat  idem, fichier protégé par mot de passe (pour un assureur, un expert)
 Collecte-Exfil.ps1            script de collecte (PowerShell 5.1)
 Analyse-Exfil.ps1             analyse exfiltration (lit la collecte et le conteneur Velociraptor)
 Copier-Preuves.ps1            seconde copie des preuves vérifiée par SHA256, procès-verbal
+Generer-Interface.ps1         assemble le fichier HTML autonome (interface\ + données de la collecte)
+interface\                    code de l'interface (HTML, CSS, JavaScript, ECharts, carte du monde)
+outils\bases\                 bases publiques téléchargées par le .bat et mémoire des incidents (non versionné)
 Collecteur-Velociraptor.exe   à générer, voir plus bas (non versionné)
 outils\7zr.exe                https://www.7-zip.org/a/7zr.exe (non versionné)
 outils\winpmem_mini_x64_rc2.exe  https://github.com/Velocidex/WinPmem/releases (non versionné)
@@ -29,6 +36,83 @@ Les résultats sont écrits dans `Collecte\<POSTE>_<date>\` sur la clé, avec un
 2. Toujours sur place : remplir `A_COMPLETER_TECHNICIEN.txt` (date de découverte, heure de la box, journaux de la box), puis lancer `LISTER_IDENTIFIANTS.bat` dans la session de chaque compte.
 3. Au bureau : `Copier-Preuves.ps1 -Source E:\Collecte -Destination F:\PREUVES_<client>` (support NTFS/exFAT distinct, conservé à part).
 4. Sur le poste d'analyse : `ANALYSER_COLLECTE.bat` (analyse complète, avec la $MFT du conteneur Velociraptor). Ajouter des fenêtres si besoin : `ANALYSER_COLLECTE.bat "E:\Collecte\POSTE_20261117_150121" "2026-10-18 22:00;2026-10-19 06:00"`.
+5. À la fin de l'analyse, le fichier `Collecte\<POSTE>_<date>_INTERFACE.html` est créé et s'ouvre : c'est lui qu'on lit, qu'on présente et qu'on archive avec le dossier. Pour le régénérer (après avoir saisi des réglages, par exemple) : glisser le dossier de collecte sur `GENERER_INTERFACE.bat`.
+
+## Interface autonome (un seul fichier HTML)
+
+`GENERER_INTERFACE.bat` crée **un seul fichier** `<POSTE>_<date>_INTERFACE.html` qui contient l'interface, les graphiques, la carte du monde et toutes les données de la collecte et de l'analyse. On le copie sur n'importe quel PC et on l'ouvre d'un double-clic (Edge, Chrome ou Firefox) : pas de serveur, pas d'installation, ça fonctionne hors ligne.
+
+![Vue d'ensemble](docs/captures/vue.png)
+
+| Écran | Ce qu'il montre |
+|---|---|
+| 🏠 Vue d'ensemble | Alertes, indicateurs, grille par canal, à faire maintenant, compte à rebours des 72 h CNIL |
+| 🕒 Chronologie | Frise de tous les événements (sessions, connexions, force brute, exécutions, fichiers, navigation, rançongiciel), zoom sur chaque fenêtre de l'attaquant |
+| 🌍 IP et pays | Carte des connexions, pays et opérateur, hébergeur / VPN, listes noires publiques, liste blanche partagée |
+| 📤 Exfiltration | Volumes SRUM et **test de plausibilité** : ce qui a *pu* sortir, comparé à la base patients et au débit de la ligne |
+| 👁️ Visibilité | Pour chaque heure, quelles sources couvraient le poste ; traces d'anti-forensique |
+| 🏥 Santé et RGPD | Logiciels métier et catégories de données exposées (déductions sourcées), horaires du cabinet, éléments pour le formulaire CNIL |
+| 🔑 Identifiants et fuites | Comptes à faire changer, mot de passe testé sur Have I Been Pwned (k-anonymat), recherche du client sur les sites de fuite |
+| 🧬 IOC et chasse | Hachages, persistance, **composant Datto RMM** prêt à lancer sur tout le parc, indicateurs déjà vus chez un autre client |
+| 🤖 Analyse IA | Claude lit une synthèse **filtrée**, cite une preuve par phrase, et le fichier **vérifie chaque citation** |
+| 🔏 Intégrité et preuve | **Scellé** horodaté par un tiers, chaîne de possession, vérification des fichiers dans le navigateur, **PV de collecte** à signer |
+| 🖨️ Rapports | Rapport praticien (1 page) et rapport technique sourcé, en PDF via l'impression |
+
+Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable qui affiche la ligne du CSV d'origine et le SHA256 du fichier dans le manifeste.
+
+<details>
+<summary>Autres captures (collecte fictive de démonstration)</summary>
+
+![Chronologie](docs/captures/chrono.png)
+![IP et pays](docs/captures/ip.png)
+![Exfiltration](docs/captures/exfil.png)
+![Visibilité](docs/captures/visibilite.png)
+![Santé et RGPD](docs/captures/sante.png)
+![Identifiants et fuites](docs/captures/fuites.png)
+![IOC et chasse](docs/captures/ioc.png)
+![Analyse IA : réponse d'exemple passée au vérificateur](docs/captures/ia.png)
+![Intégrité et preuve](docs/captures/integrite.png)
+
+</details>
+
+### Scellé et valeur de preuve
+
+![Intégrité et preuve](docs/captures/integrite.png)
+
+| | Ce que fait DigSpill | Ce que ça prouve |
+|---|---|---|
+| 🧾 | Manifeste SHA-256 de chaque fichier collecté et analysé | Aucun fichier n'a changé depuis |
+| 🔏 | **Scellé** `SCELLE_<date>.txt` : empreintes des manifestes, journaux et PV de copie | Un seul code de 64 caractères résume tout le dossier |
+| ⏱️ | Scellé **horodaté par un tiers** (jeton RFC 3161, `.tsr`) | Le dossier existait tel quel à cette date |
+| 🔗 | Chaîne de possession reconstituée (journaux, manifestes, PV de copie, scellés) | Qui a eu les preuves, quand, pour faire quoi |
+| 🧪 | Vérification dans le navigateur : on choisit le dossier, chaque fichier est re-haché | N'importe qui peut refaire le contrôle |
+| ✍️ | **PV de collecte et certificat d'intégrité** imprimable, à signer (technicien, cabinet, témoin) | Qui a fait quoi, avec quels outils |
+
+- Le scellé est écrit dans `Collecte\<POSTE>_<date>_scelles\`. Il n'est recréé que si un élément a changé : le premier horodatage reste valable.
+- Horodateur par défaut : `http://timestamp.sectigo.com/qualified` (Sectigo, annoncé conforme eIDAS ; conditions d'usage et éventuels frais à vérifier). Autre autorité : `-Horodateur <url>`. Sans horodatage : `-SansHorodatage`. Seule l'empreinte du scellé est envoyée.
+- Vérifier le jeton : `openssl ts -verify -data SCELLE_<date>.txt -in SCELLE_<date>.tsr -CAfile <chaîne de l'autorité>`.
+- ⚖️ En France la preuve est libre au pénal (art. 427 CPP) ; un écrit électronique vaut s'il identifie son auteur et garantit son intégrité (art. 1366 C. civ.). Un horodatage **qualifié** eIDAS est présumé exact (art. 41 du règlement UE 910/2014). Le PV reste un document de prestataire, pas un constat de commissaire de justice. À valider avec un avocat ou l'assureur.
+
+### Ce qui part sur Internet (et ce qui ne part pas)
+
+- **Rien ne sort du fichier sans un clic.** Les données de la collecte restent dans le fichier.
+- **Bases publiques** : le `.bat` télécharge des listes publiques entières dans `outils\bases` (pays et opérateur IPtoASN, Tor, FireHOL, blocklist.de, GreenSnow, CINS, Feodo, Spamhaus DROP, victimes publiées sur ransomware.live) et les compare **en local**. Le nom du client et ses IP ne sont jamais envoyés. Option `-AvecVilles` : base des villes DB-IP Lite (~40 Mo). Option `-SansInternet` : utilise seulement les bases déjà présentes.
+- **Horodatage** : seule l'empreinte SHA-256 du scellé part vers l'autorité d'horodatage (désactivable).
+- **Sur clic seulement** : Have I Been Pwned (seuls les 5 premiers caractères du hachage SHA-1 du mot de passe), Shodan InternetDB (l'IP choisie), liens VirusTotal / MalwareBazaar (le hachage choisi), Claude (la synthèse filtrée, affichée avant l'envoi : comptes pseudonymisés U1, U2…, noms de fichiers et dossiers masqués, URL réduites au domaine, e-mails masqués).
+- Sans clé API, le bouton « Copier consignes + synthèse » permet d'utiliser claude.ai, puis de recoller la réponse pour en vérifier les citations.
+
+### Réglages et mémoire des incidents
+
+- Les réglages saisis dans l'interface (client, date de découverte, débit de la box, liste blanche, horaires du cabinet…) sont gardés dans le navigateur. « Exporter les réglages » produit `<POSTE>_<date>_reglages.json` : posé à côté du dossier de collecte, il est repris à la prochaine génération.
+- `outils\bases\memoire_incidents.json` garde les IOC (IP, hachages, noms d'outils) de chaque collecte traitée : l'interface signale un indicateur déjà vu chez un autre client.
+
+### Sécurité du fichier
+
+Le fichier HTML est **aussi sensible que la collecte** (comptes, chemins, sites consultés). Pour l'envoyer : `GENERER_INTERFACE_PROTEGEE.bat` (AES-256 + HMAC-SHA256, clé dérivée du mot de passe par PBKDF2, 200 000 itérations ; .NET 4.7.2 minimum), et le mot de passe par un autre canal.
+
+### Développement
+
+Le code de l'interface est dans `interface\` (`modele.html`, `style.css`, `js\01_base.js` à `06_integrite.js`, ECharts et la carte dans `vendor\`). `interface\dev\generer_demo.py` crée une collecte fictive (adresses de documentation RFC 5737, domaines `.example`) et `interface\dev\assembler.py` produit le même fichier que le `.ps1`, pour tester sans Windows. `interface\dev\tsa_demo.sh` crée une autorité d'horodatage **fictive** (OpenSSL) pour la démo : `assembler.py --tsa-demo demo/tsa`.
 
 ## Arborescence
 
@@ -43,6 +127,8 @@ Collecte\
   <POSTE>_<date>_analyse\       analyse exfiltration
     SYNTHESE_EXFILTRATION.txt   grille par canal + conclusion graduée proposée
     00_LISEZMOI.txt             ordre de lecture des tableaux
+  <POSTE>_<date>_scelles\       SCELLE_<date>.txt + jeton d'horodatage (.tsq, .tsr, .horodatage.txt)
+  <POSTE>_<date>_INTERFACE.html interface autonome
   Velociraptor\                 conteneurs .zip (+ .sha256)
   Identifiants\                 sorties de LISTER_IDENTIFIANTS.bat
 ```
@@ -107,6 +193,7 @@ Le collecteur sert aussi de moteur d'analyse (ESE/SRUM, SQLite, registre hors li
 - Windows 10 / 11 ou Server 2016+, PowerShell 5.1, compte administrateur local.
 - Clé USB de 32 Go minimum, NTFS ou exFAT de préférence (FAT32 limite chaque fichier à 4 Go).
 - Pour la RAM : disque externe NTFS/exFAT, dossier `MEMOIRE` à la racine, espace libre supérieur à la RAM du poste.
+- Interface autonome : Windows PowerShell 5.1 pour la générer ; un navigateur récent (Edge, Chrome, Firefox) pour la lire, sur n'importe quel système.
 
 ## Précautions
 
