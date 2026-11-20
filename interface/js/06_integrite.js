@@ -56,12 +56,13 @@ T.qrSvg = (texte, taille = 4) => { try { const q = qrcode(0, 'M'); q.addData(tex
 T.chaine = () => T.memo('chaine', () => {
   const ev = [], add = (date, acteur, action, detail, preuve, icone) => { const d = T.pdate(date); ev.push({ date: d, brut: date, acteur, action, detail, preuve, icone }); };
   const info = T.texte('infos_collecte.txt'), champ = k => ((new RegExp('^' + k + '\\s*:\\s*(.+)$', 'mi')).exec(info) || [])[1] || '';
+  const qui = champ('Technicien') ? `${champ('Technicien')}${champ('Societe') ? ' (' + champ('Societe') + ')' : ''}` : champ('Lance par');
   const log = T.texte('collecte.log').split(/\r?\n/).filter(Boolean);
   const debut = log[0], fin = log.reverse().find(l => /Collecte terminee/i.test(l)) || '';
-  if (debut) add(debut.slice(0, 19), champ('Lance par') || '?', 'Collecte démarrée sur le poste', `${champ('Poste')} · mode ${champ('Mode') || '?'} · script ${champ('Version script') || '?'}`, 'collecte.log', '🔌');
+  if (debut) add(debut.slice(0, 19), qui || '?', 'Collecte démarrée sur le poste', `${champ('Poste')} · mode ${champ('Mode') || '?'} · script ${champ('Version script') || '?'}`, 'collecte.log', '🔌');
   const man = (T.D.fichiers || {}).manifeste_sha256;
-  if (man) add(man.modifie || T.identite().date, champ('Lance par') || '?', 'Manifeste SHA256 de la collecte', `${T.nb(T.table('manifeste_sha256').length)} fichiers, chacun avec son empreinte`, 'manifeste_sha256#1', '🧾');
-  if (fin) add(fin.slice(0, 19), champ('Lance par') || '?', 'Collecte terminée', fin.slice(21).replace(/^=+\s*|\s*=+$/g, ''), 'collecte.log', '✅');
+  if (man) add(man.modifie || T.identite().date, qui || '?', 'Manifeste SHA256 de la collecte', `${T.nb(T.table('manifeste_sha256').length)} fichiers, chacun avec son empreinte`, 'manifeste_sha256#1', '🧾');
+  if (fin) add(fin.slice(0, 19), qui || '?', 'Collecte terminée', fin.slice(21).replace(/^=+\s*|\s*=+$/g, ''), 'collecte.log', '✅');
   const alog = T.texte('analyse.log').split(/\r?\n/).filter(Boolean);
   if (alog.length) add(alog[alog.length - 1].slice(0, 19), '?', "Analyse terminée (dossier _analyse, la collecte n'est pas modifiée)", `${T.nb(T.table('manifeste_analyse_sha256').length)} fichiers d'analyse dans leur propre manifeste`, 'analyse.log', '🔬');
   for (const [k, f] of Object.entries(T.D.fichiers || {})) if (/^PV_COPIE_.*\.txt$/i.test(k)) {
@@ -191,13 +192,16 @@ T.pvHtml = () => {
   <div class="pv-tete"><div><div class="pv-marque">DigSpill</div><h1>Procès-verbal de collecte et certificat d'intégrité</h1>
   <div class="note">Collecte ${esc(id.nom)} · document établi le ${esc(T.flong(new Date()))}</div></div><div class="pv-qr">${qr}</div></div>
   <h2>1. Identification</h2><table>
-  ${ligne('Client (responsable de traitement)', esc(R.client || '……………………………………………'))}
+  ${ligne('Client (responsable de traitement)', esc(champ('Cabinet') || R.client || '……………………………………………'))}
+  ${champ('Present') ? ligne('Présent pour le cabinet', esc(champ('Present'))) : ''}
+  ${champ('Ticket') ? ligne('N° de ticket', esc(champ('Ticket'))) : ''}
+  ${champ('Motif') ? ligne('Motif de l\'intervention', esc(champ('Motif'))) : ''}
   ${ligne('Poste examiné', esc(champ('Poste') || id.poste))}
   ${ligne('Date et heure de la collecte', esc(champ('Date locale') || id.date) + (champ('Date UTC') ? ' · UTC ' + esc(champ('Date UTC')) : '') + (champ('Fuseau') ? ' · ' + esc(champ('Fuseau')) : ''))}
-  ${ligne('Découverte de l\'incident', esc(R.decouverte ? T.flong(R.decouverte) : '……………………………………………'))}
+  ${ligne('Découverte de l\'incident', esc(R.decouverte ? T.flong(R.decouverte) : (champ('Decouverte') || '……………………………………………')))}
   </table>
   <h2>2. Intervenant et méthode</h2><table>
-  ${ligne('Technicien', esc(R.technicien || '……………………………………………') + ' · compte utilisé : ' + esc(champ('Lance par') || '?'))}
+  ${ligne('Technicien', esc(champ('Technicien') || R.technicien || '……………………………………………') + (champ('Societe') ? ' · ' + esc(champ('Societe')) : '') + ' · compte utilisé : ' + esc(champ('Lance par') || '?'))}
   ${ligne('Outils', `DigSpill (script de collecte ${esc(champ('Version script') || '?')}, interface ${esc(T.VERSION)})` + (champ('Velociraptor') ? '<br>Velociraptor : ' + esc(champ('Velociraptor')) : ''))}
   ${ligne('Méthode', 'Exécution depuis une clé USB dédiée ; copie des journaux et artefacts sans les modifier ; manifeste SHA-256 de chaque fichier collecté ; analyse dans un dossier séparé, la collecte n\'étant pas modifiée.')}
   </table>
@@ -213,6 +217,6 @@ T.pvHtml = () => {
   <h2>5. Vérification par un tiers</h2><div class="bloc note">Chaque fichier : <b>Get-FileHash -Algorithm SHA256</b> doit redonner l'empreinte du manifeste. Le scellé : son empreinte SHA-256 doit être celle ci-dessus. Le jeton : <b>openssl ts -verify -data ${esc(sc ? sc.nom : 'SCELLE')}.txt -in ${esc(sc ? sc.nom : 'SCELLE')}.tsr -CAfile &lt;chaîne de l'autorité&gt;</b>. Le fichier d'interface permet aussi de recalculer toutes les empreintes (écran « Intégrité et preuve »).</div>
   <h2>6. Observations</h2><div class="pv-lignes"></div>
   <h2>7. Signatures</h2><div class="pv-signatures">
-  ${['Le technicien', 'Le représentant du cabinet', 'Témoin (facultatif)'].map(x => `<div class="pv-sig"><b>${x}</b><div>Nom, qualité :</div><div>Date :</div><div class="pv-zone">Signature</div></div>`).join('')}</div>
+  ${[['Le technicien', champ('Technicien') || R.technicien], ['Le représentant du cabinet', champ('Present')], ['Témoin (facultatif)', '']].map(([x, n]) => `<div class="pv-sig"><b>${x}</b><div>Nom, qualité : ${esc(n || '')}</div><div>Date :</div><div class="pv-zone">Signature</div></div>`).join('')}</div>
   <p class="note" style="margin-top:14px">Document établi par un prestataire informatique. Il ne constitue pas un constat de commissaire de justice ; sa force probante est appréciée par le juge. Lorsque l'horodatage est délivré par un prestataire qualifié, le règlement (UE) n° 910/2014 « eIDAS » (art. 41) lui attache une présomption d'exactitude de la date et de l'heure et d'intégrité des données concernées.</p></div>`;
 };

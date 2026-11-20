@@ -9,6 +9,8 @@ Clé USB de collecte à lancer sur un poste Windows suspecté d'intrusion, d'exf
 ## Contenu de la clé
 
 ```
+DigSpill.exe                  appli Windows : collecter (poste suspect) ou analyser (votre PC), à construire avec app\CONSTRUIRE.bat
+digspill.ini                  technicien et réglages lus par DigSpill.exe (modèle : digspill.ini.exemple)
 LANCER_COLLECTE.bat           collecte complète : PowerShell, Velociraptor, puis analyse exfiltration
 LANCER_COLLECTE_LEGERE.bat    autres postes du réseau : connexions, exécutions, identifiants
 LISTER_IDENTIFIANTS.bat       cibles du gestionnaire d'identifiants (à lancer dans chaque session, sans élévation)
@@ -29,6 +31,35 @@ outils\winpmem_mini_x64_rc2.exe  https://github.com/Velocidex/WinPmem/releases (
 Les résultats sont écrits dans `Collecte\<POSTE>_<date>\` sur la clé, avec un manifeste SHA256. L'analyse est écrite à côté, dans `Collecte\<POSTE>_<date>_analyse\` : la collecte d'origine n'est pas modifiée.
 
 **Commencer la lecture par `SYNTHESE.txt`** (alertes de la collecte), **puis `SYNTHESE_EXFILTRATION.txt`** (grille par canal de sortie et proposition de conclusion graduée). Remplir `A_COMPLETER_TECHNICIEN.txt` sur place.
+
+## Appli DigSpill.exe
+
+Une vraie fenêtre Windows à la place de la console : on saisit l'intervention, on suit la collecte, on repart avec le scellé.
+
+![DigSpill.exe : accueil](docs/captures/appli_accueil.png)
+
+| 🔌 Collecter (sur le poste suspect) | 💻 Analyser (sur votre PC) |
+|---|---|
+| 1. **Intervention** : technicien, cabinet, personne présente, ticket, motif | 1. **Collecte à analyser** : détectée sur la clé PREUVES (même en lecture seule) |
+| 2. **Feu vert** : signes de chiffrement en cours, sans rien écrire sur le poste | 2. **Copie vérifiée** dans un dossier de travail (SHA-256, PV de copie) |
+| 3. **Clé PREUVES** : branchée seulement maintenant, fichiers pièges posés | 3. **Analyse complète** ($MFT) puis **interface HTML** et scellé horodaté |
+| 4. **Collecte** surveillée : coupure immédiate de la clé au moindre signe | 4. **Rapport** : interface, PV de collecte à imprimer et faire signer |
+| 5. **Scellé** affiché en grand (à photographier), puis **éjection** propre | |
+
+- 🧰 Deux clés : OUTILS en lecture seule (interrupteur), PREUVES chiffrée. Détails et limites : [docs/CLES_USB.md](docs/CLES_USB.md).
+- ✍️ Signature de l'exe (pour afficher le nom de l'éditeur au lieu de « Inconnu ») : [docs/SIGNATURE.md](docs/SIGNATURE.md).
+- 🛠️ Construire : `app\CONSTRUIRE.bat` (compilateur C# déjà présent dans Windows, rien à installer), puis `app\SIGNER.bat`.
+- 🧪 Démonstration sans rien toucher : `DigSpill.exe --demo`.
+- Les `.bat` restent utilisables tels quels (mode console).
+
+<details>
+<summary>Autres écrans (rendu de test sous Linux : les polices diffèrent de Windows)</summary>
+
+![Feu vert](docs/captures/appli_feuvert.png)
+![Collecte en cours](docs/captures/appli_collecte.png)
+![Fin de collecte : scellé et éjection](docs/captures/appli_fin.png)
+
+</details>
 
 ## Déroulé conseillé
 
@@ -112,7 +143,7 @@ Le fichier HTML est **aussi sensible que la collecte** (comptes, chemins, sites 
 
 ### Développement
 
-Le code de l'interface est dans `interface\` (`modele.html`, `style.css`, `js\01_base.js` à `06_integrite.js`, ECharts et la carte dans `vendor\`). `interface\dev\generer_demo.py` crée une collecte fictive (adresses de documentation RFC 5737, domaines `.example`) et `interface\dev\assembler.py` produit le même fichier que le `.ps1`, pour tester sans Windows. `interface\dev\tsa_demo.sh` crée une autorité d'horodatage **fictive** (OpenSSL) pour la démo : `assembler.py --tsa-demo demo/tsa`.
+Le code de l'appli Windows est dans `app\` (C# 5, WinForms, .NET Framework 4.x : `app\CONSTRUIRE.bat`). Le code de l'interface est dans `interface\` (`modele.html`, `style.css`, `js\01_base.js` à `06_integrite.js`, ECharts et la carte dans `vendor\`). `interface\dev\generer_demo.py` crée une collecte fictive (adresses de documentation RFC 5737, domaines `.example`) et `interface\dev\assembler.py` produit le même fichier que le `.ps1`, pour tester sans Windows. `interface\dev\tsa_demo.sh` crée une autorité d'horodatage **fictive** (OpenSSL) pour la démo : `assembler.py --tsa-demo demo/tsa`.
 
 ## Arborescence
 

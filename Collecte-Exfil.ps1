@@ -10,6 +10,10 @@
       -Days 60              Periode d'analyse pour les evenements et fichiers recents
       -SkipFileSearch       Ne pas rechercher les archives / outils suspects
       -SkipFullListing      Ne pas faire le listing complet des disques (mode Complet)
+      -Destination E:\      Support de preuves (defaut : la cle des outils). La collecte va dans <Destination>\Collecte\.
+                            Permet d'avoir une cle OUTILS en lecture seule et une cle PREUVES distincte (DigSpill.exe).
+      -Technicien, -Societe, -Client, -Present, -Ticket, -Motif, -Decouverte
+                            Intervention (saisie dans DigSpill.exe) : ecrites dans infos_collecte.txt et reprises dans le PV.
 
     Memoire vive : brancher un disque externe NTFS ou exFAT contenant un dossier MEMOIRE a la racine
     AVANT de lancer. Sinon la RAM est capturee sur la cle seulement si elle est NTFS/exFAT et assez grande.
@@ -25,7 +29,15 @@ param(
     [ValidateSet('Complet','Leger')][string]$Mode = 'Complet',
     [int]$Days = 60,
     [switch]$SkipFileSearch,
-    [switch]$SkipFullListing
+    [switch]$SkipFullListing,
+    [string]$Destination,
+    [string]$Technicien,
+    [string]$Societe,
+    [string]$Client,
+    [string]$Present,
+    [string]$Ticket,
+    [string]$Motif,
+    [string]$Decouverte
 )
 
 $ErrorActionPreference = 'Continue'
@@ -39,9 +51,10 @@ $Tools    = Join-Path $Root 'outils'
 $Velo     = Join-Path $Root 'Collecteur-Velociraptor.exe'
 $Computer = $env:COMPUTERNAME
 $Stamp    = Get-Date -Format 'yyyyMMdd_HHmmss'
-$Out      = Join-Path $Root ("Collecte\{0}_{1}{2}" -f $Computer, $Stamp, $(if ($Full) { '' } else { '_leger' }))
+$DestRoot = if ($Destination) { (Resolve-Path -LiteralPath $Destination -ErrorAction Stop).ProviderPath } else { $Root }
+$Out      = Join-Path $DestRoot ("Collecte\{0}_{1}{2}" -f $Computer, $Stamp, $(if ($Full) { '' } else { '_leger' }))
 $Since    = (Get-Date).AddDays(-$Days)
-$UsbQ     = Split-Path $Root -Qualifier
+$UsbQ     = Split-Path $DestRoot -Qualifier
 $IsAdmin  = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 foreach ($d in 'volatile','memoire','systeme','comptes','connexions','exposition','persistance','reseau','evenements','evenements\evtx','artefacts','utilisateurs','fichiers','rancon','outils_distants') {
@@ -275,6 +288,8 @@ try {
         Where-Object { "$($_.DriveLetter)" -match '^[A-Za-z]$' } | ForEach-Object { "$($_.DriveLetter):".ToUpper() })
 } catch {}
 if ($script:UsbLetters -notcontains $UsbQ.ToUpper()) { $script:UsbLetters += $UsbQ.ToUpper() }
+$OutilsQ = Split-Path $Root -Qualifier
+if ($OutilsQ -and $script:UsbLetters -notcontains $OutilsQ.ToUpper()) { $script:UsbLetters += $OutilsQ.ToUpper() }
 
 # ----------------------------------------------------------------- en-tete
 Log "=== Collecte de triage v$ScriptVersion ($Mode) sur $Computer ==="
@@ -287,6 +302,14 @@ Save-Text 'infos_collecte.txt' {
     "Mode             : $Mode"
     "Domaine          : $env:USERDOMAIN"
     "Lance par        : $env:USERDOMAIN\$env:USERNAME"
+    if ($Technicien) { "Technicien       : $Technicien" }
+    if ($Societe)    { "Societe          : $Societe" }
+    if ($Client)     { "Cabinet          : $Client" }
+    if ($Present)    { "Present          : $Present" }
+    if ($Ticket)     { "Ticket           : $Ticket" }
+    if ($Motif)      { "Motif            : $Motif" }
+    if ($Decouverte) { "Decouverte       : $Decouverte" }
+    if ($Destination) { "Support preuves  : $DestRoot (outils : $Root)" }
     "Administrateur   : $IsAdmin"
     "Date locale      : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')"
     "Date UTC         : $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'))"

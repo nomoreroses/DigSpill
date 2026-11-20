@@ -1,0 +1,12 @@
+; DigSpill - reglages lus par DigSpill.exe au demarrage.
+; Copier ce fichier en "digspill.ini" a la racine de la cle OUTILS, le remplir,
+; puis passer la cle en lecture seule. Encodage : UTF-8.
+
+[technicien]
+prenom=
+nom=
+societe=
+
+[options]
+; Autorite d'horodatage RFC 3161 du scelle de fin de collecte (seule l'empreinte est envoyee)
+horodateur=http://timestamp.sectigo.com/qualified

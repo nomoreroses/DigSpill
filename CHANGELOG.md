@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 2.5 (bêta)
+Appli Windows **DigSpill.exe** et protection de la clé contre un rançongiciel.
+
+- **DigSpill.exe** (nouveau, `app\`) : deux parcours. *Collecter* : saisie de l'intervention, feu vert, choix de la clé PREUVES, collecte suivie étape par étape, scellé affiché en grand, éjection. *Analyser* : copie vérifiée, analyse complète, interface et PV. Élévation demandée seulement pour collecter. Mode `--demo`.
+- **Feu vert** avant de brancher la clé PREUVES : notes de rançon, extensions ajoutées ou inconnues sur des fichiers récents, programme qui écrit beaucoup depuis un dossier utilisateur, antivirus coupé, réseau actif, clé OUTILS protégée ou non.
+- **Fichiers pièges** et surveillance de la clé PREUVES ; **coupure d'urgence** : arrêt de la collecte, disque en lecture seule, volume démonté, lettre retirée.
+- **Scellé de fin de collecte** écrit sur place (manifeste, journal, conteneurs Velociraptor), horodaté si Internet. Le générateur horodate ensuite tous les scellés qui n'ont pas encore de jeton.
+- `Collecte-Exfil.ps1` : `-Destination` (clé PREUVES distincte de la clé OUTILS) et champs d'intervention (`-Technicien`, `-Societe`, `-Client`, `-Present`, `-Ticket`, `-Motif`, `-Decouverte`) écrits dans `infos_collecte.txt` et repris dans le PV.
+- `Copier-Preuves.ps1 -Collecte <nom>` : copie une seule collecte (et ses conteneurs) et pose le PV de copie dans la collecte copiée.
+- `Generer-Interface.ps1 -Bases <dossier>` ; mot de passe de `-Proteger` transmis par l'appli sans saisie.
+- Signature : `app\SIGNER.bat`, guide `docs/SIGNATURE.md`. Clés USB : `docs/CLES_USB.md`. Workflow GitHub qui construit l'exe non signé.
+
 ## 2.4 (bêta)
 Scellé de preuve : montrer que le dossier n'a pas bougé, depuis quand, et qui l'a eu entre les mains.
 
