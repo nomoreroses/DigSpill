@@ -147,6 +147,8 @@ if (-not $SansOutilsTiers) {
 Info '4. DigSpill.zip'
 Remove-Item -LiteralPath $Tmp -Recurse -Force
 $zip = Join-Path $Sortie 'DigSpill.zip'
+# le collecteur repacke porte une date anterieure a 1980, que le format zip ne sait pas stocker
+Get-ChildItem -LiteralPath $Kit -Recurse -File | Where-Object { $_.LastWriteTime.Year -lt 1980 } | ForEach-Object { $_.LastWriteTime = Get-Date }
 Compress-Archive -Path (Join-Path $Kit '*') -DestinationPath $zip -CompressionLevel Optimal
 Get-ChildItem -LiteralPath $Kit -Recurse -File | ForEach-Object { '{0,12:N0}  {1}' -f $_.Length, $_.FullName.Substring($Kit.Length + 1) } | Write-Host
 Info ("Kit pret : {0} ({1:N1} Mo)" -f $zip, ((Get-Item -LiteralPath $zip).Length / 1MB))
