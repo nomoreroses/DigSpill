@@ -97,14 +97,21 @@ if (-not $SansOutilsTiers) {
     $liste = Invoke-RestMethod -Uri 'https://api.github.com/repos/Velocidex/velociraptor/releases?per_page=15' -Headers $entetes
     foreach ($r in $liste) {
         if ($r.prerelease -or $r.draft) { continue }
-        $exe = @($r.assets | Where-Object { $_.name -match '(?i)windows-amd64.*\.exe$' -and $_.name -notmatch '(?i)legacy|debug|\.sig' })
+        # depuis 0.77.3 le binaire Windows est publie compresse (.exe.gz)
+        $exe = @($r.assets | Where-Object { $_.name -match '(?i)-windows-amd64\.exe(\.gz)?$' })
         Info "   Velociraptor $($r.tag_name) : $(@($r.assets).Count) fichiers, $($exe.Count) binaire(s) Windows 64 bits"
         if (-not $exe.Count) { Info ('     ' + ((@($r.assets) | ForEach-Object { $_.name }) -join ', ')) }
-        if ($exe.Count) { $rel = $r; $a = ($exe | Sort-Object @{ Expression = { $_.name -match '(?i)-windows-amd64\.exe$' }; Descending = $true } | Select-Object -First 1); break }
+        if ($exe.Count) { $rel = $r; $a = ($exe | Sort-Object @{ Expression = { $_.name -match '(?i)\.exe$' }; Descending = $true } | Select-Object -First 1); break }
     }
     if (-not $a) { throw 'Velociraptor : aucun binaire windows-amd64 dans les 15 dernieres releases' }
-    $velo = Join-Path $Tmp $a.name
-    Telecharger $a.browser_download_url $velo
+    $velo = Join-Path $Tmp ($a.name -replace '(?i)\.gz$', '')
+    if ($a.name -match '(?i)\.gz$') {
+        $gz = Join-Path $Tmp $a.name
+        Telecharger $a.browser_download_url $gz
+        $src = [IO.File]::OpenRead($gz); $dst = [IO.File]::Create($velo)
+        try { $z = New-Object IO.Compression.GZipStream($src, [IO.Compression.CompressionMode]::Decompress); $z.CopyTo($dst); $z.Dispose() } finally { $dst.Dispose(); $src.Dispose() }
+        $shaGz = Sha $gz
+    } else { Telecharger $a.browser_download_url $velo; $shaGz = $null }
     $defs = Join-Path $Tmp 'defs'
     New-Item -ItemType Directory -Force -Path $defs | Out-Null
     $zdef = Join-Path $Tmp 'Windows.Triage.Targets.zip'
@@ -134,6 +141,7 @@ if (-not $SansOutilsTiers) {
     $notes.Add("  Collecteur hors ligne genere par Velociraptor $($rel.tag_name) ($($a.name)) avec moteur\velociraptor\spec.yaml")
     $notes.Add('  et les definitions Windows.Triage.Targets (Velocidex/velociraptor-triage-collector).')
     $notes.Add('  Velociraptor, Velocidex / Rapid7 - GNU AGPL 3.0 (LICENCE-Velociraptor.txt). Source : https://github.com/Velocidex/velociraptor')
+    if ($shaGz) { $notes.Add("  SHA256 archive officielle $($a.name) $shaGz") }
     $notes.Add("  SHA256 binaire officiel $(Sha $velo)")
     $notes.Add("  SHA256 collecteur       $(Sha $f)")
     $notes.Add('')
