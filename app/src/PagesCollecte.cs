@@ -137,11 +137,45 @@ namespace DigSpill
             c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Une seule clé ?", "Possible : DigSpill pose quand même ses fichiers pièges et coupe la clé au moindre signe de chiffrement."));
         }
 
+        public override IEnumerable<Control> Boutons()
+        {
+            var b = new BoutonPlat("Identifiants de ce compte", BoutonPlat.Genre.Secondaire, Ic.Personne);
+            b.Click += delegate { ListerIdentifiants(); };
+            return new Control[] { b };
+        }
+
+        /// <summary>Pour les autres comptes du poste : ouvrir leur session, lancer DigSpill.exe, ce bouton.</summary>
+        void ListerIdentifiants()
+        {
+            if (Ctx.Demo) { MessageBox.Show(F, "Démonstration : en vrai, les cibles du gestionnaire d'identifiants de " + Identifiants.Compte + " seraient écrites dans F:\\Collecte\\Identifiants.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            var dossiers = Identifiants.DossiersCollecte(Ctx.RacineOutils);
+            string cible = null;
+            if (dossiers.Count == 1) cible = dossiers[0];
+            else
+            {
+                using (var fb = new FolderBrowserDialog { Description = "Dossier Collecte de la clé PREUVES (là où la collecte de ce poste a été écrite)", ShowNewFolderButton = false })
+                {
+                    if (dossiers.Count > 0) fb.SelectedPath = dossiers[0];
+                    if (fb.ShowDialog(F) != DialogResult.OK) return;
+                    cible = fb.SelectedPath;
+                }
+            }
+            try
+            {
+                var f = Identifiants.Ecrire(cible, Identifiants.Lister(), Identifiants.Compte);
+                MessageBox.Show(F, "Cibles enregistrées pour " + Identifiants.Compte + " écrites dans :\r\n" + f + "\r\n\r\nRecommencer dans la session de chaque autre compte du poste.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex) { MessageBox.Show(F, "Écriture impossible dans " + cible + " : " + ex.Message, "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        }
+
         void Collecter()
         {
+            // les identifiants se lisent dans la session de l'utilisateur, SANS elevation : on les lit maintenant
+            if (!Ctx.Demo && Ctx.IdentifiantsSession == null) { Ctx.IdentifiantsSession = Identifiants.Lister(); Ctx.CompteSession = Identifiants.Compte; }
             if (!Ctx.Demo && !Supports.EstAdmin())
             {
-                try { Programme.Relancer("--collecter", true); Application.Exit(); }
+                string texte = Ctx.IdentifiantsSession.Length > 18000 ? Ctx.IdentifiantsSession.Substring(0, 18000) + "\r\n[tronqué]" : Ctx.IdentifiantsSession;
+                try { Programme.Relancer("--collecter --identifiants=" + Identifiants.VersBase64(texte) + " --compte=" + Executeur.Echapper(Ctx.CompteSession), true); Application.Exit(); }
                 catch (Win32Exception) { MessageBox.Show(F, "Les droits administrateur sont nécessaires pour collecter.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); }
                 return;
             }
@@ -216,6 +250,7 @@ namespace DigSpill
             var dtp = (DateTimePicker)decouverte.Saisie;
             i.Decouverte = dtp.Checked ? (DateTime?)dtp.Value : null;
             i.Legere = legere.Checked; i.AnalyseSurPlace = surPlace.Checked; i.Horodater = horodater.Checked;
+            if (!Ctx.Demo) Ctx.Reglages.RetenirTechnicien(i.Prenom, i.Nom, i.Societe);
             F.Aller(new PageFeuVert(F));
         }
     }
@@ -555,7 +590,11 @@ namespace DigSpill
             var champs = new[] { Tuple.Create("-Technicien", i.Technicien), Tuple.Create("-Societe", i.Societe), Tuple.Create("-Client", i.Cabinet), Tuple.Create("-Present", i.Present),
                 Tuple.Create("-Ticket", i.Ticket), Tuple.Create("-Motif", i.Motif), Tuple.Create("-Decouverte", i.Decouverte.HasValue ? i.Decouverte.Value.ToString("yyyy-MM-dd HH:mm") : "") };
             foreach (var t in champs) if (!string.IsNullOrWhiteSpace(t.Item2)) { ap.Add(t.Item1); ap.Add(Executeur.Echapper(t.Item2)); }
-            int code = await Executer("Collecte-Exfil.ps1", ap, "Collecte PowerShell");
+            // identifiants de la session (lus avant l'elevation) : ecrits par le script dans exposition\, donc sous manifeste
+            Dictionary<string, string> env = null;
+            if (!string.IsNullOrEmpty(Ctx.IdentifiantsSession))
+                env = new Dictionary<string, string> { { "DIGSPILL_IDENTIFIANTS", Ctx.IdentifiantsSession }, { "DIGSPILL_COMPTE_SESSION", Ctx.CompteSession ?? Identifiants.Compte } };
+            int code = await Executer("Collecte-Exfil.ps1", ap, "Collecte PowerShell", env);
             if (urgence) return;
             Ctx.NomCollecte = TrouverCollecte();
             ePs.Definir(code == 0 && Ctx.NomCollecte != null ? Niveau.Ok : Niveau.Attention, "1. Collecte PowerShell", Ctx.NomCollecte != null ? "Dossier " + Ctx.NomCollecte + (code == 0 ? "" : " (code de sortie " + code + ", voir collecte.log)") : "Dossier de collecte introuvable : voir le journal ci-dessous.");
@@ -637,7 +676,7 @@ namespace DigSpill
             catch { return null; }
         }
 
-        Task<int> Executer(string script, List<string> args, string nom)
+        Task<int> Executer(string script, List<string> args, string nom, IDictionary<string, string> env = null)
         {
             if (Ctx.Demo)
                 return Simuler(new[] { "[*] Informations sur le poste", "[*] Processus et connexions réseau", "[*] Mémoire vive (winpmem) et fichiers d'échange", "[*] Journaux d'événements",
@@ -645,7 +684,7 @@ namespace DigSpill
             exec = new Executeur();
             exec.Ligne += Ligne;
             Log("> " + script + " " + string.Join(" ", args.ToArray()));
-            return exec.Lancer("powershell.exe", Executeur.ArgumentsPowerShell(Ctx.Script(script), args), Ctx.RacineOutils, Executeur.Console850(), null);
+            return exec.Lancer("powershell.exe", Executeur.ArgumentsPowerShell(Ctx.Script(script), args), Ctx.RacineOutils, Executeur.Console850(), env);
         }
 
         async Task<int> Simuler(string[] lignes)
@@ -700,7 +739,7 @@ namespace DigSpill
             var a = Corps.Ajouter(NouvelleCarte());
             a.Contenu.Ajouter(Intertitre("Avant de partir"));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Photographier l'empreinte", "Avec la date et l'heure du téléphone : une trace indépendante de la clé, au cas où elle serait perdue ou abîmée."));
-            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Identifiants enregistrés", "Dans la session de chaque compte du poste : LISTER_IDENTIFIANTS.bat (clé OUTILS)."));
+            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Identifiants enregistrés", "Ce compte (" + (Ctx.CompteSession ?? Identifiants.Compte) + ") : déjà listé. Autres comptes du poste : ouvrir leur session, lancer DigSpill.exe, « Identifiants de ce compte »."));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Clé PREUVES en lecture seule", "Après l'éjection : passez la clé en mode lecture seule (clé à code : voir sa notice) et rangez-la à part."));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Au bureau", "DigSpill → Analyser une collecte : copie vérifiée, analyse complète, rapport, PV de collecte à faire signer."));
         }

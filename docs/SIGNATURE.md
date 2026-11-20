@@ -22,14 +22,15 @@ Avec une signature d'un certificat reconnu par Windows, il affiche **le nom de l
 ## 🛠️ Procédure
 
 1. `app\CONSTRUIRE.bat` → construit `DigSpill.exe` (compilateur C# déjà présent dans Windows, rien à installer).
+   Ou partir du kit : `app\SIGNER.bat E:\DigSpill.exe` signe directement l'exe de la clé (ou du zip dézippé).
 2. Brancher le jeton du certificat (ou configurer le service de signature).
 3. `app\SIGNER.bat` → signe avec le meilleur certificat trouvé.
    `app\SIGNER.bat "Sémaphors"` → impose le certificat dont le nom contient « Sémaphors ».
 4. Vérifier : clic droit sur `DigSpill.exe` → Propriétés → **Signatures numériques**.
-5. Copier `DigSpill.exe` à la racine de la clé OUTILS, **puis** la passer en lecture seule.
+5. Copier `DigSpill.exe` à la racine de la clé OUTILS (à côté de `moteur\`), **puis** la passer en lecture seule.
 
 `SIGNER.bat` demande `signtool.exe` (Windows SDK, composant « Signing Tools »). La signature est contre-signée par l'horodateur Sectigo : elle reste valable après l'expiration du certificat.
 
 ## 🤖 Construction automatique
 
-Le workflow GitHub `Appli DigSpill.exe` construit un `DigSpill.exe` **non signé** à chaque modification de `app/`, le lance en mode démonstration et publie l'exécutable et une capture d'écran. La signature reste à faire avec `SIGNER.bat` sur votre poste, ou en ajoutant une étape de signature au workflow une fois le certificat choisi.
+Le workflow GitHub `Kit DigSpill` construit un `DigSpill.exe` **non signé**, télécharge les outils tiers, génère le collecteur Velociraptor, lance l'exe en mode démonstration et publie le kit (artefact `DigSpill-cle`, et `DigSpill.zip` en release sur un tag `v*`). La signature reste à faire avec `SIGNER.bat` sur votre poste, ou en ajoutant une étape de signature au workflow une fois le certificat choisi.

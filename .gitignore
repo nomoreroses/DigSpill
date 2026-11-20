@@ -7,13 +7,17 @@ MEMOIRE/
 
 # Binaires tiers et collecteur genere
 *.exe
-outils/*
-!outils/.gitkeep
+moteur/outils/*
+!moteur/outils/.gitkeep
 _config_velociraptor/
 
 # Interface : collecte fictive de demonstration generee, fichiers HTML produits
-interface/dev/demo/
+moteur/interface/dev/demo/
 *_INTERFACE.html
 app/bin/
 /DigSpill.exe
 digspill.ini
+
+# kit assemble par le workflow
+/kit/
+DigSpill*.zip

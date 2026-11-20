@@ -59,7 +59,8 @@ $LogFile = Join-Path $Sortie 'analyse.log'
 $EvtxDir = Join-Path $Collecte 'evenements\evtx'
 
 if (-not $Velo) {
-    foreach ($cand in @((Join-Path $PSScriptRoot 'Collecteur-Velociraptor.exe'), (Join-Path (Split-Path (Split-Path $Collecte -Parent) -Parent) 'Collecteur-Velociraptor.exe'))) {
+    $racineCollecte = Split-Path (Split-Path $Collecte -Parent) -Parent
+    foreach ($cand in @((Join-Path $PSScriptRoot 'outils\Collecteur-Velociraptor.exe'), (Join-Path $PSScriptRoot 'Collecteur-Velociraptor.exe'), (Join-Path $racineCollecte 'moteur\outils\Collecteur-Velociraptor.exe'), (Join-Path $racineCollecte 'Collecteur-Velociraptor.exe'))) {
         if (Test-Path -LiteralPath $cand) { $Velo = $cand; break }
     }
 }
@@ -1046,7 +1047,7 @@ Step "Exposition des identifiants : mimikatz execute ?, outils NirSoft, gestionn
     foreach ($r in (Read-Csv (C 'connexions\identifiants_explicites_4648.csv') | Where-Object { $_.Serveur -and $_.Serveur -notmatch '^(localhost|-)$' } | Group-Object Serveur, CompteUtilise)) { $o.Add("    4648 : $($r.Name) ($($r.Count) fois)") }
     foreach ($r in (Read-Csv (C 'reseau\rdp_connexions_sortantes.csv'))) { $o.Add("    RDP sortant : $($r.Serveur) ($($r.UsernameHint))") }
     foreach ($r in (Read-Csv (C 'reseau\lecteurs_mappes.csv'))) { $o.Add("    Lecteur reseau : $($r.LocalPath) -> $($r.RemotePath)") }
-    $o.Add('  A FAIRE : dans la session de CHAQUE compte, lancer "cmdkey /list" (ou LISTER_IDENTIFIANTS.bat de la cle) pour obtenir')
+    $o.Add('  A FAIRE : dans la session de CHAQUE compte, lancer DigSpill.exe > Identifiants de ce compte (ou "cmdkey /list") pour obtenir')
     $o.Add('  les cibles (NAS, serveur Lina, sites web). Si elles donnent acces a des donnees hors du serveur, l''exfiltration a pu')
     $o.Add('  se faire depuis ces systemes : verifier leurs journaux d''acces sur la periode, puis changer les mots de passe.')
     $o | Out-File (P 'identifiants_exposition.txt') -Encoding utf8

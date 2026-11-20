@@ -86,7 +86,7 @@ namespace DigSpill
         {
             if (Ctx.Demo) return new List<string> { @"F:\Collecte\SECRETARIAT-01_20261119_102233", @"F:\Collecte\ACCUEIL-02_20261119_113005_leger", @"F:\Collecte\SECRETARIAT-01_20261104_091512" };
             var l = new List<string>();
-            var racines = new List<string> { Ctx.RacineOutils };
+            var racines = new List<string> { Ctx.RacineCle, Ctx.RacineOutils };
             foreach (var d in DriveInfo.GetDrives()) { try { if (d.IsReady && (d.DriveType == DriveType.Removable || d.DriveType == DriveType.Fixed)) racines.Add(d.RootDirectory.FullName); } catch { } }
             foreach (var r in racines.Distinct(StringComparer.OrdinalIgnoreCase))
             {

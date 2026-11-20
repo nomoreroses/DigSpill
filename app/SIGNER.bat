@@ -6,6 +6,13 @@ REM   SIGNER.bat "Semaphors"      : certificat dont le sujet contient ce nom
 setlocal
 cd /d "%~dp0"
 set "EXE=%~dp0bin\DigSpill.exe"
+set "COPIE=1"
+REM SIGNER.bat E:\DigSpill.exe ["nom du certificat"] : signe un exe deja en place (cle OUTILS, kit dezippe)
+if /i "%~x1"==".exe" (
+    set "EXE=%~f1"
+    set "COPIE="
+    shift
+)
 if not exist "%EXE%" (
     echo Lancer d'abord CONSTRUIRE.bat.
     exit /b 1
@@ -26,7 +33,7 @@ if errorlevel 1 (
     exit /b 1
 )
 "%SIGNTOOL%" verify /pa /v "%EXE%"
-copy /y "%EXE%" ..\DigSpill.exe >nul
+if defined COPIE copy /y "%EXE%" ..\DigSpill.exe >nul
 echo.
-echo  DigSpill.exe signe (copie a la racine du depot).
+echo  Signe : %EXE%
 endlocal

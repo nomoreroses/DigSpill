@@ -1,4 +1,4 @@
-// DigSpill.exe - point d'entree, contexte partage, reglages (digspill.ini sur la cle OUTILS).
+// DigSpill.exe - point d'entree, contexte partage, reglages (moteur\digspill.ini sur la cle OUTILS).
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -13,8 +13,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct("DigSpill")]
 [assembly: AssemblyCompany("DigSpill")]
 [assembly: AssemblyCopyright("DigSpill")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace DigSpill
 {
@@ -57,11 +57,39 @@ namespace DigSpill
             string x;
             return v.TryGetValue(cle, out x) && x.Length > 0 ? x : defaut;
         }
+
+        /// <summary>Retient le technicien pour la prochaine fois (cle accessible en ecriture seulement ; sinon rien).</summary>
+        public void RetenirTechnicien(string prenom, string nom, string societe)
+        {
+            if (Get("technicien.prenom", "") == prenom && Get("technicien.nom", "") == nom && Get("technicien.societe", "") == societe) return;
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("; DigSpill - reglages lus par DigSpill.exe au demarrage (rempli par l'appli, modifiable a la main). Encodage : UTF-8.");
+                sb.AppendLine();
+                sb.AppendLine("[technicien]");
+                sb.AppendLine("prenom=" + prenom);
+                sb.AppendLine("nom=" + nom);
+                sb.AppendLine("societe=" + societe);
+                sb.AppendLine();
+                sb.AppendLine("[options]");
+                sb.AppendLine("; Autorite d'horodatage RFC 3161 du scelle de fin de collecte (seule l'empreinte est envoyee)");
+                sb.AppendLine("horodateur=" + Get("options.horodateur", "http://timestamp.sectigo.com/qualified"));
+                File.WriteAllText(Fichier, sb.ToString(), new UTF8Encoding(false));
+                v["technicien.prenom"] = prenom; v["technicien.nom"] = nom; v["technicien.societe"] = societe;
+            }
+            catch { }
+        }
     }
 
     class Contexte
     {
+        /// <summary>Dossier du moteur (scripts, interface, outils) : &lt;cle&gt;\moteur, ou la racine dans l'ancien rangement.</summary>
         public string RacineOutils;
+        /// <summary>Racine de la cle OUTILS (celle de DigSpill.exe).</summary>
+        public string RacineCle { get { return string.Equals(Path.GetFileName(RacineOutils.TrimEnd('\\')), "moteur", StringComparison.OrdinalIgnoreCase) ? Path.GetDirectoryName(RacineOutils.TrimEnd('\\')) : RacineOutils; } }
+        /// <summary>Identifiants du compte de la session, lus avant l'elevation (cmdkey, vaultcmd).</summary>
+        public string IdentifiantsSession, CompteSession;
         public bool Demo;
         public Reglages Reglages;
         public Intervention Inter = new Intervention();
@@ -85,20 +113,33 @@ namespace DigSpill
         public string Horodateur { get { return Reglages.Get("options.horodateur", "http://timestamp.sectigo.com/qualified"); } }
 
         public string Script(string nom) { return Path.Combine(RacineOutils, nom); }
-        public string Velociraptor { get { return Path.Combine(RacineOutils, "Collecteur-Velociraptor.exe"); } }
+        public string Velociraptor
+        {
+            get
+            {
+                foreach (var c in new[] { Path.Combine(RacineOutils, "outils", "Collecteur-Velociraptor.exe"), Path.Combine(RacineOutils, "Collecteur-Velociraptor.exe"), Path.Combine(RacineCle, "Collecteur-Velociraptor.exe") })
+                    if (File.Exists(c)) return c;
+                return Path.Combine(RacineOutils, "outils", "Collecteur-Velociraptor.exe");
+            }
+        }
     }
 
     static class Programme
     {
-        public const string Version = "1.0";
+        public const string Version = "1.1";
 
-        /// <summary>Dossier des scripts : celui de l'exe, ou un parent (pendant le developpement, app\bin).</summary>
+        /// <summary>Dossier des scripts : &lt;exe&gt;\moteur (cle rangee), l'exe lui-meme (ancien rangement),
+        /// ou un parent (pendant le developpement, app\bin).</summary>
         static string TrouverOutils()
         {
             var d = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
             for (var x = d; x != null; x = x.Parent)
+            {
+                var m = Path.Combine(x.FullName, "moteur");
+                if (File.Exists(Path.Combine(m, "Collecte-Exfil.ps1"))) return m;
                 if (File.Exists(Path.Combine(x.FullName, "Collecte-Exfil.ps1"))) return x.FullName;
-            return d.FullName;
+            }
+            return Path.Combine(d.FullName, "moteur");
         }
 
         public static void Relancer(string arguments, bool admin)
@@ -127,6 +168,9 @@ namespace DigSpill
             foreach (var a in args) if (a.StartsWith("--page=")) depart = a.Substring(7);
             string capture = null;
             foreach (var a in args) if (a.StartsWith("--capture=")) capture = a.Substring(10);
+            // identifiants lus par l'instance non elevee, juste avant de relancer en administrateur
+            foreach (var a in args) if (a.StartsWith("--identifiants=")) ctx.IdentifiantsSession = Identifiants.DepuisBase64(a.Substring(15));
+            foreach (var a in args) if (a.StartsWith("--compte=")) ctx.CompteSession = a.Substring(9);
             Application.ThreadException += (s, e) => MessageBox.Show(e.Exception.ToString(), "DigSpill : erreur inattendue", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Application.Run(new Fenetre(ctx, depart, capture));
         }

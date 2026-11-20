@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="interface/assets/digspill-logo-blanc.svg">
-  <img src="interface/assets/digspill-logo-noir.svg" alt="digspill" width="220">
+  <source media="(prefers-color-scheme: dark)" srcset="moteur/interface/assets/digspill-logo-blanc.svg">
+  <img src="moteur/interface/assets/digspill-logo-noir.svg" alt="digspill" width="220">
 </picture>
 
 # DigSpill (bêta)
@@ -11,29 +11,41 @@ Clé USB de collecte à lancer sur un poste Windows suspecté d'intrusion, d'exf
 
 > Bêta : testée sur un cas réel, à valider sur d'autres environnements avant usage en production.
 
+## Installer la clé (une fois)
+
+1. Télécharger **`DigSpill.zip`** : onglet *Releases* du dépôt, ou *Actions › Kit DigSpill › DigSpill-cle*.
+2. Clic droit sur le zip › *Propriétés* › cocher **Débloquer** (sinon Windows traite chaque fichier comme « venu d'Internet »).
+3. Le dézipper **à la racine de la clé OUTILS**.
+4. Double-clic sur **`DigSpill.exe`**. C'est tout. Signer l'exe pour afficher le nom de l'éditeur : [docs/SIGNATURE.md](docs/SIGNATURE.md).
+
+Le zip est fabriqué par GitHub (workflow `Kit DigSpill`) : DigSpill.exe compilé, et les outils tiers téléchargés depuis leurs sites officiels, avec leurs licences (`moteur\outils\LISEZ-MOI-OUTILS.txt`). Le collecteur Velociraptor est généré avec `moteur\velociraptor\spec.yaml`.
+
 ## Contenu de la clé
 
 ```
-DigSpill.exe                  appli Windows : collecter (poste suspect) ou analyser (votre PC), à construire avec app\CONSTRUIRE.bat
-digspill.ini                  technicien et réglages lus par DigSpill.exe (modèle : digspill.ini.exemple)
-LANCER_COLLECTE.bat           collecte complète : PowerShell, Velociraptor, puis analyse exfiltration
-LANCER_COLLECTE_LEGERE.bat    autres postes du réseau : connexions, exécutions, identifiants
-LISTER_IDENTIFIANTS.bat       cibles du gestionnaire d'identifiants (à lancer dans chaque session, sans élévation)
-ANALYSER_COLLECTE.bat         analyse a posteriori d'une collecte (glisser-déposer le dossier), puis interface HTML
-GENERER_INTERFACE.bat         crée UN fichier HTML autonome pour lire la collecte sur n'importe quel PC
-GENERER_INTERFACE_PROTEGEE.bat  idem, fichier protégé par mot de passe (pour un assureur, un expert)
-Collecte-Exfil.ps1            script de collecte (PowerShell 5.1)
-Analyse-Exfil.ps1             analyse exfiltration (lit la collecte et le conteneur Velociraptor)
-Copier-Preuves.ps1            seconde copie des preuves vérifiée par SHA256, procès-verbal
-Generer-Interface.ps1         assemble le fichier HTML autonome (interface\ + données de la collecte)
-interface\                    code de l'interface (HTML, CSS, JavaScript, ECharts, carte du monde)
-outils\bases\                 bases publiques téléchargées par le .bat et mémoire des incidents (non versionné)
-Collecteur-Velociraptor.exe   à générer, voir plus bas (non versionné)
-outils\7zr.exe                https://www.7-zip.org/a/7zr.exe (non versionné)
-outils\winpmem_mini_x64_rc2.exe  https://github.com/Velocidex/WinPmem/releases (non versionné)
+DigSpill.exe      ← le seul fichier à lancer : collecter (poste suspect) ou analyser (votre PC)
+moteur\           ne pas toucher : scripts, interface, outils, réglages
 ```
 
-Les résultats sont écrits dans `Collecte\<POSTE>_<date>\` sur la clé, avec un manifeste SHA256. L'analyse est écrite à côté, dans `Collecte\<POSTE>_<date>_analyse\` : la collecte d'origine n'est pas modifiée.
+<details>
+<summary>Ce qu'il y a dans moteur\</summary>
+
+```
+Collecte-Exfil.ps1            collecte (PowerShell 5.1)
+Analyse-Exfil.ps1             analyse exfiltration (collecte + conteneur Velociraptor)
+Copier-Preuves.ps1            seconde copie des preuves vérifiée par SHA256, procès-verbal
+Generer-Interface.ps1         fichier HTML autonome (interface + données de la collecte)
+interface\                    code de l'interface (HTML, CSS, JavaScript, ECharts, carte, polices, logo)
+outils\                       Collecteur-Velociraptor.exe, 7zr.exe, winpmem_mini_x64_rc2.exe, licences
+outils\bases\                 bases publiques et mémoire des incidents (créées au premier usage)
+velociraptor\spec.yaml        ce que collecte Velociraptor
+secours\                      les anciens .bat, si DigSpill.exe ne se lance pas sur un poste
+digspill.ini                  technicien et horodateur (rempli par DigSpill.exe ; modèle : digspill.ini.exemple)
+```
+
+</details>
+
+Les résultats sont écrits dans `Collecte\<POSTE>_<date>\` sur la clé PREUVES, avec un manifeste SHA256. L'analyse est écrite à côté, dans `Collecte\<POSTE>_<date>_analyse\` : la collecte d'origine n'est pas modifiée.
 
 **Commencer la lecture par `SYNTHESE.txt`** (alertes de la collecte), **puis `SYNTHESE_EXFILTRATION.txt`** (grille par canal de sortie et proposition de conclusion graduée). Remplir `A_COMPLETER_TECHNICIEN.txt` sur place.
 
@@ -53,9 +65,11 @@ Une vraie fenêtre Windows à la place de la console : on saisit l'intervention,
 
 - 🧰 Deux clés : OUTILS en lecture seule (interrupteur), PREUVES chiffrée. Détails et limites : [docs/CLES_USB.md](docs/CLES_USB.md).
 - ✍️ Signature de l'exe (pour afficher le nom de l'éditeur au lieu de « Inconnu ») : [docs/SIGNATURE.md](docs/SIGNATURE.md).
-- 🛠️ Construire : `app\CONSTRUIRE.bat` (compilateur C# déjà présent dans Windows, rien à installer), puis `app\SIGNER.bat`.
+- 👤 Le technicien est retenu d'une fois sur l'autre (dans `moteur\digspill.ini`, si la clé est accessible en écriture).
+- 🔑 Identifiants enregistrés : ceux du compte de la session sont lus automatiquement, avant l'élévation. Autres comptes : ouvrir leur session, lancer DigSpill.exe, bouton **Identifiants de ce compte**.
+- 🛠️ Reconstruire soi-même : `app\CONSTRUIRE.bat` (compilateur C# déjà présent dans Windows), le kit complet : `app\construire-kit.ps1`. Signer : `app\SIGNER.bat`.
 - 🧪 Démonstration sans rien toucher : `DigSpill.exe --demo`.
-- Les `.bat` restent utilisables tels quels (mode console).
+- 🆘 Secours : `moteur\secours\*.bat` (mode console), si un poste bloque DigSpill.exe.
 
 <details>
 <summary>Autres écrans (rendu de test sous Linux : les polices diffèrent de Windows)</summary>
@@ -68,15 +82,16 @@ Une vraie fenêtre Windows à la place de la console : on saisit l'intervention,
 
 ## Déroulé conseillé
 
-1. Sur le poste suspect : `LANCER_COLLECTE.bat` (environ 15 à 30 min).
-2. Toujours sur place : remplir `A_COMPLETER_TECHNICIEN.txt` (date de découverte, heure de la box, journaux de la box), puis lancer `LISTER_IDENTIFIANTS.bat` dans la session de chaque compte.
-3. Au bureau : `Copier-Preuves.ps1 -Source E:\Collecte -Destination F:\PREUVES_<client>` (support NTFS/exFAT distinct, conservé à part).
-4. Sur le poste d'analyse : `ANALYSER_COLLECTE.bat` (analyse complète, avec la $MFT du conteneur Velociraptor). Ajouter des fenêtres si besoin : `ANALYSER_COLLECTE.bat "E:\Collecte\POSTE_20261117_150121" "2026-10-18 22:00;2026-10-19 06:00"`.
-5. À la fin de l'analyse, le fichier `Collecte\<POSTE>_<date>_INTERFACE.html` est créé et s'ouvre : c'est lui qu'on lit, qu'on présente et qu'on archive avec le dossier. Pour le régénérer (après avoir saisi des réglages, par exemple) : glisser le dossier de collecte sur `GENERER_INTERFACE.bat`.
+1. Sur le poste suspect : `DigSpill.exe` › **Collecter sur ce poste** (environ 15 à 60 min).
+2. Toujours sur place : remplir `A_COMPLETER_TECHNICIEN.txt` (date de découverte, heure de la box, journaux de la box). Dans la session de chaque autre compte : `DigSpill.exe` › **Identifiants de ce compte**.
+3. Au bureau : `DigSpill.exe` › **Analyser une collecte** : copie vérifiée des preuves, analyse complète ($MFT), interface, PV.
+4. Le fichier `Collecte\<POSTE>_<date>_INTERFACE.html` est créé et s'ouvre : c'est lui qu'on lit, qu'on présente et qu'on archive avec le dossier.
+
+Fenêtres d'analyse en plus, en console : `moteur\secours\ANALYSER_COLLECTE.bat "E:\Collecte\POSTE_20261117_150121" "2026-10-18 22:00;2026-10-19 06:00"`.
 
 ## Interface autonome (un seul fichier HTML)
 
-`GENERER_INTERFACE.bat` crée **un seul fichier** `<POSTE>_<date>_INTERFACE.html` qui contient l'interface, les graphiques, la carte du monde et toutes les données de la collecte et de l'analyse. On le copie sur n'importe quel PC et on l'ouvre d'un double-clic (Edge, Chrome ou Firefox) : pas de serveur, pas d'installation, ça fonctionne hors ligne.
+DigSpill crée **un seul fichier** `<POSTE>_<date>_INTERFACE.html` qui contient l'interface, les graphiques, la carte du monde et toutes les données de la collecte et de l'analyse. On le copie sur n'importe quel PC et on l'ouvre d'un double-clic (Edge, Chrome ou Firefox) : pas de serveur, pas d'installation, ça fonctionne hors ligne.
 
 ![Résumé : que faire maintenant ?](docs/captures/resume.png)
 
@@ -138,7 +153,7 @@ Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable q
 ### Ce qui part sur Internet (et ce qui ne part pas)
 
 - **Rien ne sort du fichier sans un clic.** Les données de la collecte restent dans le fichier.
-- **Bases publiques** : le `.bat` télécharge des listes publiques entières dans `outils\bases` (pays et opérateur IPtoASN, Tor, FireHOL, blocklist.de, GreenSnow, CINS, Feodo, Spamhaus DROP, victimes publiées sur ransomware.live) et les compare **en local**. Le nom du client et ses IP ne sont jamais envoyés. Option `-AvecVilles` : base des villes DB-IP Lite (~40 Mo). Option `-SansInternet` : utilise seulement les bases déjà présentes.
+- **Bases publiques** : DigSpill télécharge des listes publiques entières dans `moteur\outils\bases` (pays et opérateur IPtoASN, Tor, FireHOL, blocklist.de, GreenSnow, CINS, Feodo, Spamhaus DROP, victimes publiées sur ransomware.live) et les compare **en local**. Le nom du client et ses IP ne sont jamais envoyés. Option `-AvecVilles` : base des villes DB-IP Lite (~40 Mo). Option `-SansInternet` : utilise seulement les bases déjà présentes.
 - **Horodatage** : seule l'empreinte SHA-256 du scellé part vers l'autorité d'horodatage (désactivable).
 - **Sur clic seulement** : Have I Been Pwned (seuls les 5 premiers caractères du hachage SHA-1 du mot de passe), Shodan InternetDB (l'IP choisie), liens VirusTotal / MalwareBazaar (le hachage choisi), Claude (la synthèse filtrée, affichée avant l'envoi : comptes pseudonymisés U1, U2…, noms de fichiers et dossiers masqués, URL réduites au domaine, e-mails masqués).
 - Sans clé API, le bouton « Copier consignes + synthèse » permet d'utiliser claude.ai, puis de recoller la réponse pour en vérifier les citations.
@@ -146,15 +161,15 @@ Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable q
 ### Réglages et mémoire des incidents
 
 - Les réglages saisis dans l'interface (client, date de découverte, débit de la box, liste blanche, horaires du cabinet…) sont gardés dans le navigateur. « Exporter les réglages » produit `<POSTE>_<date>_reglages.json` : posé à côté du dossier de collecte, il est repris à la prochaine génération.
-- `outils\bases\memoire_incidents.json` garde les IOC (IP, hachages, noms d'outils) de chaque collecte traitée : l'interface signale un indicateur déjà vu chez un autre client.
+- `moteur\outils\bases\memoire_incidents.json` garde les IOC (IP, hachages, noms d'outils) de chaque collecte traitée : l'interface signale un indicateur déjà vu chez un autre client.
 
 ### Sécurité du fichier
 
-Le fichier HTML est **aussi sensible que la collecte** (comptes, chemins, sites consultés). Pour l'envoyer : `GENERER_INTERFACE_PROTEGEE.bat` (AES-256 + HMAC-SHA256, clé dérivée du mot de passe par PBKDF2, 200 000 itérations ; .NET 4.7.2 minimum), et le mot de passe par un autre canal.
+Le fichier HTML est **aussi sensible que la collecte** (comptes, chemins, sites consultés). Pour l'envoyer : DigSpill.exe › Analyser, case « Protéger l'interface par un mot de passe » (AES-256 + HMAC-SHA256, clé dérivée du mot de passe par PBKDF2, 200 000 itérations ; .NET 4.7.2 minimum), et le mot de passe par un autre canal.
 
 ### Développement
 
-Le code de l'appli Windows est dans `app\` (C# 5, WinForms, .NET Framework 4.x : `app\CONSTRUIRE.bat`). Le code de l'interface est dans `interface\` (`modele.html`, `style.css`, `js\01_base.js` à `06_integrite.js`, ECharts, la carte et les polices dans `vendor\`, le logo dans `assets\`). Le récit de la Chronologie et les actions du Résumé sont calculés par des règles fixes (`T.recit`, `T.actions` dans `02_analyse.js`), sans IA. `interface\dev\generer_demo.py` crée une collecte fictive (adresses de documentation RFC 5737, domaines `.example`) et `interface\dev\assembler.py` produit le même fichier que le `.ps1`, pour tester sans Windows ; le workflow `Interface HTML` vérifie sur Windows que les deux générateurs produisent le même fichier (`interface\dev\comparer_generateurs.py`). `interface\dev\tsa_demo.sh` crée une autorité d'horodatage **fictive** (OpenSSL) pour la démo : `assembler.py --tsa-demo demo/tsa`.
+Le code de l'appli Windows est dans `app\` (C# 5, WinForms, .NET Framework 4.x : `app\CONSTRUIRE.bat`). Le code de l'interface est dans `moteur\interface\` (`modele.html`, `style.css`, `js\01_base.js` à `06_integrite.js`, ECharts, la carte et les polices dans `vendor\`, le logo dans `assets\`). Le récit de la Chronologie et les actions du Résumé sont calculés par des règles fixes (`T.recit`, `T.actions` dans `02_analyse.js`), sans IA. `moteur\interface\dev\generer_demo.py` crée une collecte fictive (adresses de documentation RFC 5737, domaines `.example`) et `moteur\interface\dev\assembler.py` produit le même fichier que le `.ps1`, pour tester sans Windows ; le workflow `Interface HTML` vérifie sur Windows que les deux générateurs produisent le même fichier (`moteur\interface\dev\comparer_generateurs.py`). `moteur\interface\dev\tsa_demo.sh` crée une autorité d'horodatage **fictive** (OpenSSL) pour la démo : `assembler.py --tsa-demo demo/tsa`.
 
 ## Arborescence
 
@@ -172,7 +187,7 @@ Collecte\
   <POSTE>_<date>_scelles\       SCELLE_<date>.txt + jeton d'horodatage (.tsq, .tsr, .horodatage.txt)
   <POSTE>_<date>_INTERFACE.html interface autonome
   Velociraptor\                 conteneurs .zip (+ .sha256)
-  Identifiants\                 sorties de LISTER_IDENTIFIANTS.bat
+  Identifiants\                 identifiants des autres comptes (DigSpill.exe › Identifiants de ce compte)
 ```
 
 ## Ce qui est collecté
@@ -212,14 +227,16 @@ L'analyse ne conclut pas à la place de l'analyste. La proposition de conclusion
 
 ## Générer le collecteur Velociraptor
 
+Le kit le fait tout seul (`app\construire-kit.ps1`). À la main :
+
 1. Télécharger `velociraptor-v0.77.x-windows-amd64.exe` (https://github.com/Velocidex/velociraptor/releases).
 2. Récupérer la définition `Windows.Triage.Targets` (https://github.com/Velocidex/velociraptor-triage-collector, branche `gh-pages`, `artifacts/Windows.Triage.Targets.zip`) et l'extraire dans un dossier `defs`.
-3. `velociraptor.exe collector --definitions defs velociraptor\spec.yaml`
-4. Copier `Collecteur-Velociraptor.exe` (généré dans `%TEMP%\gui_datastore`) à la racine de la clé.
+3. `velociraptor.exe collector --definitions defs moteur\velociraptor\spec.yaml`
+4. Copier `Collecteur-Velociraptor.exe` (généré dans `%TEMP%\gui_datastore`) dans `moteur\outils\`.
 
 Le `spec.yaml` exclut l'index Windows Search et les binaires OneDrive (plusieurs Go) pour rester sous la limite FAT32 de 4 Go par fichier. Une clé NTFS ou exFAT reste recommandée : une archive qui atteint 4 Go sur FAT32 est tronquée, et l'analyse le signale.
 
-Le collecteur sert aussi de moteur d'analyse (ESE/SRUM, SQLite, registre hors ligne, Prefetch, LNK, ShellBags, $MFT) : `Analyse-Exfil.ps1` le cherche à côté du script ou à la racine de la clé.
+Le collecteur sert aussi de moteur d'analyse (ESE/SRUM, SQLite, registre hors ligne, Prefetch, LNK, ShellBags, $MFT) : `Analyse-Exfil.ps1` le cherche dans `moteur\outils\`, à côté du script ou à la racine de la clé.
 
 ## Paramètres de la collecte
 

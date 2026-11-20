@@ -1,4 +1,6 @@
 @echo off
+REM SECOURS : a utiliser seulement si DigSpill.exe ne se lance pas (poste qui bloque les .exe non signes...).
+REM Rangement de la cle : <cle>\DigSpill.exe, <cle>\moteur\ (ce dossier : moteur\secours), resultats dans <cle>\Collecte\.
 REM Analyse exfiltration d'une collecte existante, sur le poste d'analyse (pas sur le poste suspect).
 REM Usage : glisser-deposer un dossier Collecte\<POSTE>_<date> sur ce fichier, ou :
 REM         ANALYSER_COLLECTE.bat "E:\Collecte\POSTE_20261117_150121" ["2026-10-18 22:00;2026-10-19 06:00"]
@@ -6,6 +8,9 @@ REM Le conteneur Velociraptor de la meme collecte est detecte automatiquement da
 REM Resultat : <dossier>_analyse\SYNTHESE_EXFILTRATION.txt (la collecte d'origine n'est pas modifiee)
 REM            + <dossier>_INTERFACE.html : interface autonome a ouvrir sur n'importe quel PC.
 cd /d "%~dp0"
+for %%I in ("%~dp0..") do set "MOTEUR=%%~fI"
+for %%I in ("%~dp0..\..") do set "CLE=%%~fI"
+if "%CLE:~-1%"=="\" set "CLE=%CLE:~0,-1%"
 if "%~1"=="" (
     echo Glisser-deposer un dossier de collecte sur ce fichier.
     pause
@@ -13,13 +18,13 @@ if "%~1"=="" (
 )
 title DigSpill - Analyse exfiltration - %~nx1
 if "%~2"=="" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Analyse-Exfil.ps1" -Collecte "%~1"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%MOTEUR%\Analyse-Exfil.ps1" -Collecte "%~1"
 ) else (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Analyse-Exfil.ps1" -Collecte "%~1" -Fenetres "%~2"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%MOTEUR%\Analyse-Exfil.ps1" -Collecte "%~1" -Fenetres "%~2"
 )
 echo.
 echo  === Interface autonome (un seul fichier HTML) ===
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Generer-Interface.ps1" -Collecte "%~1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%MOTEUR%\Generer-Interface.ps1" -Collecte "%~1"
 echo.
 echo  Lire : %~1_analyse\SYNTHESE_EXFILTRATION.txt
 echo  Ouvrir : %~1_INTERFACE.html

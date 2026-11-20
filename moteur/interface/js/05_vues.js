@@ -187,7 +187,7 @@ T.ECRANS.resume = c => {
   m.append(h1);
   if (rc && rc.etapes.length) m.append(h('p', { class: 'intro' }, `${rc.periode.dans}, de ${T.hm(rc.debut)} à ${T.hm(rc.fin)}. `, h('a', { class: 'lk', href: '#chrono/' + fg.id }, `Voir ${rc.periode.nom} en ${rc.etapes.length} étape${rc.etapes.length > 1 ? 's' : ''} →`)));
   else if (sit.vide) m.append(h('p', { class: 'intro' }, h('a', { class: 'lk', href: '#details/visibilite' }, 'Ce que chaque source voyait →')));
-  if (!T.D.collecte.analyse) m.append(h('p', { class: 'intro' }, "Le dossier d'analyse (_analyse) est absent : lancer ANALYSER_COLLECTE.bat puis régénérer ce fichier pour avoir les sessions, SRUM, exécutions et la grille."));
+  if (!T.D.collecte.analyse) m.append(h('p', { class: 'intro' }, "Le dossier d'analyse (_analyse) est absent : lancer DigSpill.exe › Analyser une collecte puis régénérer ce fichier pour avoir les sessions, SRUM, exécutions et la grille."));
   // a faire maintenant
   const acts = T.actions(), etat = T.etatActions(), VISIBLES = 3;
   const sec = h('section', { class: 'section', 'aria-labelledby': 'tAFaire' }, h('h2', { class: 'lbl', id: 'tAFaire' }, 'À faire maintenant'));
@@ -373,7 +373,7 @@ T.ECRANS.ip = c => {
     T.kpi('', T.nb(pub.filter(e => e.listes.length).length), 'sur une liste noire publique', pub.some(e => e.listes.length) ? 'orange' : '')));
   const carte = h('div', { class: 'graph carte-monde', id: 'gCarte' });
   c.append(T.carte('Origine des connexions', 'rouge = connexion réussie · orange = échecs seulement', carte,
-    h('div', { class: 'pale petit' }, b.asn ? `Base pays/opérateur : ${b.asn.source} du ${b.asn.date}` : 'Base de géolocalisation absente à la génération : relancer le .bat avec Internet.',
+    h('div', { class: 'pale petit' }, b.asn ? `Base pays/opérateur : ${b.asn.source} du ${b.asn.date}` : 'Base de géolocalisation absente à la génération : régénérer le fichier avec Internet.',
       b.ville ? ` · villes : ${b.ville.source} du ${b.ville.date}` : '', ' · ', (b.listes || []).filter(l => l.date).length ? `listes : ${(b.listes || []).filter(l => l.date).map(l => l.nom).join(', ')}` : 'listes noires non téléchargées')));
   requestAnimationFrame(() => T.graphCarte(carte, a));
   const tbl = h('div');
@@ -505,7 +505,7 @@ T.ECRANS.sante = c => {
 T.ECRANS.fuites = c => {
   const id = T.identifiants(), R = T.reglages(), b = (T.D.bases || {}).ransomware;
   c.append(h('h1', {}, 'Identifiants et fuites'), h('p', { class: 'sous-titre' }, 'Les mots de passe ne sont jamais lus par la collecte : seuls les sites et identifiants enregistrés sont listés.'));
-  c.append(T.carte(`Comptes à faire changer (${id.comptes.length})`, 'enregistrés dans les navigateurs du poste', T.tableau([{ t: 'Utilisateur', v: x => x.utilisateur }, { t: 'Site', v: x => h('b', {}, x.site) }, { t: 'Identifiant(s)', v: x => h('span', { class: 'mono petit' }, x.identifiants) }, { t: 'Navigateur', v: x => x.navigateurs }, { t: 'Preuve', v: x => T.bp(x.id) }], id.comptes, { vide: 'Aucun (ou LISTER_IDENTIFIANTS.bat non lancé).', defile: false }),
+  c.append(T.carte(`Comptes à faire changer (${id.comptes.length})`, 'enregistrés dans les navigateurs du poste', T.tableau([{ t: 'Utilisateur', v: x => x.utilisateur }, { t: 'Site', v: x => h('b', {}, x.site) }, { t: 'Identifiant(s)', v: x => h('span', { class: 'mono petit' }, x.identifiants) }, { t: 'Navigateur', v: x => x.navigateurs }, { t: 'Preuve', v: x => T.bp(x.id) }], id.comptes, { vide: 'Aucun (ou identifiants non listés : DigSpill.exe › Identifiants de ce compte).', defile: false }),
     id.comptes.length ? h('button', { class: 'btn', style: 'margin-top:8px', onclick: async () => T.toast(await T.copier(id.comptes.map(x => `☐ ${x.site} (${x.identifiants})`).join('\n')) ? 'Liste copiée (à coller dans un mail ou une fiche)' : 'Copie impossible') }, 'Copier la liste à cocher') : '',
     id.wifi ? h('div', { class: 'petit doux', style: 'margin-top:8px' }, `${id.wifi} profil(s) Wi-Fi enregistré(s) : clés lisibles par un administrateur du poste, à changer si le compte était admin.`) : ''));
   const res = h('div', { style: 'margin-top:10px' }), mdp = h('input', { type: 'password', class: 'texte', placeholder: 'Mot de passe à tester (jamais envoyé)', style: 'max-width:320px', autocomplete: 'off' });
@@ -527,12 +527,12 @@ T.ECRANS.fuites = c => {
   const chercher = () => {
     const m = mots.value.split(',').map(x => x.trim()).filter(Boolean); T.majReglages({ mots_cles_fuite: m });
     const r = T.chercherVictimes(m); zone.innerHTML = '';
-    if (!r.nb) { zone.append(T.vide('Liste des victimes absente : relancer le .bat avec Internet pour la télécharger.')); return; }
+    if (!r.nb) { zone.append(T.vide('Liste des victimes absente : régénérer le fichier avec Internet pour la télécharger.')); return; }
     zone.append(h('div', { class: 'petit doux', style: 'margin-bottom:6px' }, `${T.nb(r.nb)} victimes publiées dans la liste embarquée${b && b.date ? ' (téléchargée le ' + b.date + ')' : ''}.`));
     zone.append(r.resultats.length ? T.tableau([{ t: 'Victime publiée', v: x => h('b', {}, x.victime) }, { t: 'Groupe', v: x => h('span', { class: 'pill rouge' }, x.groupe) }, { t: 'Date', v: x => T.fcourt(x.date) || x.date }, { t: 'Site', v: x => x.site },
       { t: 'Correspondance', v: x => h('span', { class: 'pill ' + (x.exact ? 'rouge' : 'orange') }, (x.exact ? 'exacte' : 'partielle') + ' : ' + x.mot) }], r.resultats, { defile: false }) : h('div', { class: 'alerte n1' }, h('div', { class: 'ic' }, ''), h('div', {}, 'Aucune victime correspondante dans la liste embarquée.')));
   };
-  c.append(T.carte('Sites de fuite des rançongiciels', 'ransomware.live · recherche faite DANS ce fichier', h('div', { class: 'petit doux', style: 'margin-bottom:8px' }, 'Le nom du client n\'est jamais envoyé : la liste publique des victimes (France et récentes) a été téléchargée par le .bat, la recherche se fait ici.'),
+  c.append(T.carte('Sites de fuite des rançongiciels', 'ransomware.live · recherche faite DANS ce fichier', h('div', { class: 'petit doux', style: 'margin-bottom:8px' }, 'Le nom du client n\'est jamais envoyé : la liste publique des victimes (France et récentes) a été téléchargée par DigSpill, la recherche se fait ici.'),
     h('div', { class: 'filtres' }, mots, h('button', { class: 'btn primaire', onclick: chercher }, 'Chercher')), zone));
   chercher();
 };
@@ -541,7 +541,7 @@ T.ECRANS.fuites = c => {
 T.ECRANS.ioc = c => {
   const i = T.iocs(), hs = T.hachages(), deja = T.dejaVu();
   c.append(h('h1', {}, 'IOC et chasse'), h('p', { class: 'sous-titre' }, 'Indicateurs de compromission de cet incident, à chercher sur tout le parc.'));
-  if (deja.length) c.append(T.carte('Déjà vus dans d\'autres incidents', 'mémoire tenue par le .bat sur la clé', h('ul', { class: 'lignes' }, deja.map(d => h('li', {}, h('span', { class: 'ic' }, ''),
+  if (deja.length) c.append(T.carte('Déjà vus dans d\'autres incidents', 'mémoire tenue par DigSpill sur la clé', h('ul', { class: 'lignes' }, deja.map(d => h('li', {}, h('span', { class: 'ic' }, ''),
     h('div', {}, h('div', { class: 'gras' }, `${d.client || 'client ?'} · ${d.poste}`), h('div', { class: 'petit doux' }, `collecte du ${T.fcourt(d.date)} · en commun : ` + d.communs.map(x => `${x.type} ${x.valeur.length > 20 ? x.valeur.slice(0, 16) + '…' : x.valeur}`).join(', ')))))),
     h('div', { class: 'petit doux' }, 'Même attaquant ou même outillage : prévenir les autres clients concernés et comparer les chronologies.')));
   const script = h('pre', { class: 'apercu', style: 'display:none;margin-top:10px' });
@@ -633,7 +633,7 @@ T.ECRANS.rapport = c => {
     h('button', { class: 'btn', onclick: () => T.telecharger(`${T.D.collecte.nom}_reglages.json`, JSON.stringify(T.stockage.lire(T.cleStockage()) || {}, null, 1), 'application/json') }, 'Réglages (.json)'),
     h('button', { class: 'btn', onclick: () => T.telecharger(`${T.identite().poste}_chronologie.csv`, T.versCsv(T.chronologie().evenements.map(e => ({ Date: T.fdate(e.t), Fin: e.fin ? T.fdate(e.fin) : '', Voie: e.voie, Gravite: e.g, Evenement: e.titre, Detail: e.detail, Fenetre: e.fen, Preuve: e.id })))) }, 'Chronologie (.csv)'),
     h('button', { class: 'btn', onclick: () => T.telecharger(`Chasse_IOC_${T.identite().poste}.ps1`, '\ufeff' + T.scriptChasse()) }, 'Script de chasse (.ps1)')),
-    h('div', { class: 'petit doux' }, 'Astuce : enregistrer le fichier de réglages à côté du dossier de collecte. Le .bat le reprendra à la prochaine génération.')));
+    h('div', { class: 'petit doux' }, 'Astuce : enregistrer le fichier de réglages à côté du dossier de collecte. DigSpill le reprendra à la prochaine génération.')));
 };
 
 /* ---------------------------------------------------------------- reglages */
@@ -761,9 +761,9 @@ T.ecranOuverture = () => {
   } });
   app.innerHTML = '';
   app.append(h('div', { class: 'accueil' }, h('div', { class: 'brand', style: 'color:var(--fg)' }, T.logo()), h('h1', { class: 'recit-titre' }, 'Ouvrir une collecte'),
-    h('p', { class: 'doux' }, 'Ce fichier ne contient pas encore de collecte. Le plus simple : glisser le dossier de collecte sur GENERER_INTERFACE.bat.'),
+    h('p', { class: 'doux' }, 'Ce fichier ne contient pas encore de collecte. Le plus simple : DigSpill.exe › Analyser une collecte.'),
     h('div', { class: 'zone' }, h('p', {}, 'Ou ouvrir directement le dossier Collecte, qui contient POSTE_date et POSTE_date_analyse.'), h('button', { class: 'btn primaire', onclick: () => choix.click() }, 'Choisir le dossier'), choix,
-      h('p', { class: 'petit pale' }, 'Lecture locale dans le navigateur. Sans le .bat : pas de pays des IP, ni listes noires, ni sites de fuite.'))));
+      h('p', { class: 'petit pale' }, 'Lecture locale dans le navigateur. Sans DigSpill.exe : pas de pays des IP, ni listes noires, ni sites de fuite.'))));
 };
 /** fichier protege par mot de passe : PBKDF2-SHA256 + AES-256-CBC + HMAC-SHA256 (chiffrer puis authentifier) */
 T.ecranMotDePasse = d => {
