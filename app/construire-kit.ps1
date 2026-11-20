@@ -121,8 +121,9 @@ if (-not $SansOutilsTiers) {
         & $velo --definitions $defs collector --datastore $ds (Join-Path $Depot 'moteur\velociraptor\spec.yaml') 2>&1 | ForEach-Object { Info "   | $_" }
         Info "   code de sortie : $LASTEXITCODE"
     } finally { $ErrorActionPreference = 'Stop'; Pop-Location }
-    $cands = @(@($Tmp, (Join-Path $env:TEMP 'gui_datastore')) | Where-Object { Test-Path -LiteralPath $_ } | ForEach-Object { Get-ChildItem -LiteralPath $_ -Recurse -File -Filter '*.exe' -ErrorAction SilentlyContinue } |
-             Where-Object { $_.FullName -ne $velo -and $_.LastWriteTime -ge $debut })
+    # le collecteur repacke garde la date du binaire d'origine : pas de filtre sur la date dans le dossier temporaire du kit (neuf a chaque fois)
+    $cands = @(Get-ChildItem -LiteralPath $Tmp -Recurse -File -Filter '*.exe' -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $velo }) +
+             @(Get-ChildItem -LiteralPath (Join-Path $env:TEMP 'gui_datastore') -Recurse -File -Filter '*.exe' -ErrorAction SilentlyContinue | Where-Object { $_.CreationTime -ge $debut })
     $c = $cands | Sort-Object @{ Expression = { $_.Name -like '*Collecteur*' }; Descending = $true }, LastWriteTime -Descending | Select-Object -First 1
     if (-not $c) { throw 'Collecteur Velociraptor non genere (aucun .exe dans le datastore)' }
     $f = Join-Path $Outils 'Collecteur-Velociraptor.exe'
