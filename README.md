@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="interface/assets/digspill-logo-blanc.svg">
+  <img src="interface/assets/digspill-logo-noir.svg" alt="digspill" width="220">
+</picture>
+
 # DigSpill (bêta)
 
 **Collecte et analyse forensique Windows : ce que l'attaquant a pu creuser (*dig*) et faire sortir (*spill*).**
@@ -73,28 +78,32 @@ Une vraie fenêtre Windows à la place de la console : on saisit l'intervention,
 
 `GENERER_INTERFACE.bat` crée **un seul fichier** `<POSTE>_<date>_INTERFACE.html` qui contient l'interface, les graphiques, la carte du monde et toutes les données de la collecte et de l'analyse. On le copie sur n'importe quel PC et on l'ouvre d'un double-clic (Edge, Chrome ou Firefox) : pas de serveur, pas d'installation, ça fonctionne hors ligne.
 
-![Vue d'ensemble](docs/captures/vue.png)
+![Résumé : que faire maintenant ?](docs/captures/resume.png)
 
-| Écran | Ce qu'il montre |
+Quatre onglets, trois niveaux de lecture : la phrase en haut (5 secondes), les actions et le récit (30 secondes), la preuve (un clic).
+
+| Onglet | Ce qu'il montre |
 |---|---|
-| 🏠 Vue d'ensemble | Alertes, indicateurs, grille par canal, à faire maintenant, compte à rebours des 72 h CNIL |
-| 🕒 Chronologie | Frise de tous les événements (sessions, connexions, force brute, exécutions, fichiers, navigation, rançongiciel), zoom sur chaque fenêtre de l'attaquant |
-| 🌍 IP et pays | Carte des connexions, pays et opérateur, hébergeur / VPN, listes noires publiques, liste blanche partagée |
-| 📤 Exfiltration | Volumes SRUM et **test de plausibilité** : ce qui a *pu* sortir, comparé à la base patients et au débit de la ligne |
-| 👁️ Visibilité | Pour chaque heure, quelles sources couvraient le poste ; traces d'anti-forensique |
-| 🏥 Santé et RGPD | Logiciels métier et catégories de données exposées (déductions sourcées), horaires du cabinet, éléments pour le formulaire CNIL |
-| 🔑 Identifiants et fuites | Comptes à faire changer, mot de passe testé sur Have I Been Pwned (k-anonymat), recherche du client sur les sites de fuite |
-| 🧬 IOC et chasse | Hachages, persistance, **composant Datto RMM** prêt à lancer sur tout le parc, indicateurs déjà vus chez un autre client |
-| 🤖 Analyse IA | Claude lit une synthèse **filtrée**, cite une preuve par phrase, et le fichier **vérifie chaque citation** |
-| 🔏 Intégrité et preuve | **Scellé** horodaté par un tiers, chaîne de possession, vérification des fichiers dans le navigateur, **PV de collecte** à signer |
-| 🖨️ Rapports | Rapport praticien (1 page) et rapport technique sourcé, en PDF via l'impression |
+| 🎯 Résumé | Une phrase de faits (« Une connexion à distance depuis la Roumanie, 1,9 Go envoyés sur Internet, puis 48 213 fichiers chiffrés. »), les **actions à faire maintenant** (cases à cocher, compte à rebours CNIL, procédure « Isoler le poste »), ce que la collecte ne peut pas voir |
+| 🕒 Chronologie | La fenêtre de l'attaquant **racontée en 4 chapitres** : il entre, il s'installe, il emporte les données, il détruit. Chaque étape s'ouvre sur ses preuves : ce que dit la ligne, fichier, n° de ligne, SHA256 du manifeste |
+| 🔎 Détails | Grille par canal, fenêtres, chiffres clés et alertes, IP et pays, exfiltration, visibilité, santé et RGPD, identifiants et fuites, IOC et chasse, analyse IA, tous les événements (frise), SYNTHESE.txt |
+| 🔏 Preuves | Intégrité (scellé horodaté, chaîne de possession, vérification des fichiers) et rapports à imprimer (praticien, technique, PV de collecte) |
+
+- **Ctrl K** : recherche dans les IP, empreintes, comptes, étapes du récit, rubriques, et identifiants de preuve (`executions_fenetres#14`).
+- Thème sombre par défaut, **thème clair** dans Réglages (engrenage en haut à droite). Le rapport imprimé reste clair.
+- Polices Geist, Geist Mono et Doto **embarquées** (sous-ensembles latins, licence OFL) : aucune requête réseau à l'ouverture.
+- Les anciens liens (`#ip`, `#exfil`, `#integrite`, `#rapport`…) ouvrent la bonne rubrique.
 
 Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable qui affiche la ligne du CSV d'origine et le SHA256 du fichier dans le manifeste.
+
+![Chronologie racontée : l'étape MEGA ouverte sur ses 8 preuves](docs/captures/chrono.png)
 
 <details>
 <summary>Autres captures (collecte fictive de démonstration)</summary>
 
-![Chronologie](docs/captures/chrono.png)
+![Recherche Ctrl K](docs/captures/recherche.png)
+![Isoler le poste : procédure](docs/captures/isoler.png)
+![Grille par canal](docs/captures/grille.png)
 ![IP et pays](docs/captures/ip.png)
 ![Exfiltration](docs/captures/exfil.png)
 ![Visibilité](docs/captures/visibilite.png)
@@ -102,7 +111,9 @@ Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable q
 ![Identifiants et fuites](docs/captures/fuites.png)
 ![IOC et chasse](docs/captures/ioc.png)
 ![Analyse IA : réponse d'exemple passée au vérificateur](docs/captures/ia.png)
-![Intégrité et preuve](docs/captures/integrite.png)
+![Tous les événements](docs/captures/evenements.png)
+![Thème clair](docs/captures/clair.png)
+<img src="docs/captures/mobile.png" alt="Téléphone (390 px)" width="300">
 
 </details>
 
@@ -143,7 +154,7 @@ Le fichier HTML est **aussi sensible que la collecte** (comptes, chemins, sites 
 
 ### Développement
 
-Le code de l'appli Windows est dans `app\` (C# 5, WinForms, .NET Framework 4.x : `app\CONSTRUIRE.bat`). Le code de l'interface est dans `interface\` (`modele.html`, `style.css`, `js\01_base.js` à `06_integrite.js`, ECharts et la carte dans `vendor\`). `interface\dev\generer_demo.py` crée une collecte fictive (adresses de documentation RFC 5737, domaines `.example`) et `interface\dev\assembler.py` produit le même fichier que le `.ps1`, pour tester sans Windows. `interface\dev\tsa_demo.sh` crée une autorité d'horodatage **fictive** (OpenSSL) pour la démo : `assembler.py --tsa-demo demo/tsa`.
+Le code de l'appli Windows est dans `app\` (C# 5, WinForms, .NET Framework 4.x : `app\CONSTRUIRE.bat`). Le code de l'interface est dans `interface\` (`modele.html`, `style.css`, `js\01_base.js` à `06_integrite.js`, ECharts, la carte et les polices dans `vendor\`, le logo dans `assets\`). Le récit de la Chronologie et les actions du Résumé sont calculés par des règles fixes (`T.recit`, `T.actions` dans `02_analyse.js`), sans IA. `interface\dev\generer_demo.py` crée une collecte fictive (adresses de documentation RFC 5737, domaines `.example`) et `interface\dev\assembler.py` produit le même fichier que le `.ps1`, pour tester sans Windows ; le workflow `Interface HTML` vérifie sur Windows que les deux générateurs produisent le même fichier (`interface\dev\comparer_generateurs.py`). `interface\dev\tsa_demo.sh` crée une autorité d'horodatage **fictive** (OpenSSL) pour la démo : `assembler.py --tsa-demo demo/tsa`.
 
 ## Arborescence
 

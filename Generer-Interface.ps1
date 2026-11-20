@@ -428,6 +428,13 @@ if ($Proteger) {
 function Lire([string]$rel) { [IO.File]::ReadAllText((Join-Path $Interface $rel), [Text.Encoding]::UTF8) }
 $app = (Get-ChildItem -LiteralPath (Join-Path $Interface 'js') -Filter '*.js' | Sort-Object Name | ForEach-Object { [IO.File]::ReadAllText($_.FullName, [Text.Encoding]::UTF8) }) -join "`n"
 $html = (Lire 'modele.html')
+# favicon et polices (Geist, Geist Mono, Doto) en data URI : le fichier reste autonome, aucun appel reseau
+$ico = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $Interface 'assets\favicon.svg')))
+$html = $html.Replace('<!--ICONE-->', '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,' + $ico + '">')
+$dPol = Join-Path $Interface 'vendor\polices'
+$cssPol = [IO.File]::ReadAllText((Join-Path $dPol 'polices.css'), [Text.Encoding]::UTF8)
+$cssPol = [regex]::Replace($cssPol, 'url\(([A-Za-z0-9._-]+\.woff2)\)', { param($m) 'url(data:font/woff2;base64,' + [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $dPol $m.Groups[1].Value))) + ')' })
+$html = $html.Replace('<!--POLICES-->', "<style>`n" + $cssPol + "</style>")
 $html = $html.Replace('<!--STYLE-->', "<style>`n" + (Lire 'style.css') + "`n</style>")
 $html = $html.Replace('<!--MONDE-->', '<script type="application/json" id="monde">' + (Lire 'vendor\monde.json') + '</script>')
 $html = $html.Replace('<!--DONNEES-->', '<script type="application/json" id="donnees">' + $donnees + '</script>')

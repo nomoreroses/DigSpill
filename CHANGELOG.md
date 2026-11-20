@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 2.6 (bêta)
+Nouvelle interface : répondre d'abord à « que faire maintenant ? ».
+
+- **4 onglets au lieu de 11** : Résumé, Chronologie, Détails, Preuves. Les anciens écrans deviennent des rubriques de Détails et de Preuves ; les anciens liens (`#ip`, `#exfil`, `#integrite`, `#rapport`…) sont redirigés.
+- **Résumé** : une phrase de faits, les actions à faire (3 visibles, les autres repliées, cases cochées gardées dans le navigateur), compte à rebours CNIL, procédure « Isoler le poste » (débrancher, couper le Wi-Fi, ne pas éteindre, noter l'heure), ce que la collecte ne peut pas voir.
+- **Chronologie racontée** en 4 chapitres (il entre, il s'installe, il emporte les données, il détruit) par des règles fixes, sans IA. Chaque étape montre ses preuves (ligne, fichier, n° de ligne, SHA256) et les traces liées ; un événement important non reconnu va dans « Autres événements ». Fenêtre en liste blanche : chapitres aux noms neutres.
+- **Recherche Ctrl K** : IP, empreintes, comptes, étapes, rubriques, identifiants de preuve.
+- Logo « digspill » au point rouge, favicon, **thème sombre** par défaut et thème clair dans Réglages ; polices Geist, Geist Mono et Doto embarquées (sous-ensembles latins, 82 Ko, OFL) ; plus aucun emoji dans l'interface ; graphiques aux couleurs du thème.
+- Rapport imprimé : toujours clair, avec le logo noir.
+- Icône de DigSpill.exe refaite à partir du nouveau logo.
+- Workflow `Interface HTML` : vérifie sur Windows que `Generer-Interface.ps1` et `assembler.py` produisent le même fichier.
+
 ## 2.5 (bêta)
 Appli Windows **DigSpill.exe** et protection de la clé contre un rançongiciel.
 

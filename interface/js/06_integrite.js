@@ -4,7 +4,6 @@
    ============================================================================ */
 'use strict';
 
-T.ONGLETS.splice(T.ONGLETS.findIndex(o => o.id === 'rapport'), 0, { id: 'integrite', ic: '🔏', nom: 'Intégrité et preuve' });
 
 /* ---------------------------------------------------------------- lecture minimale d'un jeton RFC 3161 (DER) */
 const derLire = (b, i) => {
@@ -59,21 +58,21 @@ T.chaine = () => T.memo('chaine', () => {
   const qui = champ('Technicien') ? `${champ('Technicien')}${champ('Societe') ? ' (' + champ('Societe') + ')' : ''}` : champ('Lance par');
   const log = T.texte('collecte.log').split(/\r?\n/).filter(Boolean);
   const debut = log[0], fin = log.reverse().find(l => /Collecte terminee/i.test(l)) || '';
-  if (debut) add(debut.slice(0, 19), qui || '?', 'Collecte démarrée sur le poste', `${champ('Poste')} · mode ${champ('Mode') || '?'} · script ${champ('Version script') || '?'}`, 'collecte.log', '🔌');
+  if (debut) add(debut.slice(0, 19), qui || '?', 'Collecte démarrée sur le poste', `${champ('Poste')} · mode ${champ('Mode') || '?'} · script ${champ('Version script') || '?'}`, 'collecte.log', '');
   const man = (T.D.fichiers || {}).manifeste_sha256;
-  if (man) add(man.modifie || T.identite().date, qui || '?', 'Manifeste SHA256 de la collecte', `${T.nb(T.table('manifeste_sha256').length)} fichiers, chacun avec son empreinte`, 'manifeste_sha256#1', '🧾');
-  if (fin) add(fin.slice(0, 19), qui || '?', 'Collecte terminée', fin.slice(21).replace(/^=+\s*|\s*=+$/g, ''), 'collecte.log', '✅');
+  if (man) add(man.modifie || T.identite().date, qui || '?', 'Manifeste SHA256 de la collecte', `${T.nb(T.table('manifeste_sha256').length)} fichiers, chacun avec son empreinte`, 'manifeste_sha256#1', '');
+  if (fin) add(fin.slice(0, 19), qui || '?', 'Collecte terminée', fin.slice(21).replace(/^=+\s*|\s*=+$/g, ''), 'collecte.log', '');
   const alog = T.texte('analyse.log').split(/\r?\n/).filter(Boolean);
-  if (alog.length) add(alog[alog.length - 1].slice(0, 19), '?', "Analyse terminée (dossier _analyse, la collecte n'est pas modifiée)", `${T.nb(T.table('manifeste_analyse_sha256').length)} fichiers d'analyse dans leur propre manifeste`, 'analyse.log', '🔬');
+  if (alog.length) add(alog[alog.length - 1].slice(0, 19), '?', "Analyse terminée (dossier _analyse, la collecte n'est pas modifiée)", `${T.nb(T.table('manifeste_analyse_sha256').length)} fichiers d'analyse dans leur propre manifeste`, 'analyse.log', '');
   for (const [k, f] of Object.entries(T.D.fichiers || {})) if (/^PV_COPIE_.*\.txt$/i.test(k)) {
     const t = f.texte || '', g = x => ((new RegExp(x + '\\s*:\\s*(.+)')).exec(t) || [])[1] || '';
-    add(g('Date / heure').slice(0, 19), g('Operateur'), 'Seconde copie vérifiée (Copier-Preuves.ps1)', `${g('Destination')} · ${g('Resultat')}`, k, '💽');
+    add(g('Date / heure').slice(0, 19), g('Operateur'), 'Seconde copie vérifiée (Copier-Preuves.ps1)', `${g('Destination')} · ${g('Resultat')}`, k, '');
   }
   for (const s of T.scelles()) {
-    add(s.cree.slice(0, 19), s.par, `Scellé ${s.nom}`, `${s.elements.length} fichiers scellés · empreinte ${s.sha256.slice(0, 16)}…`, '', '🔏');
-    if (s.jeton && s.jeton.date) add(T.fdate(new Date(s.jeton.date)), s.jeton.tsa || s.horodateur || 'tiers', 'Horodatage par un tiers (jeton RFC 3161)', `${s.jetonConforme ? 'jeton conforme au scellé' : 'jeton NON conforme au scellé'} · n° ${s.jeton.serie}`, '', '⏱️');
+    add(s.cree.slice(0, 19), s.par, `Scellé ${s.nom}`, `${s.elements.length} fichiers scellés · empreinte ${s.sha256.slice(0, 16)}…`, '', '');
+    if (s.jeton && s.jeton.date) add(T.fdate(new Date(s.jeton.date)), s.jeton.tsa || s.horodateur || 'tiers', 'Horodatage par un tiers (jeton RFC 3161)', `${s.jetonConforme ? 'jeton conforme au scellé' : 'jeton NON conforme au scellé'} · n° ${s.jeton.serie}`, '', '');
   }
-  add(/^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(T.D.genere_le || '') ? T.D.genere_le + ':59' : T.D.genere_le, (T.D.generateur || '').replace(/^.* sur /, ''), "Fichier d'interface généré", T.D.generateur || '', '', '🖥️');
+  add(/^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(T.D.genere_le || '') ? T.D.genere_le + ':59' : T.D.genere_le, (T.D.generateur || '').replace(/^.* sur /, ''), "Fichier d'interface généré", T.D.generateur || '', '', '');
   return ev.filter(e => e.date).sort((a, b) => a.date - b.date);
 });
 
@@ -109,61 +108,61 @@ T.ECRANS.integrite = c => {
   const sc = T.scelleActuel(), ch = T.chaine(), R = T.reglages(), id = T.identite();
   c.append(h('h1', {}, 'Intégrité et preuve'), h('p', { class: 'sous-titre' }, "Prouver que les preuves n'ont pas bougé depuis la collecte, et dire qui les a eues entre les mains."));
   if (!sc) {
-    c.append(h('div', { class: 'alerte n2' }, h('div', { class: 'ic' }, '⚠️'), h('div', {}, "Aucun scellé dans ce fichier : régénérer avec GENERER_INTERFACE.bat (version 1.1 ou plus) pour créer le scellé et le faire horodater.")));
+    c.append(h('div', { class: 'alerte n2' }, h('div', { class: 'ic' }, ''), h('div', {}, "Aucun scellé dans ce fichier : régénérer avec GENERER_INTERFACE.bat (version 1.1 ou plus) pour créer le scellé et le faire horodater.")));
   } else {
     const j = sc.jeton, qr = T.qrSvg(`DIGSPILL SCELLE ${sc.nom} SHA256 ${sc.sha256}`, 5);
-    const etatJeton = !j ? h('span', { class: 'pill orange' }, '⏱️ pas encore horodaté') : j.erreur ? h('span', { class: 'pill rouge' }, '❌ ' + j.erreur)
-      : sc.jetonConforme ? h('span', { class: 'pill vert' }, `✅ horodaté le ${T.flong(new Date(j.date))}`) : h('span', { class: 'pill rouge' }, '❌ jeton non conforme au scellé');
+    const etatJeton = !j ? h('span', { class: 'pill orange' }, 'pas encore horodaté') : j.erreur ? h('span', { class: 'pill rouge' }, '' + j.erreur)
+      : sc.jetonConforme ? h('span', { class: 'pill vert' }, `horodaté le ${T.flong(new Date(j.date))}`) : h('span', { class: 'pill rouge' }, 'jeton non conforme au scellé');
     const zoneVerif = h('div', { class: 'petit', style: 'margin-top:8px' });
     c.append(h('div', { class: 'carte scelle-carte' },
       h('div', { class: 'scelle-grille' },
         h('div', {},
           h('div', { class: 'pale petit gras', style: 'letter-spacing:.6px;text-transform:uppercase' }, 'Empreinte du scellé (SHA-256)'),
           h('div', { class: 'mono scelle-empreinte', title: 'Cliquer pour copier', onclick: async () => T.toast(await T.copier(sc.sha256) ? 'Empreinte copiée' : 'Copie impossible') }, sc.sha256.replace(/(.{16})/g, '$1 ').trim()),
-          h('div', { class: 'filtres', style: 'margin-top:10px' }, etatJeton, h('span', { class: 'pill gris' }, `🧾 ${sc.elements.length} fichiers scellés`),
-            h('span', { class: 'pill gris' }, `📁 ${T.nb(T.table('manifeste_sha256').length + T.table('manifeste_analyse_sha256').length)} fichiers sous manifeste`)),
+          h('div', { class: 'filtres', style: 'margin-top:10px' }, etatJeton, h('span', { class: 'pill gris' }, `${sc.elements.length} fichiers scellés`),
+            h('span', { class: 'pill gris' }, `${T.nb(T.table('manifeste_sha256').length + T.table('manifeste_analyse_sha256').length)} fichiers sous manifeste`)),
           h('ul', { class: 'lignes', style: 'margin-top:8px' },
-            h('li', {}, h('span', { class: 'ic' }, '🔏'), h('span', {}, `Scellé ${sc.nom} créé le ${sc.cree || '?'} par ${sc.par || '?'}`)),
-            j && !j.erreur ? h('li', {}, h('span', { class: 'ic' }, '⏱️'), h('span', {}, `Autorité : ${j.tsa || sc.horodateur || '?'}${j.org ? ' (' + j.org + ')' : ''} · jeton n° ${j.serie}`)) : '',
-            h('li', {}, h('span', { class: 'ic' }, '🧪'), h('span', {}, h('button', { class: 'btn petit', onclick: async () => {
+            h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, `Scellé ${sc.nom} créé le ${sc.cree || '?'} par ${sc.par || '?'}`)),
+            j && !j.erreur ? h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, `Autorité : ${j.tsa || sc.horodateur || '?'}${j.org ? ' (' + j.org + ')' : ''} · jeton n° ${j.serie}`)) : '',
+            h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, h('button', { class: 'btn petit', onclick: async () => {
               const ok = (await T.sha256Hex(sc.texte.replace(/\r?\n/g, '\r\n'))) === sc.sha256 || (await T.sha256Hex(sc.texte)) === sc.sha256;
               zoneVerif.innerHTML = '';
-              zoneVerif.append(h('div', {}, ok ? '✅ Le texte du scellé embarqué redonne bien son empreinte.' : '❌ Le texte embarqué ne redonne pas l\'empreinte annoncée.'),
-                j && !j.erreur ? h('div', {}, sc.jetonConforme ? '✅ Le jeton d\'horodatage porte sur cette empreinte exacte.' : '❌ Le jeton porte sur une autre empreinte.') : '',
+              zoneVerif.append(h('div', {}, ok ? 'Le texte du scellé embarqué redonne bien son empreinte.' : 'Le texte embarqué ne redonne pas l\'empreinte annoncée.'),
+                j && !j.erreur ? h('div', {}, sc.jetonConforme ? 'Le jeton d\'horodatage porte sur cette empreinte exacte.' : 'Le jeton porte sur une autre empreinte.') : '',
                 h('div', { class: 'pale' }, 'La signature du jeton se vérifie avec : openssl ts -verify -data ' + sc.nom + '.txt -in ' + sc.nom + '.tsr -CAfile <chaîne de l\'autorité>'));
             } }, 'Contrôler le scellé et son jeton'))), zoneVerif)),
         h('div', { class: 'scelle-qr', html: qr, title: 'Empreinte du scellé en QR code' })),
       h('details', { style: 'margin-top:10px' }, h('summary', { class: 'petit gras', style: 'cursor:pointer' }, 'Contenu exact du scellé'), h('pre', { class: 'apercu', style: 'margin-top:8px' }, sc.texte))));
   }
   // chaine de possession
-  c.append(T.carte('🔗 Chaîne de possession', 'reconstituée depuis les journaux, manifestes, PV et scellés', ch.length ? h('ol', { class: 'chaine' }, ch.map(e => h('li', {},
+  c.append(T.carte('Chaîne de possession', 'reconstituée depuis les journaux, manifestes, PV et scellés', ch.length ? h('ol', { class: 'chaine' }, ch.map(e => h('li', {},
     h('span', { class: 'chaine-ic' }, e.icone), h('div', {}, h('div', { class: 'gras' }, e.action), h('div', { class: 'petit doux' }, `${T.flong(e.date)} · ${e.acteur || '?'}`), h('div', { class: 'petit' }, e.detail)),
     h('div', { class: 'droite' }, e.preuve ? T.bp(e.preuve) : '')))) : T.vide('Journaux absents : chaîne non reconstituable.')));
   // verification des fichiers
   const etat = h('div', { class: 'petit doux', style: 'margin-top:8px' }), resultat = h('div');
   const choix = h('input', { type: 'file', webkitdirectory: true, multiple: true, style: 'display:none', onchange: async e => {
-    resultat.innerHTML = ''; etat.textContent = '⏳ Calcul des empreintes…';
-    const r = await T.verifierDossier([...e.target.files], (k, n, p) => { etat.textContent = `⏳ ${k} / ${n} · ${p.split('\\').pop()}`; });
+    resultat.innerHTML = ''; etat.textContent = 'Calcul des empreintes…';
+    const r = await T.verifierDossier([...e.target.files], (k, n, p) => { etat.textContent = `${k} / ${n} · ${p.split('\\').pop()}`; });
     etat.textContent = `Terminé : ${T.nb(r.total)} empreintes attendues.`;
-    resultat.append(h('div', { class: 'grille g4', style: 'margin:10px 0' }, T.kpi('✅', T.nb(r.conformes), 'fichiers conformes', 'vert'), T.kpi('❌', T.nb(r.modifies.length), 'fichiers modifiés', r.modifies.length ? 'rouge' : ''),
-      T.kpi('❔', T.nb(r.manquants.length), 'absents de la sélection', r.manquants.length ? 'orange' : ''), T.kpi('🐘', T.nb(r.tropGros.length), 'trop gros pour le navigateur')));
-    const lignes = [...r.modifies.map(x => ({ e: '❌ modifié', ...x })), ...r.tropGros.map(x => ({ e: '🐘 à vérifier avec Get-FileHash', ...x })), ...r.manquants.slice(0, 200).map(x => ({ e: '❔ absent', ...x }))];
+    resultat.append(h('div', { class: 'grille g4', style: 'margin:10px 0' }, T.kpi('', T.nb(r.conformes), 'fichiers conformes', 'vert'), T.kpi('', T.nb(r.modifies.length), 'fichiers modifiés', r.modifies.length ? 'rouge' : ''),
+      T.kpi('', T.nb(r.manquants.length), 'absents de la sélection', r.manquants.length ? 'orange' : ''), T.kpi('', T.nb(r.tropGros.length), 'trop gros pour le navigateur')));
+    const lignes = [...r.modifies.map(x => ({ e: 'modifié', ...x })), ...r.tropGros.map(x => ({ e: 'à vérifier avec Get-FileHash', ...x })), ...r.manquants.slice(0, 200).map(x => ({ e: 'absent', ...x }))];
     if (lignes.length) resultat.append(T.tableau([{ t: 'État', v: x => x.e }, { t: 'Fichier', v: x => h('span', { class: 'mono petit' }, x.chemin) }, { t: 'Attendu', v: x => h('span', { class: 'mono petit', title: x.sha256 }, x.sha256.slice(0, 16) + '…') },
       { t: 'Source', v: x => x.id ? T.bp(x.id) : x.source }], lignes, { hauteur: '360px' }));
     if (r.tropGros.length) resultat.append(h('pre', { class: 'apercu', style: 'margin-top:8px' }, r.tropGros.map(x => `(Get-FileHash -Algorithm SHA256 -LiteralPath '${x.chemin}').Hash -eq '${x.sha256}'`).join('\n')));
   } });
-  c.append(T.carte('🧪 Vérifier les fichiers de preuve', 'dans ce navigateur, rien n\'est envoyé', h('ul', { class: 'lignes' },
-    h('li', {}, h('span', { class: 'ic' }, '1️⃣'), h('span', {}, 'Brancher le support de preuves (clé de collecte ou seconde copie).')),
-    h('li', {}, h('span', { class: 'ic' }, '2️⃣'), h('span', {}, `Choisir le dossier Collecte (qui contient ${T.D.collecte.nom}).`)),
-    h('li', {}, h('span', { class: 'ic' }, '3️⃣'), h('span', {}, 'Chaque fichier est haché ici et comparé aux manifestes et au scellé.'))),
-    h('button', { class: 'btn primaire', style: 'margin-top:8px', onclick: () => choix.click() }, '📂 Choisir le dossier et vérifier'), choix, etat, resultat));
+  c.append(T.carte('Vérifier les fichiers de preuve', 'dans ce navigateur, rien n\'est envoyé', h('ul', { class: 'lignes' },
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Brancher le support de preuves (clé de collecte ou seconde copie).')),
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, `Choisir le dossier Collecte (qui contient ${T.D.collecte.nom}).`)),
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Chaque fichier est haché ici et comparé aux manifestes et au scellé.'))),
+    h('button', { class: 'btn primaire', style: 'margin-top:8px', onclick: () => choix.click() }, 'Choisir le dossier et vérifier'), choix, etat, resultat));
   // valeur probante
-  c.append(T.carte('⚖️ Ce que vaut ce dossier', 'à valider avec un avocat ou l\'assureur', h('ul', { class: 'lignes' },
-    h('li', {}, h('span', { class: 'ic' }, '🧾'), h('span', {}, 'Manifestes SHA256 + scellé : on peut démontrer qu\'aucun fichier n\'a changé depuis sa collecte.')),
-    h('li', {}, h('span', { class: 'ic' }, '⏱️'), h('span', {}, "Horodatage par un tiers : date opposable. Délivré par un prestataire qualifié eIDAS, il est présumé exact (art. 41 du règlement eIDAS).")),
-    h('li', {}, h('span', { class: 'ic' }, '✍️'), h('span', {}, 'PV de collecte signé (technicien, représentant du cabinet) : qui a fait quoi, quand, avec quels outils.')),
-    h('li', {}, h('span', { class: 'ic' }, '🏛️'), h('span', {}, "Pour aller plus loin : constat d'un commissaire de justice, ou prestataire de réponse à incident qualifié PRIS par l'ANSSI."))),
-    h('div', { class: 'filtres', style: 'margin-top:10px' }, h('button', { class: 'btn primaire', onclick: () => T.imprimer('pv') }, '🖨️ PV de collecte et certificat d\'intégrité'))));
+  c.append(T.carte('Ce que vaut ce dossier', 'à valider avec un avocat ou l\'assureur', h('ul', { class: 'lignes' },
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Manifestes SHA256 + scellé : on peut démontrer qu\'aucun fichier n\'a changé depuis sa collecte.')),
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, "Horodatage par un tiers : date opposable. Délivré par un prestataire qualifié eIDAS, il est présumé exact (art. 41 du règlement eIDAS).")),
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'PV de collecte signé (technicien, représentant du cabinet) : qui a fait quoi, quand, avec quels outils.')),
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, "Pour aller plus loin : constat d'un commissaire de justice, ou prestataire de réponse à incident qualifié PRIS par l'ANSSI."))),
+    h('div', { class: 'filtres', style: 'margin-top:10px' }, h('button', { class: 'btn primaire', onclick: () => T.imprimer('pv') }, 'PV de collecte et certificat d\'intégrité'))));
 };
 
 /* ---------------------------------------------------------------- PV imprimable + section du rapport technique */
