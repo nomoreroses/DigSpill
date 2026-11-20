@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
     DigSpill - Collecte-Exfil.ps1 v2.2 - Collecte de triage forensique pour suspicion d'intrusion / exfiltration / rancongiciel.
-    A lancer EN ADMINISTRATEUR sur le poste suspect (via LANCER_COLLECTE.bat ou LANCER_COLLECTE_LEGERE.bat).
+    A lancer EN ADMINISTRATEUR sur le poste suspect (par DigSpill.exe, ou en secours moteur\secours\LANCER_COLLECTE.bat).
     Les resultats sont ecrits sur la cle : <cle>\Collecte\<NOMPC>_<date>\
 
     Parametres :
@@ -18,11 +18,11 @@
     Memoire vive : brancher un disque externe NTFS ou exFAT contenant un dossier MEMOIRE a la racine
     AVANT de lancer. Sinon la RAM est capturee sur la cle seulement si elle est NTFS/exFAT et assez grande.
 
-    Outils attendus dans <cle>\outils\ : winpmem_mini_x64_rc2.exe, 7zr.exe
-    Velociraptor (<cle>\Collecteur-Velociraptor.exe) sert aussi de moteur SQLite / lecture NTFS brute.
+    Outils attendus dans <cle>\moteur\outils\ : winpmem_mini_x64_rc2.exe, 7zr.exe, Collecteur-Velociraptor.exe
+    Velociraptor sert aussi de moteur SQLite / lecture NTFS brute.
 
-    L'analyse orientee exfiltration (Analyse-Exfil.ps1) est lancee par LANCER_COLLECTE.bat apres Velociraptor,
-    ou a posteriori par ANALYSER_COLLECTE.bat (glisser-deposer d'un dossier de collecte).
+    L'analyse orientee exfiltration (Analyse-Exfil.ps1) est lancee par DigSpill.exe apres Velociraptor,
+    ou a posteriori par DigSpill.exe > Analyser une collecte.
 #>
 [CmdletBinding()]
 param(
@@ -47,11 +47,14 @@ $StartTime = Get-Date
 $Full = ($Mode -eq 'Complet')
 
 $Root     = Split-Path -Parent $MyInvocation.MyCommand.Path
+# cle rangee : <cle>\DigSpill.exe + <cle>\moteur\ (scripts, outils) ; les resultats vont dans <cle>\Collecte
+$Cle      = if ((Split-Path $Root -Leaf) -eq 'moteur') { Split-Path $Root -Parent } else { $Root }
 $Tools    = Join-Path $Root 'outils'
-$Velo     = Join-Path $Root 'Collecteur-Velociraptor.exe'
+$Velo     = @((Join-Path $Tools 'Collecteur-Velociraptor.exe'), (Join-Path $Root 'Collecteur-Velociraptor.exe'), (Join-Path $Cle 'Collecteur-Velociraptor.exe')) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $Velo) { $Velo = Join-Path $Tools 'Collecteur-Velociraptor.exe' }
 $Computer = $env:COMPUTERNAME
 $Stamp    = Get-Date -Format 'yyyyMMdd_HHmmss'
-$DestRoot = if ($Destination) { (Resolve-Path -LiteralPath $Destination -ErrorAction Stop).ProviderPath } else { $Root }
+$DestRoot = if ($Destination) { (Resolve-Path -LiteralPath $Destination -ErrorAction Stop).ProviderPath } else { $Cle }
 $Out      = Join-Path $DestRoot ("Collecte\{0}_{1}{2}" -f $Computer, $Stamp, $(if ($Full) { '' } else { '_leger' }))
 $Since    = (Get-Date).AddDays(-$Days)
 $UsbQ     = Split-Path $DestRoot -Qualifier
@@ -1098,6 +1101,13 @@ Step 'Identifiants exposes : sites enregistres dans les navigateurs, Wi-Fi, gest
         }
     }
     Save-Text 'exposition\cmdkey_compte_courant.txt' { cmdkey /list }
+    # identifiants du compte de la session, lus par DigSpill.exe AVANT l'elevation (le coffre d'un autre compte n'est pas lisible ici)
+    if ($env:DIGSPILL_IDENTIFIANTS) {
+        $cpt = if ($env:DIGSPILL_COMPTE_SESSION) { $env:DIGSPILL_COMPTE_SESSION -replace '[\\/:*?"<>|]', '_' } else { 'session' }
+        $nomSes = 'cmdkey_{0}_{1}.txt' -f $Computer, $cpt
+        [IO.File]::WriteAllText((P "exposition\$nomSes"), $env:DIGSPILL_IDENTIFIANTS, (New-Object Text.UTF8Encoding($true)))
+        Log "    Identifiants du compte de la session ($cpt) : exposition\$nomSes"
+    }
 }
 
 # =================================================================== 11. RECHERCHE DE FICHIERS SUSPECTS
@@ -1340,7 +1350,7 @@ Incident (necessaire a la notification CNIL : le delai de 72 h court a partir de
   [ ] Nombre estime de PATIENTS dans la base (pas de fichiers) : ________  source : ______________
   [ ] Categories de donnees : identite / NIR / donnees de sante / documents scannes / courriers / autres : ______
   [ ] Comptes de l'identifiant Windows a lister : ouvrir la session de chaque compte et lancer
-      LISTER_IDENTIFIANTS.bat (cibles du gestionnaire d'identifiants : NAS, serveur, sites web).
+      DigSpill.exe > Identifiants de ce compte (cibles du gestionnaire d'identifiants : NAS, serveur, sites web).
 
 Preuves
   [ ] Seconde copie des preuves sur un autre support, hachee et verifiee (Copier-Preuves.ps1),

@@ -65,7 +65,9 @@ function JB([bool]$b) { if ($b) { 'true' } else { 'false' } }
 
 # ------------------------------------------------------------------ 1. collecte a traiter
 $motif = '^.+_\d{8}_\d{6}(_leger)?$'
-if (-not $Collecte) { $Collecte = Join-Path $Ici 'Collecte' }
+# cle rangee : <cle>\DigSpill.exe + <cle>\moteur\ ; les collectes sont dans <cle>\Collecte
+$Cle = if ((Split-Path $Ici -Leaf) -eq 'moteur') { Split-Path $Ici -Parent } else { $Ici }
+if (-not $Collecte) { $Collecte = Join-Path $Cle 'Collecte' }
 $Collecte = (Resolve-Path -LiteralPath $Collecte).ProviderPath.TrimEnd('\')
 $nom = Split-Path $Collecte -Leaf
 if ($nom -match '_analyse$') { $Collecte = $Collecte -replace '_analyse$', ''; $nom = Split-Path $Collecte -Leaf }
@@ -79,7 +81,7 @@ $Analyse = "${Collecte}_analyse"
 if (-not $Sortie) { $Sortie = Join-Path $Parent "${nom}_INTERFACE.html" }
 Write-Host ""
 Write-Host "  === Interface autonome v$Version : $nom ===" -ForegroundColor Cyan
-if (-not (Test-Path -LiteralPath $Analyse)) { Info "[!] Pas de dossier _analyse : lancer ANALYSER_COLLECTE.bat d'abord pour une interface complete." }
+if (-not (Test-Path -LiteralPath $Analyse)) { Info "[!] Pas de dossier _analyse : lancer DigSpill.exe > Analyser une collecte pour une interface complete." }
 
 # ------------------------------------------------------------------ 2. tableaux et textes de la collecte
 $ignorer = @('evtx', 'utilisateurs', 'registre', 'prefetch', 'srum', 'amcache', 'defender_logs', 'defender_quarantaine', 'binaires_neutralises',

@@ -90,16 +90,16 @@ namespace DigSpill
             g.Clear(Carte.FondDe(Parent));
             Theme.Qualite(g);
             var r = new RectangleF(1, 1, Width - 3, Height - 3);
-            Color fond = choisie ? Theme.AccentClair : (survol && Utilisable ? Color.White : Theme.Blanc);
-            using (var p = Theme.Arrondi(r, 12))
+            Color fond = choisie ? Theme.Panneau2 : (survol && Utilisable ? Theme.Panneau2 : Theme.Panneau);
+            using (var p = Theme.Arrondi(r, 10))
             using (var b = new SolidBrush(fond))
-            using (var pen = new Pen(choisie ? Theme.Accent : Theme.Trait, choisie ? 2.5f : 1.2f))
+            using (var pen = new Pen(choisie ? Theme.Texte : survol ? Theme.Ligne2 : Theme.Ligne, choisie ? 1.5f : 1f))
             { g.FillPath(b, p); g.DrawPath(pen, p); }
             // bouton radio
             var rd = new Rectangle(18, 22, 20, 20);
-            using (var pen = new Pen(choisie ? Theme.AccentEncre : Theme.Doux, 2f)) g.DrawEllipse(pen, rd);
-            if (choisie) using (var b = new SolidBrush(Theme.AccentEncre)) g.FillEllipse(b, rd.X + 5, rd.Y + 5, 10, 10);
-            TextRenderer.DrawText(g, icone, fI, new Rectangle(50, 14, 36, 36), Utilisable ? Theme.AccentEncre : Theme.Doux, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            using (var pen = new Pen(choisie ? Theme.Texte : Theme.Texte3, 1.5f)) g.DrawEllipse(pen, rd);
+            if (choisie) using (var b = new SolidBrush(Theme.Texte)) g.FillEllipse(b, rd.X + 5, rd.Y + 5, 10, 10);
+            TextRenderer.DrawText(g, icone, fI, new Rectangle(50, 14, 36, 36), Utilisable ? Theme.Texte : Theme.Texte3, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             int x = 96, w = Width - x - 20;
             TextRenderer.DrawText(g, titre, fT, new Rectangle(x, 14, w, 26), Utilisable ? Theme.Encre : Theme.Doux, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
             int hd = Mise.HauteurTexte(detail, fD, w);
@@ -137,11 +137,45 @@ namespace DigSpill
             c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Une seule clé ?", "Possible : DigSpill pose quand même ses fichiers pièges et coupe la clé au moindre signe de chiffrement."));
         }
 
+        public override IEnumerable<Control> Boutons()
+        {
+            var b = new BoutonPlat("Identifiants de ce compte", BoutonPlat.Genre.Secondaire, Ic.Personne);
+            b.Click += delegate { ListerIdentifiants(); };
+            return new Control[] { b };
+        }
+
+        /// <summary>Pour les autres comptes du poste : ouvrir leur session, lancer DigSpill.exe, ce bouton.</summary>
+        void ListerIdentifiants()
+        {
+            if (Ctx.Demo) { MessageBox.Show(F, "Démonstration : en vrai, les cibles du gestionnaire d'identifiants de " + Identifiants.Compte + " seraient écrites dans F:\\Collecte\\Identifiants.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            var dossiers = Identifiants.DossiersCollecte(Ctx.RacineOutils);
+            string cible = null;
+            if (dossiers.Count == 1) cible = dossiers[0];
+            else
+            {
+                using (var fb = new FolderBrowserDialog { Description = "Dossier Collecte de la clé PREUVES (là où la collecte de ce poste a été écrite)", ShowNewFolderButton = false })
+                {
+                    if (dossiers.Count > 0) fb.SelectedPath = dossiers[0];
+                    if (fb.ShowDialog(F) != DialogResult.OK) return;
+                    cible = fb.SelectedPath;
+                }
+            }
+            try
+            {
+                var f = Identifiants.Ecrire(cible, Identifiants.Lister(), Identifiants.Compte);
+                MessageBox.Show(F, "Cibles enregistrées pour " + Identifiants.Compte + " écrites dans :\r\n" + f + "\r\n\r\nRecommencer dans la session de chaque autre compte du poste.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex) { MessageBox.Show(F, "Écriture impossible dans " + cible + " : " + ex.Message, "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        }
+
         void Collecter()
         {
+            // les identifiants se lisent dans la session de l'utilisateur, SANS elevation : on les lit maintenant
+            if (!Ctx.Demo && Ctx.IdentifiantsSession == null) { Ctx.IdentifiantsSession = Identifiants.Lister(); Ctx.CompteSession = Identifiants.Compte; }
             if (!Ctx.Demo && !Supports.EstAdmin())
             {
-                try { Programme.Relancer("--collecter", true); Application.Exit(); }
+                string texte = Ctx.IdentifiantsSession.Length > 18000 ? Ctx.IdentifiantsSession.Substring(0, 18000) + "\r\n[tronqué]" : Ctx.IdentifiantsSession;
+                try { Programme.Relancer("--collecter --identifiants=" + Identifiants.VersBase64(texte) + " --compte=" + Executeur.Echapper(Ctx.CompteSession), true); Application.Exit(); }
                 catch (Win32Exception) { MessageBox.Show(F, "Les droits administrateur sont nécessaires pour collecter.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); }
                 return;
             }
@@ -175,13 +209,14 @@ namespace DigSpill
             var g2 = c2.Contenu.Ajouter(new Grille { Colonnes = 2 });
             g2.Controls.Add(cabinet = Champ.Texte("Cabinet ou structure", i.Cabinet, true));
             g2.Controls.Add(present = Champ.Texte("Personne présente (nom, qualité)", i.Present, false));
-            var cb = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Color.White };
+            var cb = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Theme.Panneau, ForeColor = Theme.Texte };
             cb.Items.AddRange(new object[] { "Rançongiciel ou chiffrement", "Intrusion ou prise en main à distance", "Fuite de données suspectée", "Comportement anormal du poste", "Autre" });
             cb.SelectedIndex = Math.Max(0, cb.Items.IndexOf(i.Motif));
             g2.Controls.Add(motif = new Champ("Motif", cb, false));
             g2.Controls.Add(ticket = Champ.Texte("N° de ticket", i.Ticket, false));
-            var dtp = new DateTimePicker { Format = DateTimePickerFormat.Custom, CustomFormat = "dd/MM/yyyy HH:mm", ShowCheckBox = true, Checked = i.Decouverte.HasValue, Value = i.Decouverte ?? DateTime.Now };
-            g2.Controls.Add(decouverte = new Champ("Découverte de l'incident (si connue)", dtp, false));
+            // champ texte plutot qu'un calendrier Windows (clair, impossible a passer en noir) : JJ/MM/AAAA HH:MM, vide si inconnue
+            var dtp = new TextBox { Text = i.Decouverte.HasValue ? i.Decouverte.Value.ToString("dd/MM/yyyy HH:mm") : "" };
+            g2.Controls.Add(decouverte = new Champ("Découverte de l'incident (JJ/MM/AAAA HH:MM, si connue)", dtp, false));
             var poste = Mise.Texte("Poste examiné : " + Environment.MachineName + "   ·   " + DateTime.Now.ToString("dddd d MMMM yyyy, HH:mm"), Theme.Police(9.5f), Theme.Doux);
             g2.Controls.Add(poste);
 
@@ -210,12 +245,15 @@ namespace DigSpill
             if (nom.Valeur == "") manque.Add("nom");
             if (cabinet.Valeur == "") manque.Add("cabinet");
             if (manque.Count > 0) { MessageBox.Show(F, "À compléter : " + string.Join(", ", manque.ToArray()) + ".", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            DateTime dDec = DateTime.MinValue;
+            bool decOk = decouverte.Valeur == "" || DateTime.TryParseExact(decouverte.Valeur, new[] { "dd/MM/yyyy HH:mm", "dd/MM/yyyy H:mm", "dd/MM/yyyy" }, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dDec);
+            if (!decOk) { MessageBox.Show(F, "Date de découverte : écrire JJ/MM/AAAA HH:MM (par exemple 17/11/2026 08:10), ou laisser vide.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); decouverte.Saisie.Focus(); return; }
             var i = Ctx.Inter;
             i.Prenom = prenom.Valeur; i.Nom = nom.Valeur; i.Societe = societe.Valeur; i.Cabinet = cabinet.Valeur;
             i.Present = present.Valeur; i.Ticket = ticket.Valeur; i.Motif = motif.Saisie.Text;
-            var dtp = (DateTimePicker)decouverte.Saisie;
-            i.Decouverte = dtp.Checked ? (DateTime?)dtp.Value : null;
+            i.Decouverte = decouverte.Valeur == "" ? (DateTime?)null : dDec;
             i.Legere = legere.Checked; i.AnalyseSurPlace = surPlace.Checked; i.Horodater = horodater.Checked;
+            if (!Ctx.Demo) Ctx.Reglages.RetenirTechnicien(i.Prenom, i.Nom, i.Societe);
             F.Aller(new PageFeuVert(F));
         }
     }
@@ -275,7 +313,7 @@ namespace DigSpill
             enCours = true; Occupee = true;
             Ctx.FeuVert = null;
             liste.Visible = false; malgre.Visible = false;
-            bandeau.Couleurs(Theme.AccentClair, Theme.Accent);
+            bandeau.Couleurs(Theme.Panneau, Theme.Ligne);
             bTitre.Text = "Vérifications en cours…";
             bTexte.Text = "Notes de rançon, fichiers modifiés à l'instant, programmes qui écrivent sur le disque, antivirus, réseau. Environ 30 secondes.";
             barre.Visible = true; barre.Indeterminee = true; bEtape.Visible = true;
@@ -555,7 +593,11 @@ namespace DigSpill
             var champs = new[] { Tuple.Create("-Technicien", i.Technicien), Tuple.Create("-Societe", i.Societe), Tuple.Create("-Client", i.Cabinet), Tuple.Create("-Present", i.Present),
                 Tuple.Create("-Ticket", i.Ticket), Tuple.Create("-Motif", i.Motif), Tuple.Create("-Decouverte", i.Decouverte.HasValue ? i.Decouverte.Value.ToString("yyyy-MM-dd HH:mm") : "") };
             foreach (var t in champs) if (!string.IsNullOrWhiteSpace(t.Item2)) { ap.Add(t.Item1); ap.Add(Executeur.Echapper(t.Item2)); }
-            int code = await Executer("Collecte-Exfil.ps1", ap, "Collecte PowerShell");
+            // identifiants de la session (lus avant l'elevation) : ecrits par le script dans exposition\, donc sous manifeste
+            Dictionary<string, string> env = null;
+            if (!string.IsNullOrEmpty(Ctx.IdentifiantsSession))
+                env = new Dictionary<string, string> { { "DIGSPILL_IDENTIFIANTS", Ctx.IdentifiantsSession }, { "DIGSPILL_COMPTE_SESSION", Ctx.CompteSession ?? Identifiants.Compte } };
+            int code = await Executer("Collecte-Exfil.ps1", ap, "Collecte PowerShell", env);
             if (urgence) return;
             Ctx.NomCollecte = TrouverCollecte();
             ePs.Definir(code == 0 && Ctx.NomCollecte != null ? Niveau.Ok : Niveau.Attention, "1. Collecte PowerShell", Ctx.NomCollecte != null ? "Dossier " + Ctx.NomCollecte + (code == 0 ? "" : " (code de sortie " + code + ", voir collecte.log)") : "Dossier de collecte introuvable : voir le journal ci-dessous.");
@@ -637,7 +679,7 @@ namespace DigSpill
             catch { return null; }
         }
 
-        Task<int> Executer(string script, List<string> args, string nom)
+        Task<int> Executer(string script, List<string> args, string nom, IDictionary<string, string> env = null)
         {
             if (Ctx.Demo)
                 return Simuler(new[] { "[*] Informations sur le poste", "[*] Processus et connexions réseau", "[*] Mémoire vive (winpmem) et fichiers d'échange", "[*] Journaux d'événements",
@@ -645,7 +687,7 @@ namespace DigSpill
             exec = new Executeur();
             exec.Ligne += Ligne;
             Log("> " + script + " " + string.Join(" ", args.ToArray()));
-            return exec.Lancer("powershell.exe", Executeur.ArgumentsPowerShell(Ctx.Script(script), args), Ctx.RacineOutils, Executeur.Console850(), null);
+            return exec.Lancer("powershell.exe", Executeur.ArgumentsPowerShell(Ctx.Script(script), args), Ctx.RacineOutils, Executeur.Console850(), env);
         }
 
         async Task<int> Simuler(string[] lignes)
@@ -688,19 +730,19 @@ namespace DigSpill
             Parcours = ParcoursCollecte; Etape = 4;
 
             sombre = Corps.Ajouter(NouvelleCarte());
-            sombre.Couleurs(Theme.Nuit, Theme.Nuit);
+            sombre.Couleurs(Theme.Panneau, Theme.Ligne);
             sombre.Padding = new Padding(26, 22, 26, 22);
-            sombre.Contenu.Ajouter(Mise.Texte("EMPREINTE DU SCELLÉ (SHA-256)", Theme.Police(9f, FontStyle.Bold), Theme.Accent));
+            sombre.Contenu.Ajouter(Mise.Texte("EMPREINTE DU SCELLÉ (SHA-256)", Theme.MonoMoyen(8.5f), Theme.Texte3));
             var emp = sombre.Contenu.Ajouter(new Empreinte());
             emp.Text = sc != null && sc.Empreinte != null ? sc.Empreinte : "aucun scellé";
             sombre.Contenu.Ajouter(pastilles);
-            fichierScelle = sombre.Contenu.Ajouter(Mise.Texte(sc != null && sc.Fichier != null ? sc.Fichier : "", Theme.Police(9f), Theme.DouxNuit));
+            fichierScelle = sombre.Contenu.Ajouter(Mise.Texte(sc != null && sc.Fichier != null ? sc.Fichier : "", Theme.Mono(8.5f), Theme.Texte3));
             MajPastilles();
 
             var a = Corps.Ajouter(NouvelleCarte());
             a.Contenu.Ajouter(Intertitre("Avant de partir"));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Photographier l'empreinte", "Avec la date et l'heure du téléphone : une trace indépendante de la clé, au cas où elle serait perdue ou abîmée."));
-            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Identifiants enregistrés", "Dans la session de chaque compte du poste : LISTER_IDENTIFIANTS.bat (clé OUTILS)."));
+            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Identifiants enregistrés", "Ce compte (" + (Ctx.CompteSession ?? Identifiants.Compte) + ") : déjà listé. Autres comptes du poste : ouvrir leur session, lancer DigSpill.exe, « Identifiants de ce compte »."));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Clé PREUVES en lecture seule", "Après l'éjection : passez la clé en mode lecture seule (clé à code : voir sa notice) et rangez-la à part."));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Au bureau", "DigSpill → Analyser une collecte : copie vérifiée, analyse complète, rapport, PV de collecte à faire signer."));
         }
@@ -709,10 +751,10 @@ namespace DigSpill
         {
             var sc = Ctx.Scelle;
             pastilles.Controls.Clear();
-            if (sc != null && sc.DateJeton != null) pastilles.Controls.Add(new Pastille("Horodaté le " + sc.DateJeton, Theme.Nuit, Theme.VertFond));
-            else pastilles.Controls.Add(new Pastille("À horodater au bureau" + (sc != null && sc.ErreurHorodatage != null ? " · " + sc.ErreurHorodatage : ""), Theme.Nuit, Theme.OrangeFond));
-            if (sc != null) pastilles.Controls.Add(new Pastille(sc.NombreElements + " fichiers scellés", Theme.Nuit, Theme.BleuFond));
-            if (Ctx.Fin > Ctx.Debut) pastilles.Controls.Add(new Pastille("Durée " + Pages.Duree(Ctx.Fin - Ctx.Debut), Theme.Nuit, Theme.BleuFond));
+            if (sc != null && sc.DateJeton != null) pastilles.Controls.Add(new Pastille("Horodaté le " + sc.DateJeton, Niveau.Ok));
+            else pastilles.Controls.Add(new Pastille("À horodater au bureau" + (sc != null && sc.ErreurHorodatage != null ? " · " + sc.ErreurHorodatage : ""), Niveau.Attention));
+            if (sc != null) pastilles.Controls.Add(new Pastille(sc.NombreElements + " fichiers scellés", Niveau.Info));
+            if (Ctx.Fin > Ctx.Debut) pastilles.Controls.Add(new Pastille("Durée " + Pages.Duree(Ctx.Fin - Ctx.Debut), Niveau.Info));
             Ajuster();
         }
 
@@ -759,7 +801,7 @@ namespace DigSpill
             SousTitre = "Vous pouvez la débrancher. Passez-la en lecture seule et rangez-la séparément de la clé OUTILS.";
             ejecter.Text = "Fermer DigSpill";
             ejecter.Icone = Ic.Ok;
-            pastilles.Controls.Add(new Pastille("Clé éjectée", Theme.Nuit, Theme.VertFond));
+            pastilles.Controls.Add(new Pastille("Clé éjectée", Niveau.Ok));
             F.MajEntete();
             Ajuster();
         }
@@ -776,7 +818,7 @@ namespace DigSpill
             var r = Corps.Ajouter(NouvelleCarte());
             r.Couleurs(Theme.RougeFond, Theme.Rouge);
             r.Epaisseur = 2f;
-            r.Contenu.Ajouter(Mise.Texte("Activité détectée", Theme.Police(14f, FontStyle.Bold), Theme.Rouge));
+            r.Contenu.Ajouter(Mise.Texte("Activité détectée", Theme.Police(14f, FontStyle.Bold), Theme.RougeTexte));
             r.Contenu.Ajouter(Mise.Texte(Ctx.RaisonAlerte ?? "", Theme.Police(11f), Theme.Encre));
             r.Contenu.Ajouter(Mise.Texte("Détectée le " + DateTime.Now.ToString("dd/MM/yyyy à HH:mm:ss") + " sur " + Environment.MachineName + ".", Theme.Police(9.5f), Theme.Doux));
 

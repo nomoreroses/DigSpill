@@ -108,7 +108,7 @@ T.ECRANS.integrite = c => {
   const sc = T.scelleActuel(), ch = T.chaine(), R = T.reglages(), id = T.identite();
   c.append(h('h1', {}, 'Intégrité et preuve'), h('p', { class: 'sous-titre' }, "Prouver que les preuves n'ont pas bougé depuis la collecte, et dire qui les a eues entre les mains."));
   if (!sc) {
-    c.append(h('div', { class: 'alerte n2' }, h('div', { class: 'ic' }, ''), h('div', {}, "Aucun scellé dans ce fichier : régénérer avec GENERER_INTERFACE.bat (version 1.1 ou plus) pour créer le scellé et le faire horodater.")));
+    c.append(h('div', { class: 'alerte n2' }, h('div', { class: 'ic' }, ''), h('div', {}, "Aucun scellé dans ce fichier : régénérer avec DigSpill.exe > Analyser une collecte pour créer le scellé et le faire horodater.")));
   } else {
     const j = sc.jeton, qr = T.qrSvg(`DIGSPILL SCELLE ${sc.nom} SHA256 ${sc.sha256}`, 5);
     const etatJeton = !j ? h('span', { class: 'pill orange' }, 'pas encore horodaté') : j.erreur ? h('span', { class: 'pill rouge' }, '' + j.erreur)

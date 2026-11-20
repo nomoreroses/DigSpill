@@ -6,7 +6,7 @@ Le risque : brancher une clé sur un poste où un rançongiciel tourne encore. I
 
 | Clé | Contenu | Protection |
 |---|---|---|
-| 🧰 **OUTILS** | `DigSpill.exe`, scripts, `Collecteur-Velociraptor.exe`, `outils\`, `digspill.ini` | **Interrupteur matériel en lecture seule**. Rien ne peut l'écrire, même un administrateur. |
+| 🧰 **OUTILS** | `DigSpill.exe` et `moteur\` (scripts, interface, outils, `digspill.ini`) | **Interrupteur matériel en lecture seule**. Rien ne peut l'écrire, même un administrateur. |
 | 🗄️ **PREUVES** | `Collecte\` | **Chiffrée** (code PIN), branchée **après** le feu vert, **surveillée** pendant la collecte, passée **en lecture seule** ensuite. |
 
 Exemples de matériel (à comparer, prix variables) :
@@ -15,9 +15,9 @@ Exemples de matériel (à comparer, prix variables) :
 
 ## 🧰 Préparer la clé OUTILS (au bureau)
 
-1. Copier le dépôt DigSpill, `DigSpill.exe` signé et `Collecteur-Velociraptor.exe` à la racine.
-2. Copier `digspill.ini.exemple` en `digspill.ini` et le remplir (prénom, nom, société).
-3. Mettre à jour les bases publiques : `GENERER_INTERFACE.bat` sur une collecte de test, ou laisser DigSpill le faire au bureau.
+1. Dézipper `DigSpill.zip` (Releases du dépôt, déjà débloqué) à la racine : `DigSpill.exe` + `moteur\`.
+2. Optionnel : signer `DigSpill.exe` ([SIGNATURE.md](SIGNATURE.md)).
+3. Lancer DigSpill.exe une fois, interrupteur en écriture : le technicien saisi est retenu dans `moteur\digspill.ini`. Les bases publiques se téléchargent à la première analyse au bureau.
 4. **Basculer l'interrupteur en lecture seule.** DigSpill le vérifie au feu vert.
 
 ## 🛡️ Ce que fait DigSpill.exe

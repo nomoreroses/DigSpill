@@ -1,0 +1,50 @@
+name: Kit DigSpill
+
+# Fabrique la cle OUTILS prete a l'emploi : DigSpill.exe + moteur\ (scripts, interface, outils tiers).
+# Artefact "DigSpill-cle" a chaque passage ; sur un tag v* (ex. v2.7), release GitHub avec DigSpill.zip.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: ['docs/**', '**.md']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  kit:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construire le kit (compilation, outils tiers officiels, collecteur Velociraptor)
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .\app\construire-kit.ps1
+      - name: Demarrage depuis le kit (mode demonstration, capture de l'accueil)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath kit\DigSpill\DigSpill.exe -ArgumentList '--demo','--capture=accueil.png' -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'DigSpill.exe ne repond pas' }
+          if (-not (Test-Path accueil.png)) { throw 'capture absente' }
+          foreach ($f in 'moteur\Collecte-Exfil.ps1', 'moteur\interface\modele.html', 'moteur\outils\Collecteur-Velociraptor.exe', 'moteur\outils\7zr.exe', 'moteur\outils\winpmem_mini_x64_rc2.exe', 'moteur\secours\LANCER_COLLECTE.bat') {
+            if (-not (Test-Path (Join-Path 'kit\DigSpill' $f))) { throw "absent du kit : $f" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DigSpill-cle
+          path: kit/DigSpill/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: accueil
+          path: accueil.png
+      - name: Release (tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $notes = "Cle OUTILS prete a l'emploi : dezipper DigSpill.zip a la racine de la cle, puis double-clic sur DigSpill.exe.`n`nOutils tiers et licences : moteur\outils\LISEZ-MOI-OUTILS.txt. Journal des versions : CHANGELOG.md."
+          gh release create $env:GITHUB_REF_NAME kit\DigSpill.zip --title "DigSpill $env:GITHUB_REF_NAME" --notes $notes --prerelease
