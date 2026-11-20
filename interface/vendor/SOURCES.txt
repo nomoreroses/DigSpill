@@ -3,6 +3,10 @@ Composants tiers embarques dans le fichier HTML genere
 
 qrcode.min.js    qrcode-generator 1.4.4 (Kazuhiko Arase) - MIT - https://github.com/kazuhikoarase/qrcode-generator
 echarts.min.js   Apache ECharts 5.6.0 - Apache License 2.0 (voir LICENSE-echarts.txt) - https://echarts.apache.org
+polices/         Geist et Geist Mono 1.9.2 (Vercel, paquet npm geist) et Doto 5.3.0 (paquet npm @fontsource/doto),
+                 SIL Open Font License 1.1 (voir polices/LICENSE-geist.txt et LICENSE-doto.txt).
+                 Sous-ensembles latins (pyftsubset) : Geist 400/500/600, Geist Mono 400/500, Doto 900 (chiffres seulement).
+../assets/       Logo DigSpill : mot vectorise a partir de Geist SemiBold (OFL), icone et favicons.
 monde.json       Contours des pays : world-atlas 2.0.2 (countries-110m, ISC, Mike Bostock),
                  issus de Natural Earth (domaine public) - https://github.com/topojson/world-atlas
                  Noms francais et codes ISO : i18n-iso-countries 7 (MIT) - https://github.com/michaelwittig/node-i18n-iso-countries

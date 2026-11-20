@@ -145,6 +145,17 @@ def listes(bases: Path, ips):
     return out, meta
 
 
+def entete(html):
+    """<!--ICONE--> : favicon SVG en data URI ; <!--POLICES--> : polices.css avec chaque url(x.woff2) en data URI."""
+    import base64, re as _re
+    ico = base64.b64encode((INTERFACE / "assets" / "favicon.svg").read_bytes()).decode("ascii")
+    html = html.replace("<!--ICONE-->", '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,' + ico + '">', 1)
+    dossier = INTERFACE / "vendor" / "polices"
+    css = (dossier / "polices.css").read_text(encoding="utf-8")
+    css = _re.sub(r"url\(([A-Za-z0-9._-]+\.woff2)\)", lambda m: "url(data:font/woff2;base64," + base64.b64encode((dossier / m.group(1)).read_bytes()).decode("ascii") + ")", css)
+    return html.replace("<!--POLICES-->", "<style>\n" + css + "</style>", 1)
+
+
 def charge_utile(collecte: Path, bases: Path, demo=False, tsa: Path | None = None):
     fich, analyse = fichiers(collecte)
     ips = ips_collecte(fich)
@@ -254,7 +265,7 @@ def assembler(charge: dict, sortie: Path, mot_de_passe: str | None = None):
         donnees = json.dumps(enveloppe)
     donnees = donnees.replace("<", "\\u003c")
     app = "\n".join(lire("js/" + j) for j in JS).replace("</script", "<\\/script")
-    html = lire("modele.html")
+    html = entete(lire("modele.html"))
     html = html.replace("<!--STYLE-->", "<style>\n" + lire("style.css") + "\n</style>", 1)
     html = html.replace("<!--MONDE-->", '<script type="application/json" id="monde">' + lire("vendor/monde.json") + "</script>", 1)
     html = html.replace("<!--DONNEES-->", '<script type="application/json" id="donnees">' + donnees + "</script>", 1)
@@ -278,7 +289,7 @@ if __name__ == "__main__":
     if a.vide:
         charge = None
         lire = lambda p: (INTERFACE / p).read_text(encoding="utf-8")
-        html = lire("modele.html").replace("<!--STYLE-->", "<style>\n" + lire("style.css") + "\n</style>").replace("<!--MONDE-->", '<script type="application/json" id="monde">' + lire("vendor/monde.json") + "</script>")
+        html = entete(lire("modele.html")).replace("<!--STYLE-->", "<style>\n" + lire("style.css") + "\n</style>").replace("<!--MONDE-->", '<script type="application/json" id="monde">' + lire("vendor/monde.json") + "</script>")
         vendor = "\n;\n".join(p.read_text(encoding="utf-8") for p in sorted((INTERFACE / "vendor").glob("*.js")))
         html = html.replace("<!--DONNEES-->", '<script type="application/json" id="donnees"></script>').replace("<!--ECHARTS-->", "<script>\n" + vendor + "\n</script>")
         html = html.replace("<!--APP-->", "<script>\n" + "\n".join(lire("js/" + j) for j in JS) + "\n</script>")

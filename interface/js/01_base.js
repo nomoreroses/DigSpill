@@ -5,7 +5,7 @@
 'use strict';
 
 const T = {};                       // espace de noms global de l'interface
-T.VERSION = '1.1-beta';
+T.VERSION = '1.2-beta';
 
 /* ---------------------------------------------------------------- DOM */
 T.$ = (s, r = document) => r.querySelector(s);
@@ -106,7 +106,7 @@ T.dansCidr = (ip, cidr) => {
   const masque = n >= 32 ? 0xFFFFFFFF : (~((1 << (32 - n)) - 1)) >>> 0;
   return ((a & masque) >>> 0) === ((b & masque) >>> 0);
 };
-T.drapeau = cc => (cc && /^[A-Z]{2}$/.test(cc)) ? String.fromCodePoint(...[...cc].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)) : '';
+T.drapeau = () => ''; // plus d'emoji : le nom du pays suffit
 
 /* ---------------------------------------------------------------- donnees embarquees */
 T.D = null;          // charge utile generee par Generer-Interface.ps1

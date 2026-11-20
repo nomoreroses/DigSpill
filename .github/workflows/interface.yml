@@ -1,0 +1,36 @@
+name: Interface HTML
+
+on:
+  push:
+    paths: ['interface/**', 'Generer-Interface.ps1', '.github/workflows/interface.yml']
+  pull_request:
+    paths: ['interface/**', 'Generer-Interface.ps1']
+  workflow_dispatch:
+
+jobs:
+  memes-fichiers:
+    # Generer-Interface.ps1 (PowerShell 5.1, sur le poste) et assembler.py (developpement) doivent produire la meme interface
+    runs-on: windows-latest
+    steps:
+      - name: Pas de conversion des fins de ligne
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Collecte de demonstration
+        run: python -I interface/dev/generer_demo.py
+      - name: Interface par assembler.py
+        run: python -I interface/dev/assembler.py --collecte interface/dev/demo/Collecte/SECRETARIAT-01_20261117_150121 --bases interface/dev/demo/bases --sortie py.html
+      - name: Interface par Generer-Interface.ps1 (Windows PowerShell 5.1, sans Internet)
+        shell: powershell
+        run: .\Generer-Interface.ps1 -Collecte interface\dev\demo\Collecte\SECRETARIAT-01_20261117_150121 -Bases interface\dev\demo\bases -Sortie ps.html -SansInternet -SansOuvrir -SansHorodatage
+      - name: Comparer les deux fichiers (hors donnees de la collecte)
+        run: python -I interface/dev/comparer_generateurs.py py.html ps.html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: interface-demo
+          path: |
+            py.html
+            ps.html
