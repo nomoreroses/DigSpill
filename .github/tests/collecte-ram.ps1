@@ -77,7 +77,7 @@ Titre 'Controles apres la collecte'
 EtatPmem 'apres la collecte'
 & sc.exe query digspill_pmem 2>&1 | Out-Null
 Write-Host "service digspill_pmem : $(if ($LASTEXITCODE -eq 1060) { 'absent (retire)' } else { 'ENCORE INSTALLE' })"
-$sysMem = @(Get-ChildItem -LiteralPath (Join-Path $col.FullName 'memoire') -Filter '*.sys' -File -ErrorAction SilentlyContinue)
+$sysMem = @(Get-ChildItem -LiteralPath (Join-Path $col.FullName 'memoire') -Filter 'digspill_pmem*.sys' -File -ErrorAction SilentlyContinue)
 Write-Host "pilote laisse dans memoire\ : $(if ($sysMem.Count) { ($sysMem | ForEach-Object { $_.Name }) -join ', ' } else { 'aucun' })"
 $tmpApres = @(Get-ChildItem -LiteralPath $env:TEMP, "$env:SystemRoot\Temp" -Filter '*.sys' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
 $nouveaux = @($tmpApres | Where-Object { $tmpAvant -notcontains $_ })

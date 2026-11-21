@@ -36,7 +36,7 @@ Analyse-Exfil.ps1             analyse exfiltration (collecte + conteneur Velocir
 Copier-Preuves.ps1            seconde copie des preuves vérifiée par SHA256, procès-verbal
 Generer-Interface.ps1         fichier HTML autonome (interface + données de la collecte)
 interface\                    code de l'interface (HTML, CSS, JavaScript, ECharts, carte, polices, logo)
-outils\                       Collecteur-Velociraptor.exe, 7zr.exe, winpmem_mini_x64_rc2.exe, licences
+outils\                       Collecteur-Velociraptor.exe, 7zr.exe, licences
 outils\bases\                 bases publiques et mémoire des incidents (créées au premier usage)
 velociraptor\spec.yaml        ce que collecte Velociraptor
 secours\                      les anciens .bat, si DigSpill.exe ne se lance pas sur un poste
@@ -192,7 +192,7 @@ Collecte\
 ## Ce qui est collecté
 
 - **Volatile** : processus (ligne de commande, propriétaire, hash, signature), connexions, DNS, ARP, sessions, SMB.
-- **Mémoire** : winpmem vers un disque externe NTFS/exFAT contenant un dossier `MEMOIRE` à la racine ; sinon `pagefile.sys` / `hiberfil.sys` si la place le permet (lecture NTFS brute).
+- **Mémoire** : copie de la RAM par le pilote WinPmem intégré à Velociraptor (service `digspill_pmem`, pilote déposé à côté de l'image puis retiré), vers un disque externe NTFS/exFAT contenant un dossier `MEMOIRE` à la racine ; sinon `pagefile.sys` / `hiberfil.sys` si la place le permet (lecture NTFS brute).
 - **Connexions à distance** : RDP (1149, 21/24/25, 131, 4778), ouvertures de session 4624, échecs 4625 agrégés par IP, 4648, synthèse des IP publiques.
 - **Comptes** : événements (création, groupes, réinitialisation de mot de passe), inventaire avec accès RDP effectif, politique de verrouillage, politique d'audit.
 - **Identifiants exposés** : sites et identifiants enregistrés dans les navigateurs (mots de passe non lus), profils Wi-Fi, gestionnaire d'identifiants.
