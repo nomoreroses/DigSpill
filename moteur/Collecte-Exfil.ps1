@@ -18,8 +18,8 @@
     Memoire vive : brancher un disque externe NTFS ou exFAT contenant un dossier MEMOIRE a la racine
     AVANT de lancer. Sinon la RAM est capturee sur la cle seulement si elle est NTFS/exFAT et assez grande.
 
-    Outils attendus dans <cle>\moteur\outils\ : winpmem_mini_x64_rc2.exe, 7zr.exe, Collecteur-Velociraptor.exe
-    Velociraptor sert aussi de moteur SQLite / lecture NTFS brute.
+    Outils attendus dans <cle>\moteur\outils\ : 7zr.exe, Collecteur-Velociraptor.exe
+    Velociraptor sert aussi de moteur SQLite / lecture NTFS brute, et copie la RAM avec son pilote WinPmem integre.
 
     L'analyse orientee exfiltration (Analyse-Exfil.ps1) est lancee par DigSpill.exe apres Velociraptor,
     ou a posteriori par DigSpill.exe > Analyser une collecte.
@@ -174,6 +174,35 @@ function Invoke-Vql([string]$vql) {
         $o = & $Velo query --format csv $vql 2>$null
     } finally { [Console]::OutputEncoding = $prev }
     if ($o) { $o | ConvertFrom-Csv }
+}
+# Copie de la RAM : pilote WinPmem integre a Velociraptor (signe par Microsoft), sous un nom de service propre a DigSpill.
+# Jamais 'pmem' : c'est le pilote Windows de memoire persistante (pmem.sys). L'ancien winpmem_mini_x64_rc2.exe
+# utilisait ce nom, desactivait le pilote de Windows et le marquait pour suppression.
+# Le pilote est depose a cote de l'image (rien d'ecrit sur le disque du poste) ; s'il ne se charge pas
+# depuis ce support, nouvel essai depuis le dossier temporaire de Windows.
+$RamService = 'digspill_pmem'
+function Save-Ram([string]$raw, [string]$dir, [string]$log) {
+    foreach ($drv in @((Join-Path $dir "$RamService.sys"), '')) {
+        $arg = "image_path='''$raw''', service='$RamService'"
+        if ($drv) { $arg += ", driver_path='''$drv'''" }
+        ('=== {0} pilote depose : {1}' -f (Get-Date -Format 'HH:mm:ss'), $(if ($drv) { $drv } else { 'dossier temporaire de Windows' })) | Out-File $log -Append -Encoding utf8
+        $prev = [Console]::OutputEncoding
+        try {
+            [Console]::OutputEncoding = [Text.Encoding]::UTF8
+            & $Velo query --format jsonl "SELECT winpmem($arg) AS Info FROM scope()" 2>&1 | ForEach-Object { "$_" } | Out-File $log -Append -Encoding utf8
+        } finally { [Console]::OutputEncoding = $prev }
+        if ($drv -and (Test-Path -LiteralPath $drv)) { Remove-Item -LiteralPath $drv -Force -ErrorAction SilentlyContinue }
+        if ((Test-Path -LiteralPath $raw) -and (Get-Item -LiteralPath $raw).Length -gt 0) { return $drv }
+    }
+    return $null
+}
+function Test-RamService { & sc.exe query $RamService 2>&1 | Out-Null; return ($LASTEXITCODE -ne 1060) }   # 1060 : service inexistant
+function Remove-RamService {
+    # Velociraptor retire le service a la fin de la requete ; s'il reste (arret refuse), on le retire nous-memes
+    if (-not (Test-RamService)) { return $true }
+    & sc.exe stop $RamService 2>&1 | Out-Null
+    & sc.exe delete $RamService 2>&1 | Out-Null
+    return (-not (Test-RamService))
 }
 function Get-FreeBytes([string]$dl) { [int64](Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$dl'").FreeSpace }
 function Test-Fits([string]$dl, [int64]$size, [int64]$margin) {
@@ -394,42 +423,53 @@ Step 'Hash et signature des executables en cours' {
 # =================================================================== 2. MEMOIRE (mode complet)
 $script:MemDrive = $null
 if ($Full) {
-    Step "Memoire vive (winpmem) et fichiers d'echange (pagefile / hiberfil)" {
+    Step "Memoire vive (WinPmem de Velociraptor) et fichiers d'echange (pagefile / hiberfil)" {
         $info = New-Object System.Collections.Generic.List[string]
         $ram  = [int64](Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
         $info.Add(('RAM physique : {0:N1} Go' -f ($ram / 1GB)))
+        # L'image couvre tout l'espace d'adresses physiques, trous compris : souvent 1 a 3 Go de plus que la RAM
+        $marge = 5GB
 
         # Destination : disque USB avec dossier MEMOIRE a la racine, sinon la cle si NTFS/exFAT et assez grande
         foreach ($dl in $script:UsbLetters) {
-            if ($dl -ne $UsbQ.ToUpper() -and (Test-Path -LiteralPath "$dl\MEMOIRE" -PathType Container) -and (Test-Fits $dl $ram 512MB)) { $script:MemDrive = $dl; break }
+            if ($dl -ne $UsbQ.ToUpper() -and (Test-Path -LiteralPath "$dl\MEMOIRE" -PathType Container) -and (Test-Fits $dl $ram $marge)) { $script:MemDrive = $dl; break }
         }
         $memDir = $null
         if ($script:MemDrive) { $memDir = "$($script:MemDrive)\MEMOIRE\${Computer}_$Stamp" }
-        elseif (Test-Fits $UsbQ $ram 3GB) { $memDir = P 'memoire' }
+        elseif (Test-Fits $UsbQ $ram $marge) { $memDir = P 'memoire' }
 
-        $pmem = Join-Path $Tools 'winpmem_mini_x64_rc2.exe'
         if (-not $memDir) {
             Log '    [i] RAM non capturee : pas de disque externe avec dossier MEMOIRE, et la cle est FAT32 ou trop petite'
             $info.Add('RAM non capturee : aucun support adapte. Brancher un disque NTFS/exFAT avec un dossier MEMOIRE a la racine avant de lancer.')
-        } elseif (-not (Test-Path -LiteralPath $pmem)) {
-            Log "    [!] winpmem absent ($pmem)"
-            $info.Add("RAM non capturee : $pmem absent.")
+        } elseif (-not (Test-Path -LiteralPath $Velo)) {
+            Log "    [!] Velociraptor absent ($Velo) : RAM non capturee"
+            $info.Add("RAM non capturee : $Velo absent.")
         } else {
             New-Item -ItemType Directory -Force -Path $memDir | Out-Null
             $raw = Join-Path $memDir "${Computer}_$Stamp.raw"
+            $log = P 'memoire\winpmem.log'
             Log "    Capture RAM vers $raw (plusieurs minutes)..."
             $t0 = Get-Date
-            & $pmem $raw 2>&1 | Out-File (P 'memoire\winpmem.log') -Encoding utf8
-            if ((Test-Path -LiteralPath $raw) -and (Get-Item -LiteralPath $raw).Length -gt 0) {
+            $drv = Save-Ram $raw $memDir $log
+            if ($null -ne $drv) {
                 $len = (Get-Item -LiteralPath $raw).Length
                 Log '    Calcul du SHA256 de la capture...'
                 $h = (Get-FileHash -LiteralPath $raw -Algorithm SHA256).Hash
                 $info.Add(('RAM capturee : {0} ({1:N1} Go) de {2} a {3}' -f $raw, ($len / 1GB), $t0.ToString('HH:mm:ss'), (Get-Date).ToString('HH:mm:ss')))
                 $info.Add("SHA256 : $h")
+                $info.Add(('Outil : WinPmem integre a Velociraptor, service {0}, pilote depose {1}' -f $RamService, $(if ($drv) { "sur le support ($drv), retire apres la copie" } else { 'dans le dossier temporaire de Windows, retire apres la copie' })))
+                if ($len -lt $ram * 0.9) {
+                    $info.Add(('[!] Image plus petite que la RAM ({0:N1} Go) : copie probablement incomplete, voir winpmem.log' -f ($ram / 1GB)))
+                    Log '    [!] Image plus petite que la RAM : copie probablement incomplete'
+                }
                 Log ('    RAM capturee : {0:N1} Go' -f ($len / 1GB))
             } else {
-                $info.Add('Echec de winpmem (voir winpmem.log : integrite memoire/HVCI ou antivirus peuvent bloquer le pilote).')
-                Log '    [!] Echec winpmem, voir memoire\winpmem.log'
+                $info.Add("Echec de la copie de la RAM (voir winpmem.log : l'integrite de la memoire (HVCI) ou un antivirus peut bloquer le pilote).")
+                Log '    [!] Echec de la copie de la RAM, voir memoire\winpmem.log'
+            }
+            if (-not (Remove-RamService)) {
+                $info.Add("[!] Service $RamService encore installe : le retirer apres redemarrage (sc.exe delete $RamService).")
+                Log "    [!] Service $RamService encore installe"
             }
         }
 

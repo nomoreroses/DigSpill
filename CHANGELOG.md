@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 2.7.1 (bêta)
+Correction importante de la copie de la RAM.
+
+- **La copie de la RAM ne touche plus au pilote de Windows.** `winpmem_mini_x64_rc2.exe` installait son pilote sous le nom de service `pmem`, déjà pris par le pilote Windows de mémoire persistante (`pmem.sys`). Constaté sur un Windows de test : la copie échouait (0 octet) et le pilote de Windows passait en « Désactivé », marqué pour suppression au redémarrage. La collecte utilise maintenant la fonction `winpmem()` du collecteur Velociraptor (même pilote, signé par Microsoft), sous le nom `digspill_pmem`. Le pilote est déposé à côté de l'image, sur le support de destination, puis retiré ; second essai depuis le dossier temporaire de Windows s'il ne se charge pas. Le service est vérifié et retiré à la fin.
+- `winpmem_mini_x64_rc2.exe` n'est plus dans le kit (la licence WinPmem reste, pour le pilote intégré à Velociraptor).
+- Place demandée pour la RAM : RAM + 5 Go (l'image couvre tout l'espace d'adresses, trous compris, souvent 1 à 3 Go de plus que la RAM).
+- `memoire_info.txt` indique l'outil, le service et l'endroit où le pilote a été déposé ; alerte si l'image est plus petite que la RAM.
+- README : section « Mémoire vive : test réel » avec 4 captures des résultats (copie, processus, lignes de commande, réseau).
+- Nouveau test GitHub `Test collecte et RAM` : vraie collecte en mode complet depuis une clé exFAT, contrôles (pilote Windows intact, service retiré, aucun pilote laissé sur le poste), lecture de l'image par Volatility 3.
+
 ## 2.7 (bêta)
 Un seul clic : la clé ne montre plus que `DigSpill.exe` et un dossier `moteur\`.
 

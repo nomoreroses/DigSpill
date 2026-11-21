@@ -682,7 +682,7 @@ namespace DigSpill
         Task<int> Executer(string script, List<string> args, string nom, IDictionary<string, string> env = null)
         {
             if (Ctx.Demo)
-                return Simuler(new[] { "[*] Informations sur le poste", "[*] Processus et connexions réseau", "[*] Mémoire vive (winpmem) et fichiers d'échange", "[*] Journaux d'événements",
+                return Simuler(new[] { "[*] Informations sur le poste", "[*] Processus et connexions réseau", "[*] Mémoire vive et fichiers d'échange", "[*] Journaux d'événements",
                     "[*] Comptes et sessions", "[*] Persistance (tâches, services, Run)", "[*] Traces de rançongiciel", "[*] Calcul du manifeste SHA256 des éléments collectés" });
             exec = new Executeur();
             exec.Ligne += Ligne;

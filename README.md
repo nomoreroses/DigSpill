@@ -36,7 +36,7 @@ Analyse-Exfil.ps1             analyse exfiltration (collecte + conteneur Velocir
 Copier-Preuves.ps1            seconde copie des preuves vérifiée par SHA256, procès-verbal
 Generer-Interface.ps1         fichier HTML autonome (interface + données de la collecte)
 interface\                    code de l'interface (HTML, CSS, JavaScript, ECharts, carte, polices, logo)
-outils\                       Collecteur-Velociraptor.exe, 7zr.exe, winpmem_mini_x64_rc2.exe, licences
+outils\                       Collecteur-Velociraptor.exe, 7zr.exe, licences
 outils\bases\                 bases publiques et mémoire des incidents (créées au premier usage)
 velociraptor\spec.yaml        ce que collecte Velociraptor
 secours\                      les anciens .bat, si DigSpill.exe ne se lance pas sur un poste
@@ -192,7 +192,7 @@ Collecte\
 ## Ce qui est collecté
 
 - **Volatile** : processus (ligne de commande, propriétaire, hash, signature), connexions, DNS, ARP, sessions, SMB.
-- **Mémoire** : winpmem vers un disque externe NTFS/exFAT contenant un dossier `MEMOIRE` à la racine ; sinon `pagefile.sys` / `hiberfil.sys` si la place le permet (lecture NTFS brute).
+- **Mémoire** : copie de la RAM par le pilote WinPmem intégré à Velociraptor (service `digspill_pmem`, pilote déposé à côté de l'image puis retiré), vers un disque externe NTFS/exFAT contenant un dossier `MEMOIRE` à la racine ; sinon `pagefile.sys` / `hiberfil.sys` si la place le permet (lecture NTFS brute).
 - **Connexions à distance** : RDP (1149, 21/24/25, 131, 4778), ouvertures de session 4624, échecs 4625 agrégés par IP, 4648, synthèse des IP publiques.
 - **Comptes** : événements (création, groupes, réinitialisation de mot de passe), inventaire avec accès RDP effectif, politique de verrouillage, politique d'audit.
 - **Identifiants exposés** : sites et identifiants enregistrés dans les navigateurs (mots de passe non lus), profils Wi-Fi, gestionnaire d'identifiants.
@@ -203,6 +203,19 @@ Collecte\
 - **Listing complet des disques** (dates, tailles).
 - **Fiche à compléter** par le technicien : découverte de l'incident, patients concernés, heure de la box et écart d'horloge, redirections de ports, journaux de la box, demande type au FAI.
 - **Velociraptor** : `_SANS_Triage` ($MFT, $J, registre, evtx…), Autoruns, SRUM.
+
+### Mémoire vive : test réel
+
+Vraie collecte en mode complet, lancée depuis une clé exFAT sur un Windows GitHub (Server 2025, build 26100, 8 Go de RAM), puis lecture de l'image par Volatility 3 sans réseau. Ce sont les valeurs réelles du test, mises en page. Ce ne sont pas encore des écrans de DigSpill : l'analyse de la RAM viendra plus tard. Le test se relance à la main : Actions › **Test collecte et RAM**.
+
+- **Copie** : 11 Go pour 8 Go de RAM (l'image couvre aussi les trous d'adresses), en 9 min avec le SHA256. Le pilote Windows `pmem` reste intact. Le service `digspill_pmem` et son pilote sont retirés à la fin.
+- **Processus et lignes de commande** : lus dans l'image, y compris ceux des programmes encore actifs.
+- **Réseau** : sur ce Windows, Volatility retrouve les ports ouverts, pas les connexions établies. Les connexions viennent de la collecte en direct (`volatile\tcp_connexions.csv`).
+
+![Copie de la RAM pendant une vraie collecte](docs/captures/ram_copie.png)
+![Processus lus dans la RAM](docs/captures/ram_processus.png)
+![Lignes de commande lues dans la RAM](docs/captures/ram_commandes.png)
+![Réseau lu dans la RAM](docs/captures/ram_connexions.png)
 
 ## Ce que fait l'analyse exfiltration
 

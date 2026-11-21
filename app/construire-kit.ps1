@@ -9,9 +9,11 @@
     Resultat : kit\DigSpill\DigSpill.exe, kit\DigSpill\moteur\..., kit\DigSpill.zip
     Outils tiers telecharges depuis leurs sources officielles, avec leur licence et leur SHA256 :
       7zr.exe (7-Zip, Igor Pavlov, LGPL)                      https://www.7-zip.org
-      winpmem_mini_x64_rc2.exe (WinPmem, Velocidex, Apache 2.0) https://github.com/Velocidex/WinPmem
       Collecteur-Velociraptor.exe : collecteur hors ligne genere avec moteur\velociraptor\spec.yaml
         (Velociraptor, Velocidex / Rapid7, AGPL 3.0)          https://github.com/Velocidex/velociraptor
+        Velociraptor copie aussi la RAM avec son pilote WinPmem integre (Velocidex, Apache 2.0).
+        winpmem_mini_x64_rc2.exe n'est plus fourni : il installait son pilote sous le nom 'pmem',
+        celui du pilote Windows de memoire persistante, et le desactivait.
 #>
 param(
     [string]$Sortie,
@@ -77,18 +79,9 @@ if (-not $SansOutilsTiers) {
     $notes.Add("  SHA256 $(Sha $f)")
     $notes.Add('')
 
-    # WinPmem (memoire vive)
-    $rel = Release 'Velocidex/WinPmem' 'v4.0.rc1'
-    $a = $rel.assets | Where-Object { $_.name -match '^winpmem_mini_x64.*\.exe$' } | Select-Object -First 1
-    if (-not $a) { throw 'WinPmem : asset winpmem_mini_x64*.exe introuvable dans la release v4.0.rc1' }
-    $f = Join-Path $Outils 'winpmem_mini_x64_rc2.exe'
-    Telecharger $a.browser_download_url $f
+    # Licence du pilote WinPmem, integre a Velociraptor (copie de la RAM)
     $lic = Join-Path $Outils 'LICENCE-WinPmem.txt'
     try { Telecharger 'https://raw.githubusercontent.com/Velocidex/WinPmem/master/LICENSE' $lic } catch { Info "   [!] licence WinPmem non telechargee : $($_.Exception.Message)" }
-    $notes.Add('winpmem_mini_x64_rc2.exe')
-    $notes.Add("  WinPmem $($rel.tag_name) ($($a.name)), Velocidex - Apache License 2.0 (LICENCE-WinPmem.txt). https://github.com/Velocidex/WinPmem")
-    $notes.Add("  SHA256 $(Sha $f)")
-    $notes.Add('')
 
     # Velociraptor : binaire officiel + definitions Windows.Triage.Targets, puis collecteur genere avec spec.yaml
     # derniere release stable qui publie un binaire Windows 64 bits (une release de correctif peut n'avoir que quelques plateformes)
@@ -141,13 +134,14 @@ if (-not $SansOutilsTiers) {
     $notes.Add("  Collecteur hors ligne genere par Velociraptor $($rel.tag_name) ($($a.name)) avec moteur\velociraptor\spec.yaml")
     $notes.Add('  et les definitions Windows.Triage.Targets (Velocidex/velociraptor-triage-collector).')
     $notes.Add('  Velociraptor, Velocidex / Rapid7 - GNU AGPL 3.0 (LICENCE-Velociraptor.txt). Source : https://github.com/Velocidex/velociraptor')
+    $notes.Add('  Copie aussi la RAM avec son pilote WinPmem integre, service digspill_pmem (WinPmem, Velocidex - Apache License 2.0, LICENCE-WinPmem.txt).')
     if ($shaGz) { $notes.Add("  SHA256 archive officielle $($a.name) $shaGz") }
     $notes.Add("  SHA256 binaire officiel $(Sha $velo)")
     $notes.Add("  SHA256 collecteur       $(Sha $f)")
     $notes.Add('')
 } else {
     Info '3. Outils tiers : non inclus (-SansOutilsTiers)'
-    $notes.Add('Kit fabrique SANS outils tiers : ajouter 7zr.exe, winpmem_mini_x64_rc2.exe et Collecteur-Velociraptor.exe dans ce dossier.')
+    $notes.Add('Kit fabrique SANS outils tiers : ajouter 7zr.exe et Collecteur-Velociraptor.exe dans ce dossier.')
 }
 [IO.File]::WriteAllLines((Join-Path $Outils 'LISEZ-MOI-OUTILS.txt'), $notes, (New-Object Text.UTF8Encoding($true)))
 
