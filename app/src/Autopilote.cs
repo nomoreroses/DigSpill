@@ -32,6 +32,7 @@ namespace DigSpill
         public Autopilote(Fenetre fenetre, string dossier, string preuves, string travail)
         {
             f = fenetre; this.dossier = dossier; this.preuves = (preuves ?? "").TrimEnd('\\');
+            if (this.preuves != "") Supports.Ajoutees.Add(this.preuves);   // cle PREUVES virtuelle : pas USB, acceptee pour le test
             Directory.CreateDirectory(dossier);
             var c = f.Ctx;
             // saisie du technicien sur la page Intervention

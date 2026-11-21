@@ -1,5 +1,5 @@
 # Parcours complet sur un vrai Windows GitHub, sans simulation :
-#  1. kit fabrique comme pour une release, copie a la racine d'une cle virtuelle exFAT R: (mode une seule cle)
+#  1. kit fabrique comme pour une release sur une cle virtuelle OUTILS (S:), cle PREUVES virtuelle exFAT (R:)
 #  2. scenario d'attaque reel et sans danger (scenario.ps1), verite terrain dans C:\test\verite.json
 #  3. DigSpill.exe pilote comme par un technicien (--auto) : intervention, feu vert, cle PREUVES, collecte,
 #     scelle, ejection ; puis au bureau : copie verifiee, analyse complete, interface
@@ -28,22 +28,28 @@ function Png([string]$dossier, [string]$prefixe) {
     }
 }
 
-# ------------------------------------------------------------------ 1. cle
-Titre 'Kit et cle virtuelle exFAT R: (OUTILS et PREUVES sur la meme cle)'
+# ------------------------------------------------------------------ 1. cles
+# Deux cles, comme en intervention : OUTILS (S:, le kit) et PREUVES (R:, exFAT, la collecte).
+Titre 'Kit et cles virtuelles : OUTILS S: et PREUVES R: (exFAT)'
 & (Join-Path $env:GITHUB_WORKSPACE 'app\construire-kit.ps1') -Sortie "$T\kit" | Out-Null
-$vhd = 'D:\cle_digspill.vhdx'
-@"
-create vdisk file="$vhd" maximum=65536 type=expandable
-select vdisk file="$vhd"
+function Nouvelle-Cle([string]$fichier, [int]$mo, [string]$nom, [string]$lettre) {
+    @"
+create vdisk file="$fichier" maximum=$mo type=expandable
+select vdisk file="$fichier"
 attach vdisk
 convert mbr
 create partition primary
-format fs=exfat quick label=PREUVES
-assign letter=R
-"@ | Set-Content -LiteralPath "$T\diskpart.txt" -Encoding ASCII
-& diskpart.exe /s "$T\diskpart.txt" | Out-Null
-Copy-Item -Path "$T\kit\DigSpill\*" -Destination 'R:\' -Recurse
-Write-Host ('racine de la cle : ' + ((Get-ChildItem 'R:\' | ForEach-Object { $_.Name }) -join ', '))
+format fs=exfat quick label=$nom
+assign letter=$lettre
+"@ | Set-Content -LiteralPath "$T\diskpart_$nom.txt" -Encoding ASCII
+    & diskpart.exe /s "$T\diskpart_$nom.txt" | Out-Null
+}
+Nouvelle-Cle 'D:\cle_outils.vhdx' 4096 'OUTILS' 'S'
+$vhd = 'D:\cle_preuves.vhdx'
+Nouvelle-Cle $vhd 65536 'PREUVES' 'R'
+Copy-Item -Path "$T\kit\DigSpill\*" -Destination 'S:\' -Recurse
+Write-Host ('cle OUTILS : ' + ((Get-ChildItem 'S:\' | ForEach-Object { $_.Name }) -join ', '))
+Write-Host ('cle PREUVES : ' + ((Get-Volume -DriveLetter R | ForEach-Object { "$($_.FileSystem), $([math]::Round($_.SizeRemaining / 1GB)) Go libres" })))
 
 # ------------------------------------------------------------------ 2. scenario
 Titre 'Scenario d''attaque reel et sans danger'
@@ -55,7 +61,7 @@ Titre 'DigSpill.exe, parcours complet pilote comme par un technicien'
 $t0 = Get-Date
 # la collecte et l'analyse tournent sur le meme Windows de test : autoriser la lecture de la RAM sur le poste collecte (interdit en vrai)
 $env:DIGSPILL_RAM_MEME_POSTE = '1'
-$app = Start-Process -FilePath 'R:\DigSpill.exe' -ArgumentList "--auto=$T\captures_appli", '--auto-preuves=R:', '--auto-travail=D:\travail' -PassThru
+$app = Start-Process -FilePath 'S:\DigSpill.exe' -ArgumentList "--auto=$T\captures_appli", '--auto-preuves=R:', '--auto-travail=D:\travail' -PassThru
 # Etat toutes les 5 min : derniere ligne des journaux, processus lances par DigSpill, dernier fichier ecrit.
 # Si plus rien n'est ecrit pendant 25 min : diagnostic et arret (le test ne doit pas bruler 2 h pour rien).
 function Etat-Parcours {

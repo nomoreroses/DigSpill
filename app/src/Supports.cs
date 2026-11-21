@@ -1,4 +1,4 @@
-// DigSpill - supports de stockage : liste, protection en ecriture, verrouillage d'urgence, ejection.
+﻿// DigSpill - supports de stockage : liste, protection en ecriture, verrouillage d'urgence, ejection.
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -94,6 +94,9 @@ namespace DigSpill
             return l;
         }
 
+        /// <summary>Lecteurs acceptes comme destination meme s'ils ne sont pas USB (test de bout en bout : disques virtuels).</summary>
+        public static readonly HashSet<string> Ajoutees = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         public static List<Support> Lister(string racineOutils)
         {
             var res = new List<Support>();
@@ -118,6 +121,7 @@ namespace DigSpill
                     s.EstOutils = string.Equals(s.Lettre, outils, StringComparison.OrdinalIgnoreCase);
                     s.LectureSeule = LectureSeule(d.Name);
                     if (s.EstSysteme) continue;
+                    if (Ajoutees.Contains(s.Lettre)) s.Usb = true;
                     if (!s.Usb && !s.EstOutils) continue; // seuls les supports externes servent de destination
                     res.Add(s);
                 }
@@ -205,6 +209,18 @@ namespace DigSpill
             try { if (DeleteVolumeMountPoint(lettre + "\\")) fait.Add("Lettre " + lettre + " retirée : le support n'est plus visible des programmes"); }
             catch { }
             return fait;
+        }
+
+        /// <summary>Mode une seule cle : DigSpill tourne depuis la cle et ne peut pas l'ejecter lui-meme.
+        /// Un PowerShell lance depuis System32 attend la fermeture de DigSpill puis demande l'ejection a Windows.</summary>
+        public static void EjecterApresFermeture(string lettre)
+        {
+            var sys = Environment.GetFolderPath(Environment.SpecialFolder.System);
+            var cmd = "Wait-Process -Id " + System.Diagnostics.Process.GetCurrentProcess().Id + " -Timeout 60 -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; " +
+                      "(New-Object -ComObject Shell.Application).Namespace(17).ParseName('" + lettre.TrimEnd('\\') + "\\').InvokeVerb('Eject')";
+            var psi = new System.Diagnostics.ProcessStartInfo(Path.Combine(sys, @"WindowsPowerShell\v1.0\powershell.exe"), "-NoProfile -WindowStyle Hidden -Command \"" + cmd + "\"")
+            { WorkingDirectory = sys, UseShellExecute = false, CreateNoWindow = true };
+            System.Diagnostics.Process.Start(psi);
         }
 
         /// <summary>Fin normale : vide les caches, demonte et ejecte. Renvoie null si tout va bien, sinon le probleme.</summary>

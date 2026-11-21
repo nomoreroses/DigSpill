@@ -1242,7 +1242,10 @@ Step 'Cliches instantanes (VSS), options de recuperation, commandes destructrice
         '### Win32_ShadowCopy';             Get-CimInstance Win32_ShadowCopy -ErrorAction SilentlyContinue | Format-List ID, InstallDate, VolumeName, DeviceObject, Persistent, ClientAccessible
         '### bcdedit (recoveryenabled No = desactive par un rancongiciel ?)'; bcdedit /enum
         '### reagentc /info';               reagentc /info
-        '### wbadmin get versions';         wbadmin get versions
+        # chemin complet : sans la Sauvegarde Windows Server, 'wbadmin' ouvre wbadmin.msc (console MMC qui ne se ferme
+        # jamais et bloquait la fin de la collecte)
+        $wb = Join-Path $env:SystemRoot 'System32\wbadmin.exe'
+        '### wbadmin get versions';         if (Test-Path -LiteralPath $wb) { & $wb get versions } else { 'wbadmin.exe absent (Sauvegarde Windows non installee)' }
     }
     $rx = '(?i)vssadmin.*(delete|resize)|shadowcopy.*delete|bcdedit.*(recoveryenabled|bootstatuspolicy|safeboot)|wbadmin.*delete|wevtutil.*\s(cl|clear-log)\s|cipher(\.exe)?\s+/w|(Set|Add)-MpPreference|DisableRealtimeMonitoring|netsh.*(firewall|advfirewall).*(off|disable|state)|taskkill.*/f|net\s+stop|sc\s+(stop|config)|reg(\.exe)?\s+add.*(Defender|Terminal Server)|net\s+user\s+\S+\s+\S+|net\s+localgroup.*/add'
     Save-Csv 'rancon\commandes_destructrices_4688.csv' {

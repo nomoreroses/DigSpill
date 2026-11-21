@@ -799,6 +799,16 @@ namespace DigSpill
         void Ejecter()
         {
             if (Ctx.Pieges != null) Ctx.Pieges.Retirer();
+            if (!Ctx.Demo && Ctx.Destination.EstOutils)
+            {
+                // DigSpill.exe tourne depuis cette cle : l'ejecter maintenant ferait planter l'appli
+                var q = MessageBox.Show(F, "Mode une seule clé : DigSpill tourne depuis cette clé et ne peut pas l'éjecter lui-même.\r\n\r\nOui : fermer DigSpill, puis Windows éjecte la clé (quelques secondes).\r\nNon : rester sur cette page.", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                if (q != DialogResult.Yes) return;
+                try { Supports.EjecterApresFermeture(Ctx.Destination.Lettre); }
+                catch (Exception e) { MessageBox.Show(F, "Éjection automatique impossible : " + e.Message + "\r\nFermez DigSpill puis utilisez « Retirer le périphérique en toute sécurité » de Windows.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+                F.Close();
+                return;
+            }
             string err = Ctx.Demo ? null : Supports.Ejecter(Ctx.Destination.Lettre, false);
             if (err != null)
             {
