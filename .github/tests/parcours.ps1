@@ -53,6 +53,8 @@ Start-Sleep -Seconds 20
 # ------------------------------------------------------------------ 3. DigSpill.exe pilote
 Titre 'DigSpill.exe, parcours complet pilote comme par un technicien'
 $t0 = Get-Date
+# la collecte et l'analyse tournent sur le meme Windows de test : autoriser la lecture de la RAM sur le poste collecte (interdit en vrai)
+$env:DIGSPILL_RAM_MEME_POSTE = '1'
 $app = Start-Process -FilePath 'R:\DigSpill.exe' -ArgumentList "--auto=$T\captures_appli", '--auto-preuves=R:', '--auto-travail=D:\travail' -PassThru
 # si l'ejection detache la cle virtuelle, on la "rebranche au bureau"
 while (-not $app.HasExited -and ((Get-Date) - $t0).TotalMinutes -lt 140) {

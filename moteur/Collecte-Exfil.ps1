@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
     DigSpill - Collecte-Exfil.ps1 v2.2 - Collecte de triage forensique pour suspicion d'intrusion / exfiltration / rancongiciel.
     A lancer EN ADMINISTRATEUR sur le poste suspect (par DigSpill.exe, ou en secours moteur\secours\LANCER_COLLECTE.bat).
@@ -193,6 +193,32 @@ function Save-Ram([string]$raw, [string]$dir, [string]$log) {
         } finally { [Console]::OutputEncoding = $prev }
         if ($drv -and (Test-Path -LiteralPath $drv)) { Remove-Item -LiteralPath $drv -Force -ErrorAction SilentlyContinue }
         if ((Test-Path -LiteralPath $raw) -and (Get-Item -LiteralPath $raw).Length -gt 0) { return $drv }
+    }
+    return $null
+}
+# Identite des symboles du noyau (PDB, GUID, age) lue dans ntoskrnl.exe et tcpip.sys : au bureau, Volatility
+# prepare les symboles exacts de ce Windows sans avoir a les chercher dans l'image.
+function Get-PdbId([string]$chemin) {
+    $o = [IO.File]::ReadAllBytes($chemin)
+    $pe = [BitConverter]::ToInt32($o, 0x3C); $nsec = [BitConverter]::ToUInt16($o, $pe + 6)
+    $opt = $pe + 24; $tOpt = [BitConverter]::ToUInt16($o, $pe + 20)
+    $dd = $opt + 112 + 6 * 8
+    $rva = [BitConverter]::ToUInt32($o, $dd); $tDbg = [BitConverter]::ToUInt32($o, $dd + 4)
+    $pos = $null
+    for ($i = 0; $i -lt $nsec; $i++) {
+        $sh = $opt + $tOpt + 40 * $i
+        $va = [BitConverter]::ToUInt32($o, $sh + 12); $vs = [Math]::Max([BitConverter]::ToUInt32($o, $sh + 8), [BitConverter]::ToUInt32($o, $sh + 16))
+        if ($rva -ge $va -and $rva -lt $va + $vs) { $pos = $rva - $va + [BitConverter]::ToUInt32($o, $sh + 20) }
+    }
+    if ($null -eq $pos) { return $null }
+    for ($k = 0; $k -lt [int]($tDbg / 28); $k++) {
+        $en = $pos + 28 * $k
+        if ([BitConverter]::ToUInt32($o, $en + 12) -ne 2) { continue }   # IMAGE_DEBUG_TYPE_CODEVIEW
+        $cv = [BitConverter]::ToUInt32($o, $en + 24)
+        if ([Text.Encoding]::ASCII.GetString($o, $cv, 4) -ne 'RSDS') { continue }
+        $gu = New-Object Guid (, [byte[]]$o[($cv + 4)..($cv + 19)])
+        $fin = [Array]::IndexOf($o, [byte]0, $cv + 24)
+        return [ordered]@{ Fichier = $chemin; Pdb = [Text.Encoding]::ASCII.GetString($o, $cv + 24, $fin - $cv - 24); Guid = $gu.ToString('N').ToUpper(); Age = [BitConverter]::ToUInt32($o, $cv + 20) }
     }
     return $null
 }
@@ -448,6 +474,10 @@ if ($Full) {
             New-Item -ItemType Directory -Force -Path $memDir | Out-Null
             $raw = Join-Path $memDir "${Computer}_$Stamp.raw"
             $log = P 'memoire\winpmem.log'
+            $noyau = foreach ($bin in "$env:SystemRoot\System32\ntoskrnl.exe", "$env:SystemRoot\System32\drivers\tcpip.sys") { try { Get-PdbId $bin } catch { Log "    [i] symboles de $bin non lus : $($_.Exception.Message)" } }
+            $os = Get-CimInstance Win32_OperatingSystem
+            [ordered]@{ Windows = "$($os.Caption) $($os.Version)"; Build = [Environment]::OSVersion.Version.Build; Ubr = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue).UBR
+                Image = (Split-Path $raw -Leaf); Modules = @($noyau | Where-Object { $_ }) } | ConvertTo-Json -Depth 4 | Out-File (P 'memoire\noyau.json') -Encoding utf8
             Log "    Capture RAM vers $raw (plusieurs minutes)..."
             $t0 = Get-Date
             $drv = Save-Ram $raw $memDir $log

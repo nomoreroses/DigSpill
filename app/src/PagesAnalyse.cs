@@ -1,4 +1,4 @@
-// DigSpill - parcours "Analyser" (sur le PC du technicien, jamais sur le poste suspect).
+﻿// DigSpill - parcours "Analyser" (sur le PC du technicien, jamais sur le poste suspect).
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -44,8 +44,8 @@ namespace DigSpill
             o.Contenu.Ajouter(Intertitre("Options"));
             o.Contenu.Espace = 8;
             copie = o.Contenu.Ajouter(new Case("Copie vérifiée des preuves avant l'analyse (SHA-256 de chaque fichier, PV de copie). Recommandé.", Ctx.CopieVerifiee));
-            complete = o.Contenu.Ajouter(new Case("Analyse complète, avec la $MFT (plus longue)", Ctx.AnalyseComplete));
-            internet = o.Contenu.Ajouter(new Case("Utiliser Internet : bases publiques à jour et horodatage du scellé (seules des empreintes sont envoyées)", Ctx.AvecInternet));
+            complete = o.Contenu.Ajouter(new Case("Analyse complète, avec la $MFT et la mémoire vive (plus longue)", Ctx.AnalyseComplete));
+            internet = o.Contenu.Ajouter(new Case("Utiliser Internet : bases publiques à jour, symboles Windows pour la mémoire vive, horodatage du scellé (seules des empreintes sont envoyées)", Ctx.AvecInternet));
             proteger = o.Contenu.Ajouter(new Case("Protéger l'interface par un mot de passe (pour l'envoyer)", Ctx.Proteger));
             var g = o.Contenu.Ajouter(new Grille { Colonnes = 2 });
             g.Controls.Add(mdp1 = new Champ("Mot de passe", new TextBox { UseSystemPasswordChar = true }, true));
@@ -167,7 +167,7 @@ namespace DigSpill
             var e = Corps.Ajouter(NouvelleCarte());
             e.Contenu.Ajouter(Intertitre("Étapes"));
             eCopie = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "1. Copie vérifiée", "Chaque fichier copié est re-haché et comparé au manifeste de la collecte. PV de copie."));
-            eAna = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "2. Analyse exfiltration", "Sessions, volumes envoyés (SRUM), exécutions, navigation, \\\\tsclient, $MFT."));
+            eAna = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "2. Analyse exfiltration", "Sessions, volumes envoyés (SRUM), exécutions, navigation, \\\\tsclient, $MFT, mémoire vive."));
             eInt = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "3. Interface et scellé", "Fichier HTML autonome, bases publiques, scellé horodaté, PV de collecte."));
             Corps.Ajouter(journal);
         }
@@ -196,7 +196,7 @@ namespace DigSpill
         async Task<int> Simuler(string script)
         {
             var l = script.StartsWith("Copier") ? new[] { "Copie de 1 534 fichiers (3,4 Go)", "  verification 1000 / 1534", "Resultat : toutes les copies sont identiques aux originaux" }
-                : script.StartsWith("Analyse") ? new[] { "[*] Sessions reconstituees", "[*] SRUM : volumes par application", "[*] Executions pendant les fenetres", "[*] Navigation", "[*] $MFT du conteneur" }
+                : script.StartsWith("Analyse") ? new[] { "[*] Sessions reconstituees", "[*] SRUM : volumes par application", "[*] Executions pendant les fenetres", "[*] Navigation", "[*] $MFT du conteneur", "[*] Memoire vive : processus et connexions" }
                 : new[] { "  [+] bases publiques a jour", "  [+] scelle cree : SCELLE_20261119_183512", "  [+] scelle horodate par un tiers : 2026-11-19 17:35:13 UTC", "  Interface : SECRETARIAT-01_20261119_102233_INTERFACE.html" };
             foreach (var x in l) { await Task.Delay(700); journal.Ajouter(x); }
             return 0;
@@ -232,9 +232,10 @@ namespace DigSpill
             else eCopie.Definir(Niveau.Ignore, "1. Copie vérifiée", "Non demandée : l'analyse écrit à côté de la collecte d'origine.");
 
             eAna.Etat(Niveau.EnCours);
-            Etat("Analyse exfiltration" + (Ctx.AnalyseComplete ? " (avec la $MFT : plusieurs minutes)" : "") + "…", -1);
+            Etat("Analyse exfiltration" + (Ctx.AnalyseComplete ? " (avec la $MFT et la mémoire vive : plusieurs minutes)" : "") + "…", -1);
             var aa = new List<string> { "-Collecte", Executeur.Echapper(analysee) };
-            if (!Ctx.AnalyseComplete) aa.Add("-SansMFT");
+            if (!Ctx.AnalyseComplete) { aa.Add("-SansMFT"); aa.Add("-SansRam"); }
+            if (!Ctx.AvecInternet) aa.Add("-SansInternet");
             int ca = await Ps("Analyse-Exfil.ps1", aa, null);
             if (arret) { Fin(false); return; }
             eAna.Definir(ca == 0 ? Niveau.Ok : Niveau.Attention, "2. Analyse exfiltration", ca == 0 ? "Synthèse : " + nom + "_analyse\\SYNTHESE_EXFILTRATION.txt" : "Analyse incomplète (code " + ca + ") : l'interface reste utilisable.");

@@ -18,7 +18,7 @@ const P = ms => new Promise(r => setTimeout(r, ms));
   page.on('console', m => { if (m.type() === 'error') erreurs.push('console : ' + m.text()); });
   await page.goto('file:///' + html.replace(/\\/g, '/'), { waitUntil: 'load', timeout: 120000 });
   await P(2500);
-  const ecrans = ['resume', 'chrono', 'details/grille', 'details/fenetres', 'details/chiffres', 'details/ip', 'details/exfil', 'details/visibilite',
+  const ecrans = ['resume', 'chrono', 'details/grille', 'details/fenetres', 'details/chiffres', 'details/ip', 'details/exfil', 'details/memoire', 'details/visibilite',
     'details/sante', 'details/fuites', 'details/ioc', 'details/ia', 'details/evenements', 'details/synthese', 'preuves/integrite', 'preuves/rapports'];
   let n = 0;
   for (const e of ecrans) {
@@ -37,11 +37,11 @@ const P = ms => new Promise(r => setTimeout(r, ms));
   // premiere etape de la chronologie ouverte
   await page.evaluate(() => T.aller('chrono')); await P(800);
   const ouverte = await page.evaluate(() => { const b = document.querySelector('.st'); if (b) { b.click(); return b.textContent.slice(0, 80); } return null; });
-  if (ouverte) { await P(600); const h = await page.evaluate(() => document.documentElement.scrollHeight); await page.screenshot({ path: path.join(sortie, '17_chrono_etape.png'), clip: { x: 0, y: 0, width: 1440, height: Math.min(h, 2600) } }); console.log('etape ouverte : ' + ouverte); }
+  if (ouverte) { await P(600); const h = await page.evaluate(() => document.documentElement.scrollHeight); await page.screenshot({ path: path.join(sortie, '18_chrono_etape.png'), clip: { x: 0, y: 0, width: 1440, height: Math.min(h, 2600) } }); console.log('etape ouverte : ' + ouverte); }
   // telephone
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
   await page.evaluate(() => T.aller('resume')); await P(800);
-  await page.screenshot({ path: path.join(sortie, '18_telephone.png') });
+  await page.screenshot({ path: path.join(sortie, '19_telephone.png') });
 
   // verite terrain : chaque action du scenario se retrouve-t-elle dans les donnees de l'interface ?
   const brut = await page.evaluate(() => (document.getElementById('donnees') || {}).textContent || '');

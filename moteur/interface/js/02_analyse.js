@@ -99,11 +99,27 @@ T.analyseIp = () => T.memo('analyseIp', () => {
 });
 
 /* ======================================================================== chronologie */
-T.VOIES = ['Sessions', 'Connexions', 'Force brute', 'Comptes', 'Executions', 'Fichiers', 'Navigation', 'Antivirus', 'Rancongiciel', 'Journaux', 'USB'];
+T.VOIES = ['Sessions', 'Connexions', 'Force brute', 'Comptes', 'Executions', 'Mémoire vive', 'Fichiers', 'Navigation', 'Antivirus', 'Rancongiciel', 'Journaux', 'USB'];
 const RX_OUTILS = /mimikatz|mimi\.exe|lazagne|procdump|rclone|winscp|filezilla|pscp|megasync|megacmd|anydesk|rustdesk|ngrok|cloudflared|chisel|advanced_(ip|port)_scanner|netscan|nmap|netpass|webbrowserpass|mailpass|chromepass|psexec|vssadmin|bcdedit|wbadmin|cipher|\b7z|winrar|rar\.exe|teamviewer|screenconnect/i;
 const EVT_JOURNAUX = { 1102: 'Journal Securite efface', 104: 'Journal efface (System)', 4616: 'Heure systeme modifiee', 4719: "Politique d'audit modifiee",
   5001: 'Protection temps reel Defender desactivee', 5007: 'Configuration Defender modifiee', 7045: 'Service installe', 4697: 'Service installe (4697)',
   4698: 'Tache planifiee creee', 6005: 'Demarrage du poste', 6006: 'Arret propre', 6008: 'Arret inattendu', 1074: 'Arret / redemarrage demande' };
+
+/* ======================================================================== memoire vive (Analyse-Exfil : Volatility 3 sur l'image RAM) */
+T.memoireVive = () => T.memo('memoireVive', () => {
+  const lecture = T.texte('ram_lecture.txt');
+  const procs = T.table('ram_processus').filter(r => r.PID).map(r => ({ pid: r.PID, ppid: r.PPID, parent: r.Parent, nom: r.Processus, debut: r.Debut, fin: r.Fin, threads: r.Threads,
+    cmd: r.LigneDeCommande || '', niveau: T.num(r.Niveau), indices: String(r.Indices || '').split(' ; ').filter(Boolean), id: r._id }));
+  const reseau = T.table('ram_reseau').filter(r => r.PID !== undefined).map(r => ({ proto: r.Protocole, local: r.Local, ip: r.IP, port: r.Port, etat: r.Etat, pid: r.PID, nom: r.Processus,
+    cree: r.Cree, niveau: T.num(r.Niveau), source: r.Source, id: r._id }));
+  const etablies = reseau.filter(c => /ESTABLISHED/i.test(c.etat || '') && !/^(0\.0\.0\.0|::|\*|127\.|::1$)/.test(c.ip || ''));
+  const n = (rx) => { const m = rx.exec(lecture); return m ? T.num(m[1]) : 0; };
+  const image = (/^Image lue : (.+?) \(([\d,. ]+) Go\)/m.exec(lecture) || []);
+  const info = {}; T.table('ram_info').forEach(r => { info[r.Variable] = r.Value; });
+  return { lue: procs.length > 0, lecture, procs, reseau, etablies, info, image: image[1] || '', go: image[2] || '',
+    ecartees: n(/\((\d+) lignes illisibles/), suspects: procs.filter(p => p.niveau >= 2).sort((a, b) => b.niveau - a.niveau),
+    raison: procs.length ? '' : (lecture.split(/\r?\n/).filter(l => l.trim() && !/^(Lecture de la memoire|Copie sur le poste|  )/.test(l)).pop() || '') };
+});
 
 T.chronologie = () => T.memo('chrono', () => {
   const ev = [];
@@ -140,6 +156,8 @@ T.chronologie = () => T.memo('chrono', () => {
     if (!sensible && !enFen && ++bruit > 3000) continue;
     add(r.Date, 'Executions', r.Programme || '?', sensible && enFen ? 3 : sensible ? 2 : enFen ? 1 : 0, `${r.Source || ''} · ${r.Chemin || ''} ${r.Detail || ''}`, r._id, { compte: r.Compte });
   }
+  // processus lus dans l'image RAM : seulement ceux qui portent un indice (le reste est le fonctionnement normal de Windows)
+  for (const p of T.memoireVive().procs.filter(x => x.niveau >= 1)) add(p.debut, 'Mémoire vive', `En mémoire : ${p.nom} (PID ${p.pid})${p.fin ? '' : ', actif à la collecte'}`, p.niveau, `${p.indices.join(' · ')}${p.cmd ? ' · ' + p.cmd : ''}`, p.id);
   const paquets = {};
   for (const r of T.table('usn_fenetres')) {
     const d = T.pdate(r.Date); if (!d) continue;
@@ -598,6 +616,8 @@ T.vue = () => T.memo('vue', () => {
   if (chiffres) alertes.push({ niv: 3, icone: '', texte: `${T.nb(chiffres)} fichiers chiffrés par un rançongiciel.`, preuves: T.table('fichiers_chiffres_par_extension').slice(0, 1).map(r => r._id) });
   for (const f of ex.fenetres) if (f.niveau === 'PLAUSIBLE') alertes.push({ niv: 3, icone: '', texte: `Fenêtre ${f.id} : ${T.nb(f.envoye)} Mo envoyés sur Internet, compatible avec une copie de la base patients.`, preuves: f.preuves.slice(0, 3), onglet: 'exfil' });
   for (const a of vis.anti.slice(0, 3)) alertes.push({ niv: 2, icone: '', texte: `Anti-forensique : ${a.trace}${a.date ? ' (' + T.fcourt(a.date) + ')' : ''}`, preuves: a.id.includes('#') ? [a.id] : [], onglet: 'visibilite' });
+  const ram = T.memoireVive(), ramActifs = ram.procs.filter(p => p.niveau >= 3 && !p.fin);
+  if (ramActifs.length) alertes.push({ niv: 3, icone: '', texte: `Programme suspect encore en mémoire à la collecte : ${ramActifs.slice(0, 3).map(p => `${p.nom} (PID ${p.pid}, ${p.indices[0]})`).join(' ; ')}.`, preuves: ramActifs.slice(0, 3).map(p => p.id), onglet: 'memoire' });
   if (deja.length) alertes.push({ niv: 2, icone: '', texte: `Indicateurs déjà vus dans ${deja.length} autre(s) incident(s) : ${deja.map(d => d.client || d.poste).join(', ')}.`, preuves: [], onglet: 'ioc' });
   const vict = T.chercherVictimes(R.mots_cles_fuite && R.mots_cles_fuite.length ? R.mots_cles_fuite : (R.client ? [R.client] : []));
   if (vict.resultats.length) alertes.push({ niv: 3, icone: '', texte: `Nom proche du client publié sur un site de fuite : ${vict.resultats.map(r => `${r.victime} (${r.groupe})`).slice(0, 3).join(', ')}.`, preuves: [], onglet: 'fuites' });
