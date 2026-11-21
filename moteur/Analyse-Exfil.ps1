@@ -1315,7 +1315,7 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
         $brut = @(); foreach ($f in $out, "$out.err") { if (Test-Path -LiteralPath $f) { $brut += @(Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { "$_".Trim() }) } }
         $lignes = @()
         if ("$($brut | Select-Object -First 1)" -match '^TreeDepth,') { try { $lignes = @(Import-Csv -LiteralPath $out -Encoding UTF8) } catch {} }
-        $msg = if (-not $lignes.Count) { @($brut | Where-Object { $_ -notmatch '^Volatility 3 Framework' } | Select-Object -Last 6) } else { @() }
+        $msg = if (-not $lignes.Count -and "$($brut | Select-Object -First 1)" -notmatch '^TreeDepth,') { @($brut | Where-Object { $_ -notmatch '^Volatility 3 Framework' } | Select-Object -Last 6) } else { @() }
         $lect.Add(('  {0,-16} {1,5} lignes, {2,4} s, code {3}{4}' -f $pl, $lignes.Count, [int]$sw.Elapsed.TotalSeconds, $code, $(if (-not $hl) { ', symboles en ligne' })))
         foreach ($x in $msg) { $lect.Add("      | $x") }
         Log ('    {0} : {1} lignes en {2} s{3}' -f $pl, $lignes.Count, [int]$sw.Elapsed.TotalSeconds, $(if ($msg.Count) { ' : ' + ($msg -join ' / ') }))
@@ -1371,8 +1371,10 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
             $proche = $systeme | Where-Object { $_.Length -ge 7 -and [Math]::Abs($_.Length - $bas.Length) -le 1 -and (Get-Osa $bas $_) -eq 1 } | Select-Object -First 1
             if ($proche) { $ind.Add("nom presque identique à $proche (processus de Windows)"); $niv = [Math]::Max($niv, 3) }
         }
-        if ("$bas $ligneCmd" -match $rxEnvoi) { $ind.Add("outil d'envoi ou de vol d'identifiants ($($Matches[0]))"); $niv = [Math]::Max($niv, 3) }
-        elseif ("$bas $ligneCmd" -match $rxAcces) { $ind.Add("outil d'accès à distance ($($Matches[0]))"); $niv = [Math]::Max($niv, 2) }
+        # l'outil se reconnait a son nom ou a son chemin, pas a une adresse (curl vers rclone.org n'est pas rclone)
+        $exeCmd = if ($ligneCmd -match '^\s*"?([^"]+?\.(exe|com|scr))\b') { $Matches[1] } else { '' }
+        if ("$bas $chemin $exeCmd" -match $rxEnvoi) { $ind.Add("outil d'envoi ou de vol d'identifiants ($($Matches[0]))"); $niv = [Math]::Max($niv, 3) }
+        elseif ("$bas $chemin $exeCmd" -match $rxAcces) { $ind.Add("outil d'accès à distance ($($Matches[0]))"); $niv = [Math]::Max($niv, 2) }
         if ("$chemin $ligneCmd" -match '(?i)\\Users\\Public\\|\\Windows\\Temp\\|\\AppData\\Local\\Temp\\|\\PerfLogs\\|\\\$Recycle') { $ind.Add('lancé depuis un dossier où tout le monde peut écrire'); $niv = [Math]::Max($niv, 2) }
         if ($ligneCmd -match '(?i)\s-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{20,}') { $ind.Add('PowerShell avec une commande encodée'); $niv = [Math]::Max($niv, 2) }
         if ($ligneCmd -match '(?i)https?://([^/\s"]+)' -and $bas -notmatch $rxNav) { $ind.Add("adresse Internet dans la ligne de commande ($($Matches[1]))"); $niv = [Math]::Max($niv, 1) }

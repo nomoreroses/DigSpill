@@ -185,7 +185,12 @@ T.chronologie = () => T.memo('chrono', () => {
     add(r.Premier, 'Rancongiciel', `Chiffrement : ${T.nb(n)} fichiers ${r.Extension}`, 3, `${T.nb(T.num(r.TailleMo))} Mo en ${r.DureeMinutes} min · ex. ${r.Exemple || ''}`, r._id, { fin: r.Dernier });
   }
   for (const r of T.table('commandes_destructrices_4688')) add(r.Date, 'Rancongiciel', 'Commande destructrice', 3, r.CommandLine || r.Commande || Object.values(r).join(' '), r._id);
-  for (const r of T.table('notes_rancon_candidates')) if (T.num(r.NbDossiers) >= 3) add(r.Derniere, 'Rancongiciel', `Note de rancon : ${r.Nom} (${r.NbDossiers} dossiers)`, 3, r.Exemples, r._id);
+  // note de rancon : nom evocateur dans 3 dossiers ou plus, ou meme fichier (meme taille) dans 20 dossiers ou plus.
+  // Les README et LICENSE de tailles differentes d'un poste de developpeur ne sont pas des notes.
+  for (const r of T.table('notes_rancon_candidates')) {
+    const n = T.num(r.NbDossiers), evoc = r.NomEvocateur === 'True', meme = r.TailleIdentique === undefined ? null : r.TailleIdentique === 'True';
+    if ((evoc && n >= 3 && meme !== false) || (meme === true && n >= 20)) add(r.Derniere, 'Rancongiciel', `Note de rancon : ${r.Nom} (${r.NbDossiers} dossiers)`, 3, r.Exemples, r._id);
+  }
   for (const r of T.table('resume_evenements_cles')) if (EVT_JOURNAUX[r.EventID]) add(r.Date, 'Journaux', `${r.EventID} ${EVT_JOURNAUX[r.EventID]}`, ['1102', '104', '4616', '4719', '5001'].includes(r.EventID) ? 3 : 1, (r.Message || '').slice(0, 300), r._id);
   for (const r of T.table('usb_chronologie')) add(r.Date, 'USB', `USB : ${(r.Peripherique || '').slice(0, 60)}`, r.Fenetre ? 2 : 0, `${r.Source || ''} · serie ${r.Serie || '-'}`, r._id);
   ev.sort((a, b) => a.t - b.t);
@@ -948,7 +953,10 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
   for (const e of [...nav.filter(e => /PARTAGE|TRANSFERT/i.test(e.titre)), ...ev('USB')]) if (!pris.has(e.id) && e.g >= 2) etape(2, e.t, e.voie === 'USB' ? 'Branche un périphérique USB' : `Ouvre ${e.titre.split(' ')[0]}`, e.detail || e.titre, [e.id]);
 
   /* ---------- 04 il detruit ---------- */
-  const destr = ev('Rancongiciel', /^Commande destructrice/), vssExec = execDe(RX.vss);
+  // seulement une vraie suppression : « vssadmin list shadows » ou Add-MpPreference ne suppriment rien
+  const RX_SUPPR = /vssadmin.*\b(delete|resize)\b|shadowcopy.*delete|wbadmin.*delete|bcdedit.*(recoveryenabled|bootstatuspolicy)|win32_shadowcopy.*delete/i;
+  const destr = ev('Rancongiciel', /^Commande destructrice/).filter(e => RX_SUPPR.test(e.detail)),
+    vssExec = execDe(RX.vss).filter(x => RX_SUPPR.test(`${x.r.Detail || ''} ${x.r.Chemin || ''} ${x.r.LigneDeCommande || ''}`));
   if (destr.length || vssExec.length) {
     const tous = [...destr, ...vssExec].sort((a, b) => a.t - b.t), r = destr.length ? T.preuve(destr[0].id) || {} : {};
     const compte = r.Compte || r.Utilisateur || (vssExec[0] && vssExec[0].r.Compte) || '';

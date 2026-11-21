@@ -248,7 +248,7 @@ using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
 public class ExtStat { public long Count; public long Bytes; public DateTime First = DateTime.MaxValue; public DateTime Last = DateTime.MinValue; public string Sample; }
-public class NoteStat { public int Count; public long Size; public DateTime Last = DateTime.MinValue; public List<string> Samples = new List<string>(); }
+public class NoteStat { public int Count; public long Size; public bool Variee; public DateTime Last = DateTime.MinValue; public List<string> Samples = new List<string>(); }
 
 public class FsWalker {
     public long Files, Dirs, Errors, RansomHits, BaseHits;
@@ -298,6 +298,7 @@ public class FsWalker {
                         if (len < 102400 && NoteExt.Contains(ext)) {
                             NoteStat n;
                             if (!Notes.TryGetValue(name, out n)) { n = new NoteStat(); Notes[name] = n; }
+                            if (n.Count > 0 && n.Size != len) n.Variee = true;   // une note de rancon est la meme partout
                             n.Count++; n.Size = len;
                             if (t > n.Last) n.Last = t;
                             if (n.Samples.Count < 3) n.Samples.Add(f.FullName);
@@ -1337,7 +1338,7 @@ Step 'Binaires suspects : hash + archive chiffree (mot de passe : infected) + qu
 if ($Full -and -not $SkipFullListing) {
     Step 'Listing complet des disques + fichiers chiffres, notes de rancon, bases metier (plusieurs minutes)' {
         if (-not $script:CsOk) { Log '    [!] Moteur C# indisponible : listing ignore'; return }
-        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.\[[^\]]{3,80}\]\.[^.]{2,15}$|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|\.(locked|encrypted|crypted|lockbit|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.\[[^\]]{3,80}\]\.[^.]{2,15}$|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|jpe?g|png|txt|odt|ods|csv|rtf|mdb|accdb|fdb|sql)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
         $baseRx   = New-Object Text.RegularExpressions.Regex('(?i)(\.(fdp|fdb|gdb|mdf|ldf|ndf|accdb|mdb|4dd|4dindx|dbf)(\.|$)|axi_database)', 'Compiled')
         $enc = New-Object Text.UTF8Encoding($true)
         $hdr = 'Chemin,Taille,Creation,Modification,Acces,Attributs'
@@ -1364,12 +1365,12 @@ if ($Full -and -not $SkipFullListing) {
         $notes = foreach ($k in $w.Notes.Keys) {
             $n = $w.Notes[$k]; $m = $k -match $noteRx
             if (($m -and $n.Count -ge 1) -or $n.Count -ge 5) {
-                [pscustomobject]@{ Nom = $k; NbDossiers = $n.Count; NomEvocateur = $m; TailleOctets = $n.Size; Derniere = $n.Last.ToString('yyyy-MM-dd HH:mm:ss'); Exemples = ($n.Samples -join ' | '); _p = $n.Samples[0]
+                [pscustomobject]@{ Nom = $k; NbDossiers = $n.Count; NomEvocateur = $m; TailleIdentique = (-not $n.Variee); TailleOctets = $n.Size; Derniere = $n.Last.ToString('yyyy-MM-dd HH:mm:ss'); Exemples = ($n.Samples -join ' | '); _p = $n.Samples[0]
                     _score = $(if ($m -and $n.Count -ge 3) { 3 } elseif ($m) { 2 } else { 1 }) }
             }
         }
         $notes = @($notes | Sort-Object @{e='_score'; Descending=$true}, @{e='NbDossiers'; Descending=$true})
-        $notes | Select-Object Nom, NbDossiers, NomEvocateur, TailleOctets, Derniere, Exemples | Export-Csv (P 'rancon\notes_rancon_candidates.csv') -NoTypeInformation -Encoding UTF8
+        $notes | Select-Object Nom, NbDossiers, NomEvocateur, TailleIdentique, TailleOctets, Derniere, Exemples | Export-Csv (P 'rancon\notes_rancon_candidates.csv') -NoTypeInformation -Encoding UTF8
         $nd = P 'rancon\notes'
         New-Item -ItemType Directory -Force -Path $nd | Out-Null
         $i = 0
