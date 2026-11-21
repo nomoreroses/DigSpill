@@ -7,6 +7,7 @@ Correction importante de la copie de la RAM.
 - `winpmem_mini_x64_rc2.exe` n'est plus dans le kit (la licence WinPmem reste, pour le pilote intégré à Velociraptor).
 - Place demandée pour la RAM : RAM + 5 Go (l'image couvre tout l'espace d'adresses, trous compris, souvent 1 à 3 Go de plus que la RAM).
 - `memoire_info.txt` indique l'outil, le service et l'endroit où le pilote a été déposé ; alerte si l'image est plus petite que la RAM.
+- README : section « Mémoire vive : test réel » avec 4 captures des résultats (copie, processus, lignes de commande, réseau).
 - Nouveau test GitHub `Test collecte et RAM` : vraie collecte en mode complet depuis une clé exFAT, contrôles (pilote Windows intact, service retiré, aucun pilote laissé sur le poste), lecture de l'image par Volatility 3.
 
 ## 2.7 (bêta)

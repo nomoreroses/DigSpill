@@ -204,6 +204,19 @@ Collecte\
 - **Fiche à compléter** par le technicien : découverte de l'incident, patients concernés, heure de la box et écart d'horloge, redirections de ports, journaux de la box, demande type au FAI.
 - **Velociraptor** : `_SANS_Triage` ($MFT, $J, registre, evtx…), Autoruns, SRUM.
 
+### Mémoire vive : test réel
+
+Vraie collecte en mode complet, lancée depuis une clé exFAT sur un Windows GitHub (Server 2025, build 26100, 8 Go de RAM), puis lecture de l'image par Volatility 3 sans réseau. Ce sont les valeurs réelles du test, mises en page. Ce ne sont pas encore des écrans de DigSpill : l'analyse de la RAM viendra plus tard. Le test se relance à la main : Actions › **Test collecte et RAM**.
+
+- **Copie** : 11 Go pour 8 Go de RAM (l'image couvre aussi les trous d'adresses), en 9 min avec le SHA256. Le pilote Windows `pmem` reste intact. Le service `digspill_pmem` et son pilote sont retirés à la fin.
+- **Processus et lignes de commande** : lus dans l'image, y compris ceux des programmes encore actifs.
+- **Réseau** : sur ce Windows, Volatility retrouve les ports ouverts, pas les connexions établies. Les connexions viennent de la collecte en direct (`volatile\tcp_connexions.csv`).
+
+![Copie de la RAM pendant une vraie collecte](docs/captures/ram_copie.png)
+![Processus lus dans la RAM](docs/captures/ram_processus.png)
+![Lignes de commande lues dans la RAM](docs/captures/ram_commandes.png)
+![Réseau lu dans la RAM](docs/captures/ram_connexions.png)
+
 ## Ce que fait l'analyse exfiltration
 
 | Question | Sources | Fichiers |
