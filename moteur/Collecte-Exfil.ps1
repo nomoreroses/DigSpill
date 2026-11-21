@@ -1360,7 +1360,7 @@ if ($Full -and -not $SkipFullListing) {
         & $fmt $w.Ext | Sort-Object NbFichiers -Descending | Select-Object -First 400 | Export-Csv (P 'rancon\extensions_fichiers_recents.csv') -NoTypeInformation -Encoding UTF8
 
         # Notes de rancon : petits fichiers texte recents au nom evocateur ou repetes dans de nombreux dossiers
-        $noteRx = '(?i)(read.?me|decrypt|restore|recover|how.?to|ransom|instruction|unlock|encrypted|crypted|files?.?back|^info\.|attention|warning|help|rancon|lisez)'
+        $noteRx = '(?i)(read.?me|decrypt|restore|recover|how.?to|ransom|instruction|unlock|encrypted|crypted|files?.?back|^info\.|attention|warning|help|rancon|lisez|lire.?(moi|pour)|restaur|d[eé]chiffr|r[eé]cup[eé]r|vos.?fichiers)'
         $notes = foreach ($k in $w.Notes.Keys) {
             $n = $w.Notes[$k]; $m = $k -match $noteRx
             if (($m -and $n.Count -ge 1) -or $n.Count -ge 5) {

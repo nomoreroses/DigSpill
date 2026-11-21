@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 2.8 (bêta)
+Testé de A à Z sur un vrai Windows : l'appli pilotée comme par un technicien, sur des traces d'attaque réelles.
+
+- **Test du parcours complet** (workflow `Test parcours complet`) : kit de release sur une clé OUTILS, clé PREUVES exFAT, scénario d'attaque réel et sans danger (outil renommé et antidaté, compte administrateur ajouté, tâche planifiée, exclusion Defender, rclone avec un compte MEGA fictif, archive, visites de sites de partage, échecs de connexion, journal effacé, fichiers `.lockbit3`), puis `DigSpill.exe --auto` clique dans les vraies pages : intervention, feu vert, collecte, scellé horodaté, éjection, copie vérifiée, analyse, interface. Chaque écran est capturé et les données de l'interface sont comparées à ce que le scénario a vraiment fait.
+- **Collecte bloquée à la fin sur Windows Server : corrigé.** Sans la Sauvegarde Windows Server, `wbadmin get versions` ouvrait la console `wbadmin.msc`, qui ne se ferme jamais ; DigSpill attendait sa sortie. `wbadmin.exe` est appelé par son chemin, et DigSpill n'attend plus plus de 10 s une sortie qu'un programme garde ouverte.
+- **Copie vérifiée : corrigé.** Sous PowerShell 5.1, `-Include` est ignoré avec `-LiteralPath` : la copie lisait chaque fichier de la clé (image RAM comprise) comme un CSV et s'arrêtait faute de mémoire. Même erreur corrigée pour les journaux des outils d'accès distant à la collecte.
+- **Mémoire vive lue au bureau** : Python embarquable 3.12.10 et Volatility 3 (2.28.2) dans le kit (roues PyPI vérifiées par SHA256). La collecte note l'identité des symboles du noyau (`memoire\noyau.json`) ; l'analyse prépare les symboles (gardés dans `moteur\outils\symboles`), lit les processus, lignes de commande et connexions, et signale les indices (nom imitant un processus Windows, outil d'envoi, dossier public, commande encodée, parent anormal). Jamais sur le poste collecté.
+- **Interface** : rubrique « Mémoire vive », voie « Mémoire vive » dans la chronologie, alerte si un programme suspect était encore actif, recherche Ctrl K des processus.
+- **Fin de collecte honnête** : « Collecte incomplète » avec la raison quand la collecte PowerShell n'a pas produit de dossier (avant : « avec des avertissements » et une empreinte « aucun scellé » découpée en blocs).
+- **Mode une seule clé** : DigSpill ne s'éjecte plus lui-même (l'exe tourne depuis la clé) ; il se ferme et Windows éjecte la clé juste après.
+- Liste « Motif » en sombre (la liste de Windows restait blanche) ; manifeste de collecte avec progression (volume, gros fichiers, avancement chaque minute) ; option « Analyse complète » qui inclut la mémoire vive ; `-SansInternet` transmis à l'analyse.
+
 ## 2.7.1 (bêta)
 Correction importante de la copie de la RAM.
 

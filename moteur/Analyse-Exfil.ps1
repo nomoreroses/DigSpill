@@ -1121,19 +1121,25 @@ Step 'Conteneurs Velociraptor : SHA256 complet et controle de la fin d''archive 
 # =================================================================== 12 bis. MEMOIRE VIVE (Volatility 3, au bureau seulement)
 function Get-Osa([string]$a, [string]$b) {
     # distance d'edition avec transposition (svhost / svchost = 1, scvhost / svchost = 1)
-    $n = $a.Length; $m = $b.Length
-    $d = New-Object 'int[,]' ($n + 1), ($m + 1)
-    for ($i = 0; $i -le $n; $i++) { $d[$i, 0] = $i }
-    for ($j = 0; $j -le $m; $j++) { $d[0, $j] = $j }
+    # tableau a une dimension : PowerShell 5.1 refuse $d[$i, $j] dans les arguments d'une methode
+    $n = $a.Length; $m = $b.Length; $w = $m + 1
+    $d = New-Object int[] (($n + 1) * $w)
+    for ($i = 0; $i -le $n; $i++) { $d[$i * $w] = $i }
+    for ($j = 0; $j -le $m; $j++) { $d[$j] = $j }
     for ($i = 1; $i -le $n; $i++) {
         for ($j = 1; $j -le $m; $j++) {
-            $c = [int]($a[$i - 1] -ne $b[$j - 1])
-            $v = [Math]::Min([Math]::Min($d[($i - 1), $j] + 1, $d[$i, ($j - 1)] + 1), $d[($i - 1), ($j - 1)] + $c)
-            if ($i -gt 1 -and $j -gt 1 -and $a[$i - 1] -eq $b[$j - 2] -and $a[$i - 2] -eq $b[$j - 1]) { $v = [Math]::Min($v, $d[($i - 2), ($j - 2)] + 1) }
-            $d[$i, $j] = $v
+            $c = 1; if ($a[$i - 1] -eq $b[$j - 1]) { $c = 0 }
+            $sup = $d[($i - 1) * $w + $j] + 1
+            $gau = $d[$i * $w + $j - 1] + 1
+            $dia = $d[($i - 1) * $w + $j - 1] + $c
+            $v = $sup; if ($gau -lt $v) { $v = $gau }; if ($dia -lt $v) { $v = $dia }
+            if ($i -gt 1 -and $j -gt 1 -and $a[$i - 1] -eq $b[$j - 2] -and $a[$i - 2] -eq $b[$j - 1]) {
+                $tr = $d[($i - 2) * $w + $j - 2] + 1; if ($tr -lt $v) { $v = $tr }
+            }
+            $d[$i * $w + $j] = $v
         }
     }
-    return $d[$n, $m]
+    return $d[$n * $w + $m]
 }
 function Invoke-Py([string]$exe, [string[]]$arguments, [string]$stdout, [int]$minutes) {
     $ligne = ($arguments | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join ' '

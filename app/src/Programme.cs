@@ -105,7 +105,8 @@ namespace DigSpill
         public string RaisonAlerte;
         public List<string> ActionsUrgence;
         public bool CollecteOk;
-        public string ProblemeCollecte;   // pourquoi la collecte est incomplete (affiche en fin de collecte)
+        public string ProblemeCollecte;
+        public string ProblemeAnalyse;    // analyse en echec : l'interface est faite, mais sans l'analyse   // pourquoi la collecte est incomplete (affiche en fin de collecte)
 
         // analyse
         public string SourceCollecte, DossierTravail, MotDePasse, Interface;

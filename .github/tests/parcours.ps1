@@ -98,7 +98,14 @@ foreach ($j in Get-ChildItem "$T\captures_appli" -Filter 'journal_*.txt' -ErrorA
 $col = Get-ChildItem 'R:\Collecte' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '_(scelles|analyse)$' } | Sort-Object LastWriteTime | Select-Object -Last 1
 if ($col) { Bloc 'collecte.log' (Join-Path $col.FullName 'collecte.log') $null }
 $ana = Get-ChildItem 'D:\travail' -Recurse -Filter 'analyse.log' -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($ana) { Bloc 'analyse.log' $ana.FullName '\[!\]|\[\*\]|erreur|Erreur' }
+if ($ana) {
+    Bloc 'analyse.log' $ana.FullName $null
+    $dirA = Split-Path $ana.FullName -Parent
+    Bloc 'grille_verification' (Join-Path $dirA 'grille_verification.csv') $null
+    Bloc 'ram_lecture' (Join-Path $dirA 'ram\ram_lecture.txt') $null
+    Bloc 'ram_processus_indices' (Join-Path $dirA 'ram\ram_processus.csv') '"[123]","[^"]*"$|^"PID"'
+    Bloc 'ram_reseau' (Join-Path $dirA 'ram\ram_reseau.csv') $null
+} else { Write-Host '[!] pas de analyse.log : l''analyse n''a pas tourne' }
 
 # ------------------------------------------------------------------ 4. interface
 $html = if (Test-Path "$T\captures_appli\interface.txt") { (Get-Content "$T\captures_appli\interface.txt" -Raw).Trim() } else { '' }

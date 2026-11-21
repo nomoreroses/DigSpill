@@ -1,4 +1,4 @@
-// DigSpill - "feu vert" : signes d'un chiffrement en cours avant de brancher la cle PREUVES.
+﻿// DigSpill - "feu vert" : signes d'un chiffrement en cours avant de brancher la cle PREUVES.
 // Tout est en lecture : on ne cree ni ne modifie aucun fichier sur le poste examine.
 using System;
 using System.Collections.Generic;
@@ -119,7 +119,7 @@ namespace DigSpill
             }
         }
 
-        static readonly Regex Rancon = new Regex(@"(?i)^(.*(read[\s_\-\.]*me|restore|recover|decrypt|how[\s_\-]*to|instruction|ransom|unlock|help[\s_\-]*(files?|decrypt|restore))|!!!).*\.(txt|html?|hta|rtf|url)$");
+        static readonly Regex Rancon = new Regex(@"(?i)^(.*(read[\s_\-\.]*me|restore|recover|decrypt|how[\s_\-]*to|instruction|ransom|unlock|help[\s_\-]*(files?|decrypt|restore)|lire[\s_\-\.]*(moi|pour)|lisez|restaur|d[eé]chiffr|r[eé]cup[eé]r|vos[\s_\-]*fichiers)|!!!).*\.(txt|html?|hta|rtf|url)$");
 
         static Constat NotesRancon(List<string> dossiers)
         {

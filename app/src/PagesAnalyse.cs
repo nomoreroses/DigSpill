@@ -238,7 +238,10 @@ namespace DigSpill
             if (!Ctx.AvecInternet) aa.Add("-SansInternet");
             int ca = await Ps("Analyse-Exfil.ps1", aa, null);
             if (arret) { Fin(false); return; }
-            eAna.Definir(ca == 0 ? Niveau.Ok : Niveau.Attention, "2. Analyse exfiltration", ca == 0 ? "Synthèse : " + nom + "_analyse\\SYNTHESE_EXFILTRATION.txt" : "Analyse incomplète (code " + ca + ") : l'interface reste utilisable.");
+            bool synthese = Ctx.Demo || File.Exists(Path.Combine(analysee + "_analyse", "SYNTHESE_EXFILTRATION.txt"));
+            Ctx.ProblemeAnalyse = synthese ? null : "L'analyse s'est arrêtée (code " + ca + ") sans écrire sa synthèse : l'interface montre la collecte brute, sans chronologie racontée, grille ni mémoire vive. Voir le journal de l'analyse.";
+            eAna.Definir(!synthese ? Niveau.Danger : ca == 0 ? Niveau.Ok : Niveau.Attention, "2. Analyse exfiltration",
+                !synthese ? "Analyse en échec (code " + ca + ") : voir le journal ci-dessous." : ca == 0 ? "Synthèse : " + nom + "_analyse\\SYNTHESE_EXFILTRATION.txt" : "Analyse terminée avec des erreurs (code " + ca + ") : voir analyse.log.");
 
             eInt.Etat(Niveau.EnCours);
             Etat("Interface, bases publiques et scellé…", -1);
@@ -291,9 +294,10 @@ namespace DigSpill
     {
         public PageRapport(Fenetre f) : base(f)
         {
-            Titre = "Rapport prêt";
+            Titre = Ctx.ProblemeAnalyse == null ? "Rapport prêt" : "Rapport partiel";
             SousTitre = "Un seul fichier HTML : il s'ouvre sur n'importe quel PC, sans installation ni Internet.";
             Parcours = ParcoursAnalyse; Etape = 2;
+            if (Ctx.ProblemeAnalyse != null) Corps.Ajouter(NouvelleCarte()).Contenu.Ajouter(new LigneInfo(Niveau.Danger, "Analyse en échec", Ctx.ProblemeAnalyse));
             var c = Corps.Ajouter(NouvelleCarte());
             c.Couleurs(Theme.Panneau, Theme.Ligne);
             c.Contenu.Ajouter(Mise.Texte("INTERFACE", Theme.MonoMoyen(8.5f), Theme.Texte3));

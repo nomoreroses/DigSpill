@@ -268,7 +268,8 @@ namespace DigSpill
                         Capturer("rapport");
                         File.WriteAllText(Path.Combine(dossier, "interface.txt"), f.Ctx.Interface ?? "", Encoding.UTF8);
                         Log("interface : " + f.Ctx.Interface);
-                        Quitter(0);
+                        if (f.Ctx.ProblemeAnalyse != null) { Log("[!] " + f.Ctx.ProblemeAnalyse); Quitter(12); }
+                        else Quitter(0);
                     }
                     break;
             }
