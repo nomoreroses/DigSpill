@@ -48,8 +48,17 @@ const P = ms => new Promise(r => setTimeout(r, ms));
   const texte = brut.replace(/\\\\/g, '\\').toLowerCase();
   const verite = JSON.parse(fs.readFileSync(veriteFichier, 'utf8').replace(/^\uFEFF/, ''));
   const resume = await page.evaluate(() => document.body.innerText);
-  await page.evaluate(() => T.aller('chrono')); await P(800);
-  const chrono = await page.evaluate(() => document.body.innerText);
+  // chronologie de chaque fenetre d'analyse (texte et capture)
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  const fens = await page.evaluate(() => T.fenetres().map(f => ({ id: f.id, motif: f.motif || '' })));
+  let chrono = '';
+  for (const f of fens) {
+    await page.evaluate(x => T.aller('chrono/' + x), f.id); await P(900);
+    chrono += '\n' + await page.evaluate(() => document.body.innerText);
+    const h = await page.evaluate(() => document.documentElement.scrollHeight);
+    await page.screenshot({ path: path.join(sortie, `20_chrono_${f.id}.png`), clip: { x: 0, y: 0, width: 1440, height: Math.min(h, 2600) } });
+    console.log(`fenetre ${f.id} : ${f.motif}`);
+  }
   console.log('@@DEBUT verite');
   for (const a of [].concat(verite)) {
     const motifs = [].concat(a.Motifs || []).filter(Boolean);
@@ -62,7 +71,7 @@ const P = ms => new Promise(r => setTimeout(r, ms));
   }
   console.log('@@FIN verite');
   console.log('@@DEBUT resume_texte'); console.log(resume.slice(0, 6000)); console.log('@@FIN resume_texte');
-  console.log('@@DEBUT chrono_texte'); console.log(chrono.slice(0, 8000)); console.log('@@FIN chrono_texte');
+  console.log('@@DEBUT chrono_texte'); console.log(chrono.slice(0, 12000)); console.log('@@FIN chrono_texte');
   console.log('@@DEBUT erreurs'); console.log(erreurs.length ? erreurs.join('\n') : 'aucune'); console.log('@@FIN erreurs');
   await nav.close();
 })().catch(e => { console.error(e); process.exit(1); });

@@ -231,12 +231,13 @@ T.ECRANS.chrono = (c, fenId) => {
   const fens = T.fenetres(), f = fens.find(x => x.id === fenId) || T.fenetreGrave() || fens[0], id = T.identite();
   const m = h('main', { class: 'col', id: 'principal' }); c.append(m);
   if (!f) { m.append(h('h1', { class: 'recit-titre' }, 'Chronologie'), h('p', { class: 'intro' }, "Aucune fenêtre d'analyse : il n'y a pas de nuit à raconter. Tous les événements restent consultables."), h('p', { class: 'intro' }, h('a', { class: 'lk', href: '#details/evenements' }, 'Tous les événements →'))); return; }
-  const r = T.recit(f.id), n = r.etapes.length;
+  const r = T.recit(f.id), n = r.chapitres.reduce((t, ch) => t + ch.etapes.length, 0);
   m.append(h('p', { class: 'lbl', title: f.motif || null }, `Fenêtre ${f.id} · poste ${id.poste}`), h('h1', { class: 'recit-titre' }, r.periode.titre),
     h('p', { class: 'intro' }, n ? `De ${T.hm(r.debut)} à ${T.hm(r.fin)}, en ${n} étape${n > 1 ? 's' : ''}. Cliquez sur une étape pour voir ce qui la prouve.` : `De ${T.hm(f.debut)} à ${T.hm(f.fin)}. Aucun événement important dans cette fenêtre.`));
   for (const ch of r.chapitres) {
     m.append(h('section', { class: 'chap', 'aria-label': `${ch.n} ${ch.nom}` }, h('h2', { class: 'cht' }, h('span', { class: 'chn' }, ch.n), ch.nom, h('span', { class: 'rng' }, ch.plage)),
-      h('ol', { class: 'tl' }, ch.etapes.map(s => T.ligneEtape(s, f)))));
+      h('ol', { class: 'tl' }, ch.etapes.map(s => T.ligneEtape(s, f))),
+      ch.caches ? h('p', { class: 'petit doux', style: 'margin:8px 0 0 86px' }, `${T.nb(ch.caches)} autre${ch.caches > 1 ? 's' : ''} événement${ch.caches > 1 ? 's' : ''} dans cette fenêtre : `, h('a', { class: 'lk', href: '#details/evenements', onclick: () => { T.zoomFenetre = f.id; } }, 'Tous les événements →')) : ''));
   }
   const autres = fens.filter(x => x.id !== f.id);
   m.append(h('footer', { class: 'pied-page' }, autres.length ? h('span', {}, 'Autres fenêtres : ', autres.map((x, i) => [i ? ', ' : '', h('a', { class: 'lk doux', href: '#chrono/' + x.id, title: x.motif || null }, `${x.id} · ${T.jm(x.debut)}`)])) : h('span', {}, "Une seule fenêtre d'analyse."),
@@ -371,7 +372,7 @@ T.ECRANS.memoire = c => {
       l, { max: 600, hauteur: '520px', vide: 'Aucun processus pour ce filtre.' }));
   };
   c.append(T.carte(`Tous les processus · ${m.procs.length}`, 'triés par heure de lancement', h('div', { class: 'filtres' },
-    h('input', { type: 'search', placeholder: 'Filtrer : nom, PID, ligne de commande', value: T.filtreRam, 'aria-label': 'Filtrer les processus', style: 'min-width:280px', oninput: e => { T.filtreRam = e.target.value; rendre(); } }),
+    h('input', { type: 'search', class: 'texte', placeholder: 'Filtrer : nom, PID, ligne de commande', value: T.filtreRam, 'aria-label': 'Filtrer les processus', style: 'width:320px', oninput: e => { T.filtreRam = e.target.value; rendre(); } }),
     h('button', { class: 'btn', style: 'margin-left:auto', onclick: () => T.telecharger(`${T.identite().poste}_ram_processus.csv`, T.texte('ram_processus')) }, 'CSV')), tous));
   rendre();
   c.append(T.carte('Comment la RAM a été lue', 'ram_lecture.txt : image, symboles, modules Volatility, limites', h('pre', { class: 'apercu' }, m.lecture)));

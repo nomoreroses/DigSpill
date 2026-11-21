@@ -983,7 +983,24 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
   // chapitres non vides, etapes dans l'ordre chronologique
   // fenetre legitime (liste blanche) : chapitres aux noms neutres, personne n'est presente comme attaquant
   const neutre = (T.exfil().fenetres.find(x => x.id === fenId) || {}).legitime;
-  const chapitres = T.CHAPITRES.map((c, i) => ({ n: c.n, nom: neutre ? T.CHAPITRES_NEUTRES[i] : c.nom, etapes: etapes.filter(s => s.chap === i).sort((a, b) => a.t - b.t) })).filter(c => c.etapes.length);
+  // etapes identiques qui se suivent (ex. 18 x « Efface des journaux Windows » en 2 min) : une seule etape « x 18 »
+  const regrouper = l => {
+    const r = [];
+    for (const s of l) {
+      const p = r[r.length - 1];
+      if (p && p.titreBase === s.titre && enMin(s.t, p.tFin) <= 30) { p.n++; p.tFin = s.t; p.preuves = [...new Set([...p.preuves, ...s.preuves])]; p.liees = [...new Set([...p.liees, ...s.liees])]; p.titre = `${p.titreBase} (× ${p.n})`; continue; }
+      r.push(Object.assign({}, s, { titreBase: s.titre, n: 1, tFin: s.t }));
+    }
+    return r;
+  };
+  // « Autres événements » : les 40 premiers ; le reste reste dans Détails › Tous les événements
+  const MAX_AUTRES = 40;
+  const chapitres = T.CHAPITRES.map((c, i) => {
+    let l = regrouper(etapes.filter(s => s.chap === i).sort((a, b) => a.t - b.t));
+    const caches = i === 4 && l.length > MAX_AUTRES ? l.length - MAX_AUTRES : 0;
+    if (caches) l = l.slice(0, MAX_AUTRES);
+    return { n: c.n, nom: neutre ? T.CHAPITRES_NEUTRES[i] : c.nom, etapes: l, caches };
+  }).filter(c => c.etapes.length);
   chapitres.forEach(c => { const a = c.etapes[0].t, z = c.etapes[c.etapes.length - 1].t; c.plage = T.hm(a) === T.hm(z) ? T.hm(a) : `${T.hm(a)} → ${T.hm(z)}`; });
   const toutes = chapitres.flatMap(c => c.etapes);
   if (!toutes.length) return { fen, chapitres: [], etapes: [], ipsEntree, debut: fen.debut, fin: fen.fin, periode: T.periode(fen.debut, fen.fin) };

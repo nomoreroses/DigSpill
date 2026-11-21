@@ -10,6 +10,12 @@ Testé de A à Z sur un vrai Windows : l'appli pilotée comme par un technicien,
 - **Interface** : rubrique « Mémoire vive », voie « Mémoire vive » dans la chronologie, alerte si un programme suspect était encore actif, recherche Ctrl K des processus.
 - **Fin de collecte honnête** : « Collecte incomplète » avec la raison quand la collecte PowerShell n'a pas produit de dossier (avant : « avec des avertissements » et une empreinte « aucun scellé » découpée en blocs).
 - **Mode une seule clé** : DigSpill ne s'éjecte plus lui-même (l'exe tourne depuis la clé) ; il se ferme et Windows éjecte la clé juste après.
+- **Fenêtres d'analyse sur indices forts** : une attaque menée sur place ou par un outil d'accès distant n'ouvre pas de session RDP depuis Internet. Les fenêtres se forment aussi sur les indices horodatés (compte créé ou ajouté aux administrateurs, journal effacé, Defender coupé, rclone ou mimikatz lancé, commandes destructrices, chiffrement) : la chronologie a de nouveau quelque chose à raconter.
+- **Comptes de transfert configurés** (`comptes_transfert.csv`) : rclone, FileZilla, WinSCP. Identifiant, serveur, type ; mots de passe et jetons jamais lus ni décodés. Alerte, chronologie et carte dans Exfiltration.
+- **Mémoire vive** : nom complet malgré la limite de 14 caractères de Windows (`fontdrvhost.ex` n'est plus pris pour une imitation), chemin repris du relevé en direct, message de Volatility gardé quand un module échoue, nouvel essai avec les symboles en ligne.
+- **Chronologie** : étapes identiques regroupées (« Efface des journaux Windows (× 18) »), « Autres événements » limités à 40 avec un lien vers Tous les événements. **Visibilité** : traces identiques regroupées.
+- **Bases métier** : modèles SQL Server et fichiers de Windows ignorés (la taille de la base patients était estimée sur un fichier système).
+- **Appli** : avancement réel pendant la copie vérifiée (fichiers re-hachés) et l'analyse (étape en cours) ; « Rapport partiel » et étape en rouge si l'analyse échoue.
 - Liste « Motif » en sombre (la liste de Windows restait blanche) ; manifeste de collecte avec progression (volume, gros fichiers, avancement chaque minute) ; option « Analyse complète » qui inclut la mémoire vive ; `-SansInternet` transmis à l'analyse.
 
 ## 2.7.1 (bêta)

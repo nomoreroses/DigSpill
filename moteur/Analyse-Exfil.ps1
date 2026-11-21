@@ -1301,22 +1301,36 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
 
     $res = @{}
     $lect.Add(''); $lect.Add('Modules Volatility 3 :')
+    # Un module qui echoue ecrit son message (ex. "Unsatisfied requirement") au lieu du CSV : on le garde dans
+    # ram_lecture.txt, et on refait un essai sans --offline (Volatility cherche alors lui-meme les symboles).
+    function Lancer-Vol([string]$pl, [bool]$hl) {
+        $out = Join-Path $Work "$pl.csv"
+        Remove-Item -LiteralPath $out, "$out.err" -ErrorAction SilentlyContinue
+        $argv = @($vol, '-q', '-r', 'csv', '--cache-path', $cache, '-s', $symb)
+        if ($hl) { $argv += '--offline' }
+        $argv += @('-f', $img, $pl)
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        Log "    Volatility $pl$(if (-not $hl) { ' (symboles en ligne)' })..."
+        $code = Invoke-Py $py $argv $out 30
+        $brut = @(); foreach ($f in $out, "$out.err") { if (Test-Path -LiteralPath $f) { $brut += @(Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { "$_".Trim() }) } }
+        $lignes = @()
+        if ("$($brut | Select-Object -First 1)" -match '^TreeDepth,') { try { $lignes = @(Import-Csv -LiteralPath $out -Encoding UTF8) } catch {} }
+        $msg = if (-not $lignes.Count) { @($brut | Where-Object { $_ -notmatch '^Volatility 3 Framework' } | Select-Object -Last 6) } else { @() }
+        $lect.Add(('  {0,-16} {1,5} lignes, {2,4} s, code {3}{4}' -f $pl, $lignes.Count, [int]$sw.Elapsed.TotalSeconds, $code, $(if (-not $hl) { ', symboles en ligne' })))
+        foreach ($x in $msg) { $lect.Add("      | $x") }
+        Log ('    {0} : {1} lignes en {2} s{3}' -f $pl, $lignes.Count, [int]$sw.Elapsed.TotalSeconds, $(if ($msg.Count) { ' : ' + ($msg -join ' / ') }))
+        return ,$lignes
+    }
     foreach ($pl in 'windows.info', 'windows.pslist', 'windows.cmdline', 'windows.netscan', 'windows.netstat') {
         # netstat seulement si netscan n'a rien donne de lisible (table inconnue sur les Windows tres recents)
         if ($pl -eq 'windows.netstat' -and @($res['windows.netscan'] | Where-Object { "$($_.LocalAddr)" -match '^[0-9a-fA-F:.*]+$' }).Count) { continue }
-        $out = Join-Path $Work "$pl.csv"
-        $argv = @($vol, '-q', '-r', 'csv', '--cache-path', $cache, '-s', $symb)
-        if ($horsLigne) { $argv += '--offline' }
-        $argv += @('-f', $img, $pl)
-        $sw = [Diagnostics.Stopwatch]::StartNew()
-        Log "    Volatility $pl..."
-        $code = Invoke-Py $py $argv $out 30
-        $lignes = @()
-        if ((Test-Path -LiteralPath $out) -and (Get-Item -LiteralPath $out).Length -gt 0) { try { $lignes = @(Import-Csv -LiteralPath $out -Encoding UTF8) } catch {} }
+        $lignes = Lancer-Vol $pl $horsLigne
+        if (-not $lignes.Count -and $horsLigne -and -not $SansInternet -and $pl -match 'info|pslist') {
+            # symboles prepares refuses : nouvel essai en laissant Volatility les chercher, et on garde ce mode
+            $lignes = Lancer-Vol $pl $false
+            if ($lignes.Count) { $horsLigne = $false }
+        }
         $res[$pl] = $lignes
-        $err = if (Test-Path -LiteralPath "$out.err") { @(Get-Content -LiteralPath "$out.err" -Encoding UTF8 | Where-Object { $_ -match 'Error|error|Unsatisfied|not supported|Traceback|Exception' } | Select-Object -Last 2) -join ' / ' } else { '' }
-        $lect.Add(('  {0,-16} {1,5} lignes, {2,4} s, code {3}{4}' -f $pl, $lignes.Count, [int]$sw.Elapsed.TotalSeconds, $code, $(if ($err) { " : $err" })))
-        Log ('    {0} : {1} lignes en {2} s{3}' -f $pl, $lignes.Count, [int]$sw.Elapsed.TotalSeconds, $(if ($err) { " ($err)" }))
     }
     $infoV = $res['windows.info']
     if ($infoV.Count) { $infoV | Select-Object Variable, Value | Export-Csv (Join-Path $ramDir 'ram_info.csv') -NoTypeInformation -Encoding UTF8 }
@@ -1355,16 +1369,16 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
         $ind = New-Object System.Collections.Generic.List[string]
         if ($systeme -notcontains $bas -and -not ($bas.Length -ge 14 -and @($systeme | Where-Object { $_.StartsWith($bas) }).Count)) {
             $proche = $systeme | Where-Object { $_.Length -ge 7 -and [Math]::Abs($_.Length - $bas.Length) -le 1 -and (Get-Osa $bas $_) -eq 1 } | Select-Object -First 1
-            if ($proche) { $ind.Add("nom presque identique a $proche (processus Windows)"); $niv = [Math]::Max($niv, 3) }
+            if ($proche) { $ind.Add("nom presque identique à $proche (processus de Windows)"); $niv = [Math]::Max($niv, 3) }
         }
         if ("$bas $ligneCmd" -match $rxEnvoi) { $ind.Add("outil d'envoi ou de vol d'identifiants ($($Matches[0]))"); $niv = [Math]::Max($niv, 3) }
-        elseif ("$bas $ligneCmd" -match $rxAcces) { $ind.Add("outil d'acces a distance ($($Matches[0]))"); $niv = [Math]::Max($niv, 2) }
-        if ("$chemin $ligneCmd" -match '(?i)\\Users\\Public\\|\\Windows\\Temp\\|\\AppData\\Local\\Temp\\|\\PerfLogs\\|\\\$Recycle') { $ind.Add('lance depuis un dossier ou tout le monde peut ecrire'); $niv = [Math]::Max($niv, 2) }
-        if ($ligneCmd -match '(?i)\s-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{20,}') { $ind.Add('PowerShell avec commande encodee'); $niv = [Math]::Max($niv, 2) }
+        elseif ("$bas $ligneCmd" -match $rxAcces) { $ind.Add("outil d'accès à distance ($($Matches[0]))"); $niv = [Math]::Max($niv, 2) }
+        if ("$chemin $ligneCmd" -match '(?i)\\Users\\Public\\|\\Windows\\Temp\\|\\AppData\\Local\\Temp\\|\\PerfLogs\\|\\\$Recycle') { $ind.Add('lancé depuis un dossier où tout le monde peut écrire'); $niv = [Math]::Max($niv, 2) }
+        if ($ligneCmd -match '(?i)\s-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{20,}') { $ind.Add('PowerShell avec une commande encodée'); $niv = [Math]::Max($niv, 2) }
         if ($ligneCmd -match '(?i)https?://([^/\s"]+)' -and $bas -notmatch $rxNav) { $ind.Add("adresse Internet dans la ligne de commande ($($Matches[1]))"); $niv = [Math]::Max($niv, 1) }
         $par = $noms["$($r.PPID)"]
-        if ($bas -eq 'svchost.exe' -and $par -and $par -ne 'services.exe') { $ind.Add("svchost.exe lance par $par (attendu : services.exe)"); $niv = [Math]::Max($niv, 2) }
-        if ($bas -eq 'lsass.exe' -and $par -and $par -ne 'wininit.exe') { $ind.Add("lsass.exe lance par $par (attendu : wininit.exe)"); $niv = [Math]::Max($niv, 3) }
+        if ($bas -eq 'svchost.exe' -and $par -and $par -ne 'services.exe') { $ind.Add("svchost.exe lancé par $par (attendu : services.exe)"); $niv = [Math]::Max($niv, 2) }
+        if ($bas -eq 'lsass.exe' -and $par -and $par -ne 'wininit.exe') { $ind.Add("lsass.exe lancé par $par (attendu : wininit.exe)"); $niv = [Math]::Max($niv, 3) }
         [pscustomobject]@{ PID = $r.PID; PPID = $r.PPID; Parent = $par; Processus = $nom; Debut = (From-VolDate $r.CreateTime); Fin = (From-VolDate $r.ExitTime)
             Threads = $r.Threads; Chemin = $chemin; LigneDeCommande = $ligneCmd; Niveau = $niv; Indices = ($ind -join ' ; ') }
     }
@@ -1390,7 +1404,7 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
     $lect.Add(('Processus lus : {0} ({1} lignes illisibles ecartees : image copiee pendant que Windows tournait)' -f @($procs).Count, $rejetes))
     $lect.Add(('Lignes de commande lues : {0}' -f $cmd.Count))
     $lect.Add(('Connexions lues ({0}) : {1}, dont {2} etablie(s) vers l''exterieur' -f $src, $reseau.Count, $etablies.Count))
-    if (-not $etablies.Count) { $lect.Add('  Aucune connexion etablie lue dans la RAM : sur Windows 11 24H2 / Server 2025 (build 26100), Volatility 3 ne lit pas encore la table des connexions. Voir les connexions relevees en direct pendant la collecte (tcp_connexions.csv).') }
+    if (-not $etablies.Count) { $lect.Add('  Aucune connexion établie lue dans la RAM : sur Windows 11 24H2 / Server 2025 (build 26100), Volatility 3 ne lit pas encore la table des connexions. Voir les connexions relevées en direct pendant la collecte (tcp_connexions.csv).') }
     $lect.Add(('Processus avec indice fort : {0}' -f $susp.Count))
     foreach ($x in $susp) { $lect.Add("  PID $($x.PID) $($x.Processus) : $($x.Indices)") }
     $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8

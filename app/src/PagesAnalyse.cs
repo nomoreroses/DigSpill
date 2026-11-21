@@ -184,11 +184,12 @@ namespace DigSpill
 
         void Etat(string t, double v) { if (!IsDisposed) BeginInvoke(new Action(() => { etat.Text = t; if (v >= 0) barre.Valeur = v; else barre.Indeterminee = true; Ajuster(); })); }
 
-        Task<int> Ps(string script, List<string> args, IDictionary<string, string> env)
+        Task<int> Ps(string script, List<string> args, IDictionary<string, string> env, Action<string> suivi = null)
         {
             if (Ctx.Demo) return Simuler(script);
             exec = new Executeur();
             exec.Ligne += l => journal.Ajouter(l);
+            if (suivi != null) exec.Ligne += suivi;
             journal.Ajouter("> " + script + " " + string.Join(" ", args.ToArray()));
             return exec.Lancer("powershell.exe", Executeur.ArgumentsPowerShell(Ctx.Script(script), args), Ctx.RacineOutils, Executeur.Console850(), env);
         }
@@ -223,7 +224,13 @@ namespace DigSpill
                 Etat("Copie vérifiée des preuves…", -1);
                 var a = new List<string> { "-Source", Executeur.Echapper(parent), "-Destination", Executeur.Echapper(dossier), "-Collecte", Executeur.Echapper(nom) };
                 if (tech != "") { a.Add("-Operateur"); a.Add(Executeur.Echapper(tech + " - " + Environment.UserDomainName + "\\" + Environment.UserName)); }
-                int c = await Ps("Copier-Preuves.ps1", a, null);
+                // "  verification 200 / 420" : avancement de la copie verifiee
+                var rxV = new System.Text.RegularExpressions.Regex(@"verification (\d+) / (\d+)");
+                int c = await Ps("Copier-Preuves.ps1", a, null, l =>
+                {
+                    var m = rxV.Match(l);
+                    if (m.Success) Etat("Copie vérifiée : " + m.Groups[1].Value + " / " + m.Groups[2].Value + " fichiers re-hachés…", 0.3 * int.Parse(m.Groups[1].Value) / Math.Max(1, int.Parse(m.Groups[2].Value)));
+                });
                 if (arret) { Fin(false); return; }
                 analysee = Path.Combine(dossier, Path.GetFileName(parent), nom);
                 eCopie.Definir(c == 0 ? Niveau.Ok : Niveau.Danger, "1. Copie vérifiée", c == 0 ? "Copie identique aux originaux : " + Path.Combine(dossier, Path.GetFileName(parent)) : (c == 2 ? "ANOMALIES : des fichiers diffèrent du manifeste. Voir hachages_*.csv avant toute conclusion." : "Copie en échec (code " + c + ")."));
@@ -236,7 +243,17 @@ namespace DigSpill
             var aa = new List<string> { "-Collecte", Executeur.Echapper(analysee) };
             if (!Ctx.AnalyseComplete) { aa.Add("-SansMFT"); aa.Add("-SansRam"); }
             if (!Ctx.AvecInternet) aa.Add("-SansInternet");
-            int ca = await Ps("Analyse-Exfil.ps1", aa, null);
+            // "[*] Etape" : chaque etape de l'analyse fait avancer la barre (19 etapes environ)
+            int etapes = 0;
+            int ca = await Ps("Analyse-Exfil.ps1", aa, null, l =>
+            {
+                int i = l.IndexOf("[*] ", StringComparison.Ordinal);
+                if (i < 0) return;
+                etapes++;
+                string nomEtape = l.Substring(i + 4);
+                int par = nomEtape.IndexOf(" (", StringComparison.Ordinal);
+                Etat("Analyse : " + (par > 0 ? nomEtape.Substring(0, par) : nomEtape) + "…", 0.3 + 0.6 * Math.Min(1.0, etapes / 19.0));
+            });
             if (arret) { Fin(false); return; }
             bool synthese = Ctx.Demo || File.Exists(Path.Combine(analysee + "_analyse", "SYNTHESE_EXFILTRATION.txt"));
             Ctx.ProblemeAnalyse = synthese ? null : "L'analyse s'est arrêtée (code " + ca + ") sans écrire sa synthèse : l'interface montre la collecte brute, sans chronologie racontée, grille ni mémoire vive. Voir le journal de l'analyse.";
