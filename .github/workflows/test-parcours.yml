@@ -11,10 +11,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: test-parcours
+  cancel-in-progress: true
+
 jobs:
   parcours:
     runs-on: windows-latest
-    timeout-minutes: 170
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

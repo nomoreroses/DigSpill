@@ -1527,9 +1527,16 @@ Step 'Synthese automatique (SYNTHESE.txt)' {
 # =================================================================== 15. MANIFESTE D'INTEGRITE
 Step 'Calcul du manifeste SHA256 des elements collectes' {
     $manifest = P 'manifeste_sha256.csv'
-    Get-ChildItem $Out -Recurse -File -Force | Where-Object { $_.FullName -ne $manifest -and $_.FullName -ne $LogFile } |
-        ForEach-Object { [pscustomobject]@{ Fichier = $_.FullName.Substring($Out.Length + 1); Taille = $_.Length; SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } } |
-        Export-Csv $manifest -NoTypeInformation -Encoding UTF8
+    $aHacher = @(Get-ChildItem -LiteralPath $Out -Recurse -File -Force | Where-Object { $_.FullName -ne $manifest -and $_.FullName -ne $LogFile })
+    Log ('    {0} fichiers, {1:N1} Go a hacher' -f $aHacher.Count, (($aHacher | Measure-Object Length -Sum).Sum / 1GB))
+    $nH = 0; $tH = Get-Date
+    $aHacher | ForEach-Object {
+        $nH++
+        if ($_.Length -ge 256MB) { Log ('    hachage {0} ({1:N1} Go)' -f $_.FullName.Substring($Out.Length + 1), ($_.Length / 1GB)) }
+        elseif (((Get-Date) - $tH).TotalSeconds -ge 60) { Log ('    hachage : {0} / {1} fichiers' -f $nH, $aHacher.Count); $tH = Get-Date }
+        [pscustomobject]@{ Fichier = $_.FullName.Substring($Out.Length + 1); Taille = $_.Length; SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+    } | Export-Csv $manifest -NoTypeInformation -Encoding UTF8
+    Log "    manifeste : $nH fichiers
 }
 
 $dur = (Get-Date) - $StartTime

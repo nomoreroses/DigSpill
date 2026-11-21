@@ -56,9 +56,27 @@ $t0 = Get-Date
 # la collecte et l'analyse tournent sur le meme Windows de test : autoriser la lecture de la RAM sur le poste collecte (interdit en vrai)
 $env:DIGSPILL_RAM_MEME_POSTE = '1'
 $app = Start-Process -FilePath 'R:\DigSpill.exe' -ArgumentList "--auto=$T\captures_appli", '--auto-preuves=R:', '--auto-travail=D:\travail' -PassThru
+# Etat toutes les 5 min : derniere ligne des journaux, processus lances par DigSpill, dernier fichier ecrit.
+# Si plus rien n'est ecrit pendant 25 min : diagnostic et arret (le test ne doit pas bruler 2 h pour rien).
+function Etat-Parcours {
+    $j = Get-ChildItem 'R:\Collecte', 'D:\travail' -Recurse -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $logs = @(Get-ChildItem 'R:\Collecte', 'D:\travail' -Recurse -Filter '*.log' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 2)
+    Write-Host ("--- {0} : dernier fichier ecrit {1} a {2:HH:mm:ss}" -f (Get-Date -Format 'HH:mm:ss'), $(if ($j) { $j.FullName } else { '-' }), $(if ($j) { $j.LastWriteTime } else { Get-Date }))
+    foreach ($l in $logs) { Write-Host "    $($l.Name) : $((Get-Content -LiteralPath $l.FullName -Tail 2 -ErrorAction SilentlyContinue) -join ' | ')" }
+    Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(powershell|Collecteur-Velociraptor|python|7zr|mmc|cmd|conhost|DigSpill)\.exe$' } | ForEach-Object {
+        Write-Host ("    {0,6} <- {1,6} {2} cpu {3:N0} s : {4}" -f $_.ProcessId, $_.ParentProcessId, $_.Name, (($_.KernelModeTime + $_.UserModeTime) / 1e7), "$($_.CommandLine)".Substring(0, [Math]::Min(220, "$($_.CommandLine)".Length)))
+    }
+    return $j
+}
+$prochainEtat = Get-Date
 # si l'ejection detache la cle virtuelle, on la "rebranche au bureau"
-while (-not $app.HasExited -and ((Get-Date) - $t0).TotalMinutes -lt 140) {
+while (-not $app.HasExited -and ((Get-Date) - $t0).TotalMinutes -lt 110) {
     Start-Sleep -Seconds 10
+    if ((Get-Date) -ge $prochainEtat) {
+        $prochainEtat = (Get-Date).AddMinutes(5)
+        $dernier = Etat-Parcours
+        if ($dernier -and ((Get-Date) - $dernier.LastWriteTime).TotalMinutes -gt 25 -and ((Get-Date) - $t0).TotalMinutes -gt 30) { Write-Host '[!] plus rien d''ecrit depuis 25 min : parcours bloque'; break }
+    }
     if (-not (Test-Path 'R:\')) {
         Write-Host "$(Get-Date -Format 'HH:mm:ss') cle R: absente apres l'ejection : rebranchement"
         @("select vdisk file=`"$vhd`"", 'attach vdisk') | Set-Content -LiteralPath "$T\rebrancher.txt" -Encoding ASCII
@@ -67,12 +85,12 @@ while (-not $app.HasExited -and ((Get-Date) - $t0).TotalMinutes -lt 140) {
         if (-not (Test-Path 'R:\')) { Get-Volume -FileSystemLabel 'PREUVES' -ErrorAction SilentlyContinue | Get-Partition | Set-Partition -NewDriveLetter R -ErrorAction SilentlyContinue }
     }
 }
-if (-not $app.HasExited) { Write-Host '[!] DigSpill.exe toujours en cours apres 140 min : arrete'; $app.Kill() }
+if (-not $app.HasExited) { Write-Host '[!] DigSpill.exe arrete par le test'; Etat-Parcours | Out-Null; $app.Kill() }
 Write-Host ("DigSpill.exe termine en {0:N0} min, code {1}" -f ((Get-Date) - $t0).TotalMinutes, $(if ($app.HasExited) { $app.ExitCode } else { '?' }))
 Bloc 'auto.log' "$T\captures_appli\auto.log" $null
 foreach ($j in Get-ChildItem "$T\captures_appli" -Filter 'journal_*.txt' -ErrorAction SilentlyContinue) { Bloc $j.BaseName $j.FullName '\[!\]|\[\*\]|erreur|Erreur|ERROR|echec|Echec|code|Resultat|Interface|scell' }
 $col = Get-ChildItem 'R:\Collecte' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '_(scelles|analyse)$' } | Sort-Object LastWriteTime | Select-Object -Last 1
-if ($col) { Bloc 'collecte.log' (Join-Path $col.FullName 'collecte.log') '\[!\]|\[\*\]|RAM' }
+if ($col) { Bloc 'collecte.log' (Join-Path $col.FullName 'collecte.log') $null }
 $ana = Get-ChildItem 'D:\travail' -Recurse -Filter 'analyse.log' -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($ana) { Bloc 'analyse.log' $ana.FullName '\[!\]|\[\*\]|erreur|Erreur' }
 

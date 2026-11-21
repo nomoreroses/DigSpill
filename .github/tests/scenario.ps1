@@ -37,7 +37,7 @@ Copy-Item "$env:SystemRoot\System32\curl.exe" $outil -Force
 Fait 'outil' "Outil depose sous un faux nom ($outil, copie de curl.exe), lance, puis antidate au 03/02/2019" @('svhost.exe')
 
 # 3. compte administrateur cree par l'attaquant
-& net.exe user support_it 'Recette!2026-DigSpill' /add | Out-Null
+& net.exe user support_it 'Rec!2026Dig' /add /y | Out-Null
 try { Add-LocalGroupMember -SID 'S-1-5-32-544' -Member 'support_it' } catch { Write-Host "groupe : $($_.Exception.Message)" }
 Fait 'compte' 'Compte local support_it cree et ajoute aux Administrateurs' @('support_it')
 
