@@ -1034,7 +1034,8 @@ Step 'Artefacts utilisateurs (registre, historiques, navigateurs, outils distant
         foreach ($t in $tl) { Copy-Locked $t "$d\outils" }
         Get-ChildItem "$lp\AppData\Roaming\TeamViewer" -Filter '*.log' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Locked $_.FullName "$d\outils" }
         foreach ($rd in "$lp\AppData\Roaming\RustDesk\log", "$lp\AppData\Local\Splashtop", "$lp\AppData\Roaming\Netbird") {
-            Get-ChildItem -LiteralPath $rd -Recurse -File -Include '*.log', '*.txt' -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB } |
+            # -Include est ignore avec -LiteralPath sous PowerShell 5.1 : filtre sur le nom
+            Get-ChildItem -LiteralPath $rd -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)\.(log|txt)$' -and $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB } |
                 ForEach-Object { Copy-Locked $_.FullName "$d\outils\$(Split-Path $rd -Leaf)" }
         }
 
@@ -1056,8 +1057,9 @@ Step "Outils d'acces distant : journaux propres (NetBird, Splashtop, TSplus, Dat
     $script:ToolBytes = [int64]0
     function Copy-ToolLogs([string]$src, [string]$name, [string[]]$inc = @('*.log', '*.txt', '*.log.*', '*.trace', '*.csv', '*.sqlite3', '*.db')) {
         if (-not (Test-Path -LiteralPath $src)) { return }
-        Get-ChildItem -LiteralPath $src -Recurse -File -Force -Include $inc -ErrorAction SilentlyContinue |
-            Where-Object { $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB -and $_.Name -notmatch '(?i)HowToRecover|readme' -and $_.FullName -notmatch '\\(Packages|Cache|Code Cache)\\' } | ForEach-Object {
+        # -Include est ignore avec -LiteralPath sous PowerShell 5.1 : filtre sur le nom
+        Get-ChildItem -LiteralPath $src -Recurse -File -Force -ErrorAction SilentlyContinue |
+            Where-Object { $n = $_.Name; @($inc | Where-Object { $n -like $_ }).Count -and $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB -and $_.Name -notmatch '(?i)HowToRecover|readme' -and $_.FullName -notmatch '\\(Packages|Cache|Code Cache)\\' } | ForEach-Object {
                 if (($script:ToolBytes + $_.Length) -gt 400MB) { return }
                 $script:ToolBytes += $_.Length
                 Copy-Locked $_.FullName (Join-Path (P "outils_distants\$name") (Split-Path $_.FullName.Substring($src.TrimEnd('\').Length) -Parent))

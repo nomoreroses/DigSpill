@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
     DigSpill - Copier-Preuves.ps1 v2.2 - Seconde copie des preuves, verifiee par hachage, avec proces-verbal.
 
@@ -68,7 +68,8 @@ if ($Collecte) {
 
 # Manifestes de collecte (SHA256 attendus)
 $expected = @{}
-foreach ($m in (Get-ChildItem -LiteralPath $Source -Recurse -File -Include 'manifeste_sha256.csv', 'manifeste_analyse_sha256.csv' -ErrorAction SilentlyContinue)) {
+# -Include est ignore avec -LiteralPath sous PowerShell 5.1 (sinon chaque fichier, image RAM comprise, etait lu comme un CSV)
+foreach ($m in ($files | Where-Object { $_.Name -eq 'manifeste_sha256.csv' -or $_.Name -eq 'manifeste_analyse_sha256.csv' })) {
     $base = Split-Path $m.FullName -Parent
     foreach ($r in (Import-Csv -LiteralPath $m.FullName -Encoding UTF8)) { $expected[(Join-Path $base $r.Fichier).ToLower()] = $r.SHA256 }
 }
