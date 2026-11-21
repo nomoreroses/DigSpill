@@ -1,0 +1,26 @@
+name: Test collecte et RAM
+
+# Vraie collecte DigSpill (mode complet) sur un Windows GitHub, depuis une cle exFAT,
+# puis lecture de l'image RAM par Volatility 3. A lancer a la main (Actions > Test collecte et RAM).
+on:
+  workflow_dispatch:
+  push:
+    branches: [correction-ram]
+
+permissions:
+  contents: read
+
+jobs:
+  collecte:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Collecte DigSpill et RAM
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .\.github\tests\collecte-ram.ps1
