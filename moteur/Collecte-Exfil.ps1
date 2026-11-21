@@ -1536,7 +1536,7 @@ Step 'Calcul du manifeste SHA256 des elements collectes' {
         elseif (((Get-Date) - $tH).TotalSeconds -ge 60) { Log ('    hachage : {0} / {1} fichiers' -f $nH, $aHacher.Count); $tH = Get-Date }
         [pscustomobject]@{ Fichier = $_.FullName.Substring($Out.Length + 1); Taille = $_.Length; SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
     } | Export-Csv $manifest -NoTypeInformation -Encoding UTF8
-    Log "    manifeste : $nH fichiers
+    Log "    manifeste : $nH fichiers"
 }
 
 $dur = (Get-Date) - $StartTime

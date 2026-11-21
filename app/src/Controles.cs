@@ -1,4 +1,4 @@
-// DigSpill - controles dessines (boutons, cartes, pastilles, lignes d'etat...) et mise en page verticale simple.
+﻿// DigSpill - controles dessines (boutons, cartes, pastilles, lignes d'etat...) et mise en page verticale simple.
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -542,6 +542,39 @@ namespace DigSpill
         }
     }
 
+    /// <summary>Liste deroulante sombre : la ComboBox de Windows reste blanche en style Flat, on la dessine nous-memes.</summary>
+    class ListeSombre : ComboBox
+    {
+        public ListeSombre()
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList; FlatStyle = FlatStyle.Flat;
+            DrawMode = DrawMode.OwnerDrawFixed; ItemHeight = 22;
+            BackColor = Theme.Panneau; ForeColor = Theme.Texte;
+        }
+        protected override void OnDrawItem(DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            bool survol = (e.State & DrawItemState.Selected) != 0 && (e.State & DrawItemState.ComboBoxEdit) == 0;
+            using (var b = new SolidBrush(survol ? Theme.Panneau2 : Theme.Panneau)) e.Graphics.FillRectangle(b, e.Bounds);
+            TextRenderer.DrawText(e.Graphics, GetItemText(Items[e.Index]), Font, new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - 6, e.Bounds.Height), Theme.Texte,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg != 0x000F) return;   // WM_PAINT : partie fermee (texte + chevron) repeinte en sombre
+            using (var g = Graphics.FromHwnd(Handle))
+            {
+                var r = ClientRectangle;
+                using (var b = new SolidBrush(Theme.Panneau)) g.FillRectangle(b, r);
+                TextRenderer.DrawText(g, Text, Font, new Rectangle(2, 0, r.Width - 26, r.Height), Theme.Texte, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                int cx = r.Width - 12, cy = r.Height / 2;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using (var p = new Pen(Theme.Texte2, 1.6f)) g.DrawLines(p, new[] { new Point(cx - 4, cy - 2), new Point(cx, cy + 2), new Point(cx + 4, cy - 2) });
+            }
+        }
+    }
+
     /// <summary>Champ de saisie : libelle au-dessus, zone bordee.</summary>
     class Champ : Panel, IHauteur
     {
@@ -662,6 +695,7 @@ namespace DigSpill
         readonly TextBox boite;
         public int Hauteur = 200;
         readonly Queue<string> lignes = new Queue<string>();
+        readonly List<string> toutes = new List<string>();   // tout le journal, pour l'enregistrer (l'ecran n'en garde que 400 lignes)
         readonly Timer vidage = new Timer { Interval = 150 };
         readonly List<string> enAttente = new List<string>();
         public Journal()
@@ -683,12 +717,12 @@ namespace DigSpill
         {
             string[] neuves;
             lock (enAttente) { if (enAttente.Count == 0) return; neuves = enAttente.ToArray(); enAttente.Clear(); }
-            foreach (var l in neuves) { lignes.Enqueue(l); while (lignes.Count > 400) lignes.Dequeue(); }
+            foreach (var l in neuves) { lignes.Enqueue(l); while (lignes.Count > 400) lignes.Dequeue(); if (toutes.Count < 200000) toutes.Add(l); }
             boite.Text = string.Join("\r\n", lignes.ToArray());
             boite.SelectionStart = boite.TextLength;
             boite.ScrollToCaret();
         }
-        public string Tout() { return string.Join("\r\n", lignes.ToArray()); }
+        public string Tout() { Vider(); return string.Join("\r\n", toutes.ToArray()); }
         protected override void Dispose(bool d) { if (d) vidage.Dispose(); base.Dispose(d); }
     }
 
@@ -700,6 +734,7 @@ namespace DigSpill
         string Groupes()
         {
             var t = Text ?? "";
+            if (!System.Text.RegularExpressions.Regex.IsMatch(t, "^[0-9A-Fa-f]{32,}$")) return t;
             var sb = new System.Text.StringBuilder();
             for (int i = 0; i < t.Length; i++) { if (i > 0 && i % 16 == 0) sb.Append(i % 32 == 0 ? "\n" : "   "); else if (i > 0 && i % 4 == 0) sb.Append(' '); sb.Append(t[i]); }
             return sb.ToString();

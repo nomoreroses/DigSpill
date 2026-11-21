@@ -16,7 +16,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # quelques secondes sur Linux : une erreur de syntaxe ne doit pas couter un parcours Windows de 2 h
+  syntaxe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntaxe PowerShell
+        shell: pwsh
+        run: |
+          $n = 0
+          foreach ($f in Get-ChildItem -Recurse -File -Include *.ps1 -Path moteur, app, .github) {
+            $t = $null; $e = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$t, [ref]$e)
+            foreach ($x in $e) { Write-Host "::error file=$($f.FullName),line=$($x.Extent.StartLineNumber)::$($x.Message)"; $n++ }
+          }
+          Write-Host "$n erreur(s) de syntaxe"
+          if ($n) { exit 1 }
+      - name: Syntaxe JavaScript
+        run: for f in moteur/interface/js/*.js .github/tests/interface.js; do node --check "$f" || exit 1; done
+
   parcours:
+    needs: syntaxe
     runs-on: windows-latest
     timeout-minutes: 150
     steps:

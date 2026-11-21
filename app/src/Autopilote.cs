@@ -1,4 +1,4 @@
-// DigSpill - pilote automatique pour le test de bout en bout sur un vrai Windows.
+﻿// DigSpill - pilote automatique pour le test de bout en bout sur un vrai Windows.
 // DigSpill.exe --auto=<dossier> [--auto-preuves=R:] [--auto-travail=C:\travail]
 // Il clique dans les vraies pages, comme un technicien : vraie collecte, vraie analyse, vraie interface.
 // Il ne remplit aucune donnee : seuls les champs de l'intervention sont saisis, comme le ferait le technicien.
@@ -127,6 +127,7 @@ namespace DigSpill
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
 
         [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+        [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr h);
         const uint BM_CLICK = 0x00F5;
 
         /// <summary>Boite de dialogue Windows ouverte par DigSpill : texte et boutons (null si aucune).</summary>
@@ -145,7 +146,12 @@ namespace DigSpill
                     var cc = new StringBuilder(64); GetClassName(c, cc, 64);
                     var s = new StringBuilder(2048); GetWindowText(c, s, 2048);
                     if (cc.ToString() == "Static") sb.Append(s).Append(' ');
-                    else if (cc.ToString() == "Button") bt[s.ToString().Replace("&", "")] = c;
+                    else if (cc.ToString() == "Button")
+                    {
+                        // MessageBox : IDOK 1, IDYES 6, IDNO 7 (libelles traduits selon la langue de Windows)
+                        int id = GetDlgCtrlID(c);
+                        bt[id == 1 ? "OK" : id == 6 ? "Oui" : id == 7 ? "Non" : s.ToString().Replace("&", "")] = c;
+                    }
                     return true;
                 }, IntPtr.Zero);
                 texte = sb.ToString().Trim();

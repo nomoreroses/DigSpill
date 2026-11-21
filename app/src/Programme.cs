@@ -1,4 +1,4 @@
-// DigSpill.exe - point d'entree, contexte partage, reglages (moteur\digspill.ini sur la cle OUTILS).
+﻿// DigSpill.exe - point d'entree, contexte partage, reglages (moteur\digspill.ini sur la cle OUTILS).
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -105,6 +105,7 @@ namespace DigSpill
         public string RaisonAlerte;
         public List<string> ActionsUrgence;
         public bool CollecteOk;
+        public string ProblemeCollecte;   // pourquoi la collecte est incomplete (affiche en fin de collecte)
 
         // analyse
         public string SourceCollecte, DossierTravail, MotDePasse, Interface;
