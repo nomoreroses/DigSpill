@@ -332,7 +332,7 @@ Step 'Reconstitution des sessions (4624/4634/4647, LSM 21-25, RCM 1149, RdpCoreT
     Out-Csv ($pts | Sort-Object Date) 'connexions_rdp_points.csv'
 }
 
-Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, fenetres manuelles)" {
+Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, indices forts, fenetres manuelles)" {
     $cand = New-Object System.Collections.Generic.List[object]
     foreach ($s in $script:Sessions) {
         $why = $null
@@ -343,6 +343,37 @@ Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, fene
         $fin = if ($s.Fin) { $s.Fin } else { $s.Debut.AddHours(2) }
         $cand.Add([pscustomobject]@{ Debut = $s.Debut.AddMinutes(-$MargeMinutes); Fin = $fin.AddMinutes($MargeMinutes); Motif = $why + $(if (-not $s.Fin) { ' (fin inconnue : +2 h)' } else { '' }) })
     }
+    # Indices forts horodates : une attaque menee sur place ou par un outil d'acces distant n'ouvre pas de session
+    # RDP depuis Internet ; sans eux il n'y aurait pas de fenetre, donc rien a raconter.
+    $ind = New-Object System.Collections.Generic.List[object]
+    function Indice($date, [string]$quoi) { $d = Parse-Date $date; if ($d) { $ind.Add([pscustomobject]@{ T = $d; Quoi = $quoi }) } }
+    foreach ($r in (Read-Csv (C 'comptes\evenements_comptes.csv'))) {
+        if ($r.EventID -eq '4720') { Indice $r.Date "compte $($r.CibleOuGroupe) cree" }
+        elseif ($r.EventID -match '^(4728|4732|4756)$' -and "$($r.CibleOuGroupe)" -match '(?i)admin') { Indice $r.Date "$($r.Membre) ajoute a $($r.CibleOuGroupe)" }
+    }
+    foreach ($r in (Read-Csv (C 'evenements\resume_evenements_cles.csv'))) {
+        $m = "$($r.Message)"
+        switch ("$($r.EventID)") {
+            '1102' { Indice $r.Date 'journal Securite efface' }
+            '104'  { Indice $r.Date ('journal efface' + $(if ($m -match '(?i)the (\S+) log file') { " ($($Matches[1]))" })) }
+            '5001' { Indice $r.Date 'protection temps reel Defender desactivee' }
+            '4688' { if ($m -match '(?i)\\(rclone|megasync|megacmd|mimikatz|lazagne|procdump|winscp|filezilla|pscp|ngrok|chisel)[^\\\s]*\.exe') { Indice $r.Date "$($Matches[1]) lance" } }
+        }
+    }
+    foreach ($r in (Read-Csv (C 'rancon\commandes_destructrices_4688.csv'))) { $l = "$($r.LigneDeCommande)"; Indice $r.Date ('commande ' + $l.Substring(0, [Math]::Min(70, $l.Length))) }
+    foreach ($r in (Read-Csv (C 'rancon\fichiers_chiffres_par_extension.csv'))) {
+        if ([int]("0$($r.NbFichiers)" -replace '\D', '') -ge 20) { Indice $r.Premier "debut du chiffrement ($($r.NbFichiers) fichiers $($r.Extension))"; Indice $r.Dernier "fin du chiffrement $($r.Extension)" }
+    }
+    $grp = $null
+    foreach ($x in ($ind | Sort-Object T)) {
+        if ($grp -and ($x.T - $grp.Fin).TotalMinutes -le 60) { $grp.Fin = $x.T; $grp.Quoi.Add($x.Quoi) }
+        else {
+            if ($grp) { $cand.Add([pscustomobject]@{ Debut = $grp.Debut.AddMinutes(-$MargeMinutes); Fin = $grp.Fin.AddMinutes($MargeMinutes); Motif = "activite suspecte : $(@($grp.Quoi | Select-Object -Unique | Select-Object -First 3) -join ', ')$(if ($grp.Quoi.Count -gt 3) { " ($($grp.Quoi.Count) indices)" })" }) }
+            $grp = [pscustomobject]@{ Debut = $x.T; Fin = $x.T; Quoi = (New-Object System.Collections.Generic.List[string]) }; $grp.Quoi.Add($x.Quoi)
+        }
+    }
+    if ($grp) { $cand.Add([pscustomobject]@{ Debut = $grp.Debut.AddMinutes(-$MargeMinutes); Fin = $grp.Fin.AddMinutes($MargeMinutes); Motif = "activite suspecte : $(@($grp.Quoi | Select-Object -Unique | Select-Object -First 3) -join ', ')$(if ($grp.Quoi.Count -gt 3) { " ($($grp.Quoi.Count) indices)" })" }) }
+    if ($ind.Count) { Log "    $($ind.Count) indice(s) fort(s) horodate(s) : comptes, journaux effaces, Defender, outils, commandes, chiffrement" }
     foreach ($f in $Fenetres) {
         $parts = $f -split '[;|]'
         $d1 = Parse-Date $parts[0]; $d2 = Parse-Date $parts[-1]
@@ -373,7 +404,7 @@ Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, fene
     Out-Csv $cov 'journaux_couverture.csv'
     $nc = @($cov | Where-Object { $p = $_; @($script:Win | Where-Object { $p.($_.Id) -ne 'couvert' }).Count })
     if ($script:Win.Count -and $nc.Count) { G 'Couverture des journaux' 'A LIRE' "$($nc.Count) journal(aux) ne couvrent pas toutes les fenetres (rotation, journal recent) : absence d'evenement non probante" 'journaux_couverture.csv' }
-    if (-not $script:Win.Count) { G 'Fenetres d analyse' 'A FAIRE' 'Aucune session suspecte detectee : preciser les fenetres avec -Fenetres' 'fenetres_analyse.csv' }
+    if (-not $script:Win.Count) { G 'Fenetres d analyse' 'A FAIRE' 'Aucune session suspecte ni indice fort horodate : preciser les fenetres avec -Fenetres' 'fenetres_analyse.csv' }
 }
 function WinOf($d) {
     if (-not ($d -is [datetime])) { return '' }
@@ -1062,6 +1093,51 @@ Step "Exposition des identifiants : mimikatz execute ?, outils NirSoft, gestionn
     G "Gestionnaire d'identifiants (cibles hors serveur)" 'A FAIRE' "$(@($cm | Group-Object Utilisateur).Count) compte(s) avec entrees ; $(if ($netp.Count) { 'netpass EXECUTE : les identifiants reseau / RDP du compte qui l''a lance sont a considerer comme exposes. ' })Cibles a lister avec cmdkey dans chaque session." 'identifiants_exposition.txt'
 }
 
+# =================================================================== 10 bis. COMPTES DE STOCKAGE / TRANSFERT CONFIGURES
+# rclone, FileZilla, WinSCP : vers quel compte ou quel serveur les donnees pouvaient partir. On montre l'identifiant
+# (adresse, utilisateur, serveur) ; les mots de passe et jetons ne sont JAMAIS lus ni decodes : seulement "present".
+Step 'Comptes de stockage et de transfert configures (rclone, FileZilla, WinSCP)' {
+    $secrets = '(?i)^(pass|password|pass2|token|secret|secret_access_key|client_secret|key|key_file|service_account_credentials|sas_url|session_token|access_token|refresh_token|private_key|password2)$'
+    $identite = '(?i)^(user|username|account|email|host|url|endpoint|bucket|tenant|client_id|drive_id|region|provider)$'
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($f in @(Get-ChildItem -LiteralPath (C 'utilisateurs') -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)^(rclone\.conf|sitemanager\.xml|recentservers\.xml|winscp\.ini)$' })) {
+        $prof = ($f.FullName.Substring((C 'utilisateurs').Length + 1) -split '\\')[0]
+        if ($f.Name -ieq 'rclone.conf') {
+            $sec = $null; $h = $null
+            $lignes = @(Get-Content -LiteralPath $f.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)
+            if ($lignes.Count -and $lignes[0] -match '^RCLONE_ENCRYPT_V0') { $rows.Add([pscustomobject]@{ Profil = $prof; Outil = 'rclone'; Nom = '(configuration chiffree)'; Type = ''; Compte = ''; Secrets = 'configuration entiere chiffree (non dechiffree)'; Modifie = Fmt $f.LastWriteTime; Fichier = $f.FullName.Substring($Collecte.Length + 1) }); continue }
+            foreach ($l in ($lignes + '[]')) {
+                if ($l -match '^\s*\[(.*)\]\s*$') {
+                    if ($sec) { $rows.Add([pscustomobject]@{ Profil = $prof; Outil = 'rclone'; Nom = $sec; Type = $h['type']; Compte = (($h.Keys | Where-Object { $_ -match $identite } | ForEach-Object { "$_=$($h[$_])" }) -join ' ; ')
+                        Secrets = (($h.Keys | Where-Object { $_ -match $secrets } | ForEach-Object { "$_ present (non decode)" }) -join ' ; '); Modifie = Fmt $f.LastWriteTime; Fichier = $f.FullName.Substring($Collecte.Length + 1) }) }
+                    $sec = $Matches[1]; $h = [ordered]@{}
+                } elseif ($sec -and $l -match '^\s*([^=#;]+?)\s*=\s*(.*)$') {
+                    $k = $Matches[1].Trim().ToLower(); $val = $Matches[2].Trim()
+                    $h[$k] = $(if ($k -match $secrets) { '' } else { $val })   # valeur d'un secret jamais gardee
+                }
+            }
+        } elseif ($f.Name -match '(?i)\.xml$') {
+            try { [xml]$x = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 } catch { continue }
+            foreach ($srv in @($x.SelectNodes('//Server'))) {
+                $rows.Add([pscustomobject]@{ Profil = $prof; Outil = 'FileZilla'; Nom = "$($srv.Name)"; Type = $(switch ("$($srv.Protocol)") { '1' { 'sftp' } '0' { 'ftp' } default { "protocole $($srv.Protocol)" } })
+                    Compte = "host=$($srv.Host):$($srv.Port) ; user=$($srv.User)"; Secrets = $(if ($srv.Pass) { 'mot de passe present (non decode)' } else { '' }); Modifie = Fmt $f.LastWriteTime; Fichier = $f.FullName.Substring($Collecte.Length + 1) })
+            }
+        } else {
+            $sec = $null; $h = @{}
+            foreach ($l in (@(Get-Content -LiteralPath $f.FullName -ErrorAction SilentlyContinue) + '[]')) {
+                if ($l -match '^\[(.*)\]$') {
+                    if ($sec -and $h['HostName']) { $rows.Add([pscustomobject]@{ Profil = $prof; Outil = 'WinSCP'; Nom = [uri]::UnescapeDataString(($sec -replace '^Sessions\\', '')); Type = 'session'; Compte = "host=$($h['HostName']) ; user=$($h['UserName'])"; Secrets = $(if ($h['Password']) { 'mot de passe present (non decode)' } else { '' }); Modifie = Fmt $f.LastWriteTime; Fichier = $f.FullName.Substring($Collecte.Length + 1) }) }
+                    $sec = $Matches[1]; $h = @{}
+                } elseif ($l -match '^([^=]+)=(.*)$') { $k = $Matches[1]; $val = $Matches[2]; $h[$k] = $(if ($k -match '(?i)pass') { 'x' } else { $val }) }
+            }
+        }
+    }
+    Out-Csv $rows 'comptes_transfert.csv'
+    $txt = if ($rows.Count) { "$($rows.Count) compte(s) configure(s) : " + (($rows | Select-Object -First 4 | ForEach-Object { "$($_.Outil) $($_.Type) $($_.Compte)".Trim() }) -join ' | ') + '. Identifiants seulement : mots de passe jamais lus.' } else { 'Aucune configuration rclone, FileZilla ou WinSCP dans les profils collectes.' }
+    G 'Comptes de stockage / transfert configures (rclone, FileZilla, WinSCP)' $(if ($rows.Count) { 'INDICE' } else { 'RAS' }) $txt 'comptes_transfert.csv'
+    Log "    $txt"
+}
+
 # =================================================================== 11. IOC : HACHAGES DES OUTILS DE L'ATTAQUANT
 Step 'IOC : hachages SHA256 / SHA1 (fichiers presents, Amcache, quarantaine Defender)' {
     $ioc = New-Object System.Collections.Generic.List[object]
@@ -1255,6 +1331,9 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
     # ------- processus : lignes valides, lignes de commande, indices
     $cmd = @{}
     foreach ($r in $res['windows.cmdline']) { $a = ("$($r.Args)" -replace '\\\\', '\').Trim(); if ($a -and $a -notmatch '^(Required memory|Process .* (is|was) |N/A)') { $cmd["$($r.PID)"] = $a } }
+    # processus releves en direct pendant la collecte : chemin et ligne de commande quand la RAM ne les donne pas
+    $vivants = @{}
+    foreach ($r in (Read-Csv (C 'volatile\processus.csv'))) { $vivants["$($r.ProcessId)|$("$($r.Name)".ToLower())"] = $r }
     $valides = @($ps | Where-Object { $_.CreateTime -match '^\d{4}-' -and $_.ImageFileName -match '^[\x20-\x7E]+$' })
     $rejetes = $ps.Count - $valides.Count
     $noms = @{}; foreach ($r in $valides) { $noms["$($r.PID)"] = "$($r.ImageFileName)" }
@@ -1263,22 +1342,31 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
     $rxAcces = 'anydesk|rustdesk|ngrok|cloudflared|chisel|teamviewer|screenconnect|plink|psexe'
     $rxNav = '^(chrome|msedge|firefox|brave|opera|iexplore|msedgewebview2|onedrive|teams|ms-teams)\.exe$'
     $procs = foreach ($r in $valides) {
-        $nom = "$($r.ImageFileName)"; $bas = $nom.ToLower(); $pidS = "$($r.PID)"; $ligneCmd = $cmd[$pidS]; $niv = 0
+        $nom = "$($r.ImageFileName)"; $pidS = "$($r.PID)"; $ligneCmd = $cmd[$pidS]; $niv = 0
+        # Windows ne garde que 14 caracteres du nom (fontdrvhost.exe -> fontdrvhost.ex) : nom complet repris de la ligne de commande
+        $exe = if ($ligneCmd -match '^\s*"?([^"]*?\\)?([^\\"]+\.(exe|com|scr))\b') { $Matches[2] } else { '' }
+        if ($nom.Length -ge 14 -and $exe -and $exe.StartsWith($nom, [StringComparison]::OrdinalIgnoreCase)) { $nom = $exe }
+        $vu = $vivants["$pidS|$($nom.ToLower())"]
+        if (-not $vu -and $nom.Length -ge 14) { $vu = $vivants.Keys | Where-Object { $_ -like "$pidS|$($nom.ToLower())*" } | Select-Object -First 1 | ForEach-Object { $vivants[$_] } }
+        if ($vu -and $nom.Length -ge 14 -and "$($vu.Name)".StartsWith($nom, [StringComparison]::OrdinalIgnoreCase)) { $nom = "$($vu.Name)" }
+        $chemin = if ($vu -and $vu.ExecutablePath) { "$($vu.ExecutablePath)" } else { '' }
+        if ((-not $ligneCmd -or $ligneCmd -eq '-') -and $vu -and $vu.CommandLine) { $ligneCmd = "$($vu.CommandLine)" }
+        $bas = $nom.ToLower()
         $ind = New-Object System.Collections.Generic.List[string]
-        if ($systeme -notcontains $bas) {
+        if ($systeme -notcontains $bas -and -not ($bas.Length -ge 14 -and @($systeme | Where-Object { $_.StartsWith($bas) }).Count)) {
             $proche = $systeme | Where-Object { $_.Length -ge 7 -and [Math]::Abs($_.Length - $bas.Length) -le 1 -and (Get-Osa $bas $_) -eq 1 } | Select-Object -First 1
             if ($proche) { $ind.Add("nom presque identique a $proche (processus Windows)"); $niv = [Math]::Max($niv, 3) }
         }
         if ("$bas $ligneCmd" -match $rxEnvoi) { $ind.Add("outil d'envoi ou de vol d'identifiants ($($Matches[0]))"); $niv = [Math]::Max($niv, 3) }
         elseif ("$bas $ligneCmd" -match $rxAcces) { $ind.Add("outil d'acces a distance ($($Matches[0]))"); $niv = [Math]::Max($niv, 2) }
-        if ($ligneCmd -match '(?i)\\Users\\Public\\|\\Windows\\Temp\\|\\AppData\\Local\\Temp\\|\\PerfLogs\\|\\\$Recycle') { $ind.Add('lance depuis un dossier ou tout le monde peut ecrire'); $niv = [Math]::Max($niv, 2) }
+        if ("$chemin $ligneCmd" -match '(?i)\\Users\\Public\\|\\Windows\\Temp\\|\\AppData\\Local\\Temp\\|\\PerfLogs\\|\\\$Recycle') { $ind.Add('lance depuis un dossier ou tout le monde peut ecrire'); $niv = [Math]::Max($niv, 2) }
         if ($ligneCmd -match '(?i)\s-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{20,}') { $ind.Add('PowerShell avec commande encodee'); $niv = [Math]::Max($niv, 2) }
         if ($ligneCmd -match '(?i)https?://([^/\s"]+)' -and $bas -notmatch $rxNav) { $ind.Add("adresse Internet dans la ligne de commande ($($Matches[1]))"); $niv = [Math]::Max($niv, 1) }
         $par = $noms["$($r.PPID)"]
         if ($bas -eq 'svchost.exe' -and $par -and $par -ne 'services.exe') { $ind.Add("svchost.exe lance par $par (attendu : services.exe)"); $niv = [Math]::Max($niv, 2) }
         if ($bas -eq 'lsass.exe' -and $par -and $par -ne 'wininit.exe') { $ind.Add("lsass.exe lance par $par (attendu : wininit.exe)"); $niv = [Math]::Max($niv, 3) }
         [pscustomobject]@{ PID = $r.PID; PPID = $r.PPID; Parent = $par; Processus = $nom; Debut = (From-VolDate $r.CreateTime); Fin = (From-VolDate $r.ExitTime)
-            Threads = $r.Threads; LigneDeCommande = $ligneCmd; Niveau = $niv; Indices = ($ind -join ' ; ') }
+            Threads = $r.Threads; Chemin = $chemin; LigneDeCommande = $ligneCmd; Niveau = $niv; Indices = ($ind -join ' ; ') }
     }
     $nLsass = @($procs | Where-Object { $_.Processus -ieq 'lsass.exe' -and -not $_.Fin }).Count
     if ($nLsass -gt 1) { foreach ($x in ($procs | Where-Object { $_.Processus -ieq 'lsass.exe' })) { $x.Niveau = 3; $x.Indices = (@($x.Indices, "$nLsass processus lsass.exe actifs (un seul attendu)") | Where-Object { $_ }) -join ' ; ' } }
@@ -1375,6 +1463,7 @@ Step 'Synthese (SYNTHESE_EXFILTRATION.txt) et lisez-moi' {
         '  verifications_sources.csv         pare-feu, BITS, USB, SMB, DNS : etat de chaque source'
         '  note_rancon_analyse.txt           contacts, revendication de vol, veille'
         '  identifiants_exposition.txt       mimikatz, outils NirSoft, gestionnaire d''identifiants'
+        '  comptes_transfert.csv             comptes rclone / FileZilla / WinSCP configures (identifiants, jamais les mots de passe)'
         '  ioc_hachages.csv                  IOC'
         '  conteneurs_velociraptor.csv       hachage complet et integrite des conteneurs'
         '  ram\ram_processus.csv              processus lus dans l''image RAM (Volatility 3), avec indices'

@@ -321,13 +321,24 @@ T.ECRANS.chiffres = c => {
   for (const a of v.alertes) c.append(h('div', { class: 'alerte n' + a.niv }, h('div', {}, a.texte), h('div', { class: 'actions' }, T.bps(a.preuves, 2), a.onglet ? h('a', { class: 'lk doux petit', href: '#' + T.route(a.onglet) }, 'Voir →') : '')));
   if (!v.alertes.length) c.append(T.vide('Aucune alerte majeure calculée. Lire quand même la grille par canal.'));
 };
+/** traces identiques regroupees (ex. 40 evenements 5007 : une ligne x 40, premiere et derniere date) */
+T.grouperAnti = anti => {
+  const g = new Map();
+  for (const a of anti) {
+    const x = g.get(a.trace) || { trace: a.trace, n: 0, debut: a.date, fin: a.date, detail: a.detail, ids: [] };
+    x.n++; if (a.date && (!x.debut || a.date < x.debut)) x.debut = a.date; if (a.date > x.fin) x.fin = a.date;
+    if (x.ids.length < 5 && a.id) x.ids.push(a.id); g.set(a.trace, x);
+  }
+  return [...g.values()].sort((a, b) => String(a.debut).localeCompare(String(b.debut)));
+};
+
 /* ---------------------------------------------------------------- memoire vive */
 const pillRam = n => n >= 3 ? h('span', { class: 'pill rouge' }, 'fort') : n >= 2 ? h('span', { class: 'pill orange' }, 'à vérifier') : n >= 1 ? h('span', { class: 'pill gris' }, 'à noter') : '';
 T.filtreRam = '';
 T.ECRANS.memoire = c => {
   const m = T.memoireVive();
   c.append(h('h1', {}, 'Mémoire vive'), h('p', { class: 'sous-titre' }, "Ce qui tournait sur le poste au moment de la collecte, lu au bureau dans la copie de la RAM (Volatility 3). Montre aussi ce qui n'a laissé aucune trace sur le disque."));
-  if (!m.lue) { c.append(T.vide(m.raison || "La mémoire vive n'a pas été lue pour cette collecte.")); if (m.lecture) c.append(T.carte('Comment la RAM a été traitée', 'ram_lecture.txt', h('pre', { class: 'apercu' }, m.lecture))); return; }
+  if (!m.lue) { c.append(T.vide("Elle est lue au bureau : DigSpill → Analyser une collecte, option « Analyse complète ». Il faut une image RAM dans la collecte (collecte complète, clé PREUVES exFAT ou NTFS assez grande).")); if (m.lecture) c.append(T.carte('Comment la RAM a été traitée', 'ram_lecture.txt', h('pre', { class: 'apercu' }, m.lecture))); return; }
   c.append(h('div', { class: 'grille g4', style: 'margin-bottom:16px' },
     T.kpi('', T.nb(m.procs.length), 'processus lus dans la RAM', '', m.ecartees ? `${m.ecartees} lignes illisibles écartées (copie faite pendant que Windows tournait)` : ''),
     T.kpi('', T.nb(m.suspects.length), 'avec un indice fort', m.suspects.length ? 'rouge' : 'vert'),
@@ -495,8 +506,11 @@ T.ECRANS.exfil = c => {
   const gs = h('div', { class: 'graph', id: 'gSrum' });
   c.append(T.carte('Volumes envoyés par le poste (SRUM)', ex.ref ? `référence : moyenne ${T.nb(ex.ref.moyenne, 1)} · P95 ${T.nb(ex.ref.p95, 1)} · max ${T.nb(ex.ref.max, 1)} Mo/h` : '', ex.serie.length ? gs : T.vide('SRUM absent de l\'analyse.')));
   if (ex.serie.length) requestAnimationFrame(() => T.graphSrum(gs, ex));
-  c.append(h('div', { class: 'grille g2' },
-    T.carte('Bases métier sur le disque', '', T.tableau([{ t: 'Chemin', v: b => h('span', { class: 'mono petit' }, b.chemin) }, { t: 'Taille', l: '90px', v: b => T.nb(b.mo) + ' Mo' }, { t: '', v: b => b.sauvegarde ? h('span', { class: 'pill gris' }, 'sauvegarde') : '' }, { t: 'Preuve', v: b => T.bp(b.id) }], ex.bases, { vide: 'Aucune base métier trouvée (rancon\\bases_metier.csv).', defile: false })),
+  c.append(
+    T.carte('Comptes de transfert configurés', 'rclone, FileZilla, WinSCP · identifiants seulement, mots de passe jamais lus', T.tableau([{ t: 'Outil', l: '90px', v: r => h('span', { class: 'gras' }, r.Outil) }, { t: 'Type', l: '80px', v: r => r.Type },
+      { t: 'Compte', v: r => h('span', { class: 'mono petit' }, r.Compte) }, { t: 'Secrets', v: r => h('span', { class: 'petit doux' }, r.Secrets) }, { t: 'Configuré', l: '110px', v: r => h('span', { class: 'mono' }, T.fcourt(r.Modifie)) },
+      { t: 'Profil', l: '110px', v: r => r.Profil }, { t: 'Preuve', v: r => T.bp(r._id) }], T.table('comptes_transfert').filter(r => r.Outil), { vide: 'Aucune configuration rclone, FileZilla ou WinSCP trouvée dans les profils.', defile: false })),
+    h('div', { class: 'grille g2' }, T.carte('Bases métier sur le disque', '', T.tableau([{ t: 'Chemin', v: b => h('span', { class: 'mono petit' }, b.chemin) }, { t: 'Taille', l: '90px', v: b => T.nb(b.mo) + ' Mo' }, { t: '', v: b => b.sauvegarde ? h('span', { class: 'pill gris' }, 'sauvegarde') : '' }, { t: 'Preuve', v: b => T.bp(b.id) }], ex.bases, { max: 20, vide: 'Aucune base métier trouvée (rancon\\bases_metier.csv).', defile: false })),
     T.carte('Limites du test', '', h('ul', { class: 'lignes' }, T.LIMITES_EXFIL.map(x => h('li', {}, h('span', { class: 'ic' }, '•'), h('span', { class: 'petit' }, x)))))));
 };
 
@@ -510,7 +524,10 @@ T.ECRANS.visibilite = c => {
   c.append(h('div', { class: 'grille g2' },
     T.carte('Par fenêtre', '', v.fenetres.length ? h('ul', { class: 'lignes' }, v.fenetres.map(w => h('li', {}, h('span', { class: 'ic gras' }, w.id),
       h('div', {}, h('div', {}, h('b', {}, w.taux + ' %'), ' des sources couvrent la fenêtre'), h('div', { class: 'petit doux' }, w.sources.filter(s => s.statut !== 'couverte').map(s => `${s.source} : ${s.statut}`).join(' · ') || 'toutes couvertes'))))) : T.vide()),
-    T.carte("Traces d'anti-forensique", 'effacements, désactivations, exclusions', v.anti.length ? h('ul', { class: 'lignes' }, v.anti.map(a => h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('div', { class: 'gras' }, a.trace), h('div', { class: 'petit doux' }, (a.date ? T.fcourt(a.date) + ' · ' : '') + a.detail.slice(0, 160))), h('div', { class: 'droite' }, T.bp(a.id))))) : h('div', {}, 'Aucune trace détectée.'))));
+    T.carte("Traces d'anti-forensique", 'effacements, désactivations, exclusions', v.anti.length ? h('ul', { class: 'lignes' }, T.grouperAnti(v.anti).map(g => h('li', {}, h('span', { class: 'ic' }, ''),
+      h('div', {}, h('div', { class: 'gras' }, g.trace, g.n > 1 ? h('span', { class: 'pill gris', style: 'margin-left:8px' }, `× ${g.n}`) : ''),
+        h('div', { class: 'petit doux' }, (g.debut ? (g.n > 1 && g.fin !== g.debut ? `du ${T.fcourt(g.debut)} au ${T.fcourt(g.fin)}` : T.fcourt(g.debut)) + ' · ' : '') + g.detail.slice(0, 160))),
+      h('div', { class: 'droite' }, T.bps(g.ids, 2))))) : h('div', {}, 'Aucune trace détectée.'))));
   c.append(T.carte('Sources', '', T.tableau([{ t: 'Source', v: s => s.source }, { t: 'État', v: s => h('span', { class: 'pill ' + (s.etat === 'present' ? 'vert' : s.etat === 'desactive' ? 'rouge' : 'gris') }, s.etat === 'present' ? 'présente' : s.etat === 'desactive' ? 'désactivée' : 'absente') },
     { t: 'Du', v: s => T.fcourt(s.debut) }, { t: 'Au', v: s => T.fcourt(s.fin) }, { t: 'Preuve', v: s => T.bp(s.id) }], v.sources, { defile: false })));
 };

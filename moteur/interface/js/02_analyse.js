@@ -109,7 +109,7 @@ const EVT_JOURNAUX = { 1102: 'Journal Securite efface', 104: 'Journal efface (Sy
 T.memoireVive = () => T.memo('memoireVive', () => {
   const lecture = T.texte('ram_lecture.txt');
   const procs = T.table('ram_processus').filter(r => r.PID).map(r => ({ pid: r.PID, ppid: r.PPID, parent: r.Parent, nom: r.Processus, debut: r.Debut, fin: r.Fin, threads: r.Threads,
-    cmd: r.LigneDeCommande || '', niveau: T.num(r.Niveau), indices: String(r.Indices || '').split(' ; ').filter(Boolean), id: r._id }));
+    cmd: (r.LigneDeCommande && r.LigneDeCommande !== '-' ? r.LigneDeCommande : '') || r.Chemin || '', chemin: r.Chemin || '', niveau: T.num(r.Niveau), indices: String(r.Indices || '').split(' ; ').filter(Boolean), id: r._id }));
   const reseau = T.table('ram_reseau').filter(r => r.PID !== undefined).map(r => ({ proto: r.Protocole, local: r.Local, ip: r.IP, port: r.Port, etat: r.Etat, pid: r.PID, nom: r.Processus,
     cree: r.Cree, niveau: T.num(r.Niveau), source: r.Source, id: r._id }));
   const etablies = reseau.filter(c => /ESTABLISHED/i.test(c.etat || '') && !/^(0\.0\.0\.0|::|\*|127\.|::1$)/.test(c.ip || ''));
@@ -156,6 +156,8 @@ T.chronologie = () => T.memo('chrono', () => {
     if (!sensible && !enFen && ++bruit > 3000) continue;
     add(r.Date, 'Executions', r.Programme || '?', sensible && enFen ? 3 : sensible ? 2 : enFen ? 1 : 0, `${r.Source || ''} · ${r.Chemin || ''} ${r.Detail || ''}`, r._id, { compte: r.Compte });
   }
+  // comptes de stockage / transfert configures (rclone, FileZilla, WinSCP) : date du fichier de configuration
+  for (const r of T.table('comptes_transfert')) if (r.Outil) add(r.Modifie, 'Comptes', `Compte ${r.Outil}${r.Type ? ' ' + r.Type : ''} configuré${r.Nom ? ' (« ' + r.Nom + ' »)' : ''}`, 3, `${r.Compte || ''}${r.Secrets ? ' · ' + r.Secrets : ''} · ${r.Fichier || ''}`, r._id, { compte: r.Profil });
   // processus lus dans l'image RAM : seulement ceux qui portent un indice (le reste est le fonctionnement normal de Windows)
   for (const p of T.memoireVive().procs.filter(x => x.niveau >= 1)) add(p.debut, 'Mémoire vive', `En mémoire : ${p.nom} (PID ${p.pid})${p.fin ? '' : ', actif à la collecte'}`, p.niveau, `${p.indices.join(' · ')}${p.cmd ? ' · ' + p.cmd : ''}`, p.id);
   const paquets = {};
@@ -197,10 +199,12 @@ T.refSrum = () => T.memo('refSrum', () => {
   const r = T.table('srum_reference_par_app').find(x => (x.App || '').startsWith('(TOTAL'));
   return r ? { moyenne: T.num(r.MoyenneEnvoyeMo), p95: T.num(r.P95EnvoyeMo), max: T.num(r.MaxEnvoyeMo), releves: T.num(r.NbReleves), id: r._id } : null;
 });
+// bases livrees avec Windows ou SQL Server (modeles, composants) : ce ne sont pas des donnees du cabinet
+const RX_BASES_SYSTEME = /^[a-z]:\\windows\\|\\microsoft sql server\\[^\\]+\\(localdb\\)?binn\\|\\microsoft sql server\\[^\\]+\\mssql\\binn\\templates\\|\\windowsapps\\|\\\$recycle\.bin\\/i;
 T.basesMetier = () => T.memo('bases', () => {
   const vus = {};
   for (const r of T.table('bases_metier')) {
-    const ch = r.Chemin || '', taille = T.num(r.Taille); if (!ch || taille <= 0) continue;
+    const ch = r.Chemin || '', taille = T.num(r.Taille); if (!ch || taille <= 0 || RX_BASES_SYSTEME.test(ch)) continue;
     vus[ch.toLowerCase()] = { chemin: ch, mo: Math.round(taille / 1048576 * 10) / 10, sauvegarde: /sauvegarde|backup|\\save|\\old|\.bak|archive/i.test(ch), modification: r.Modification || '', id: r._id };
   }
   return Object.values(vus).sort((a, b) => b.mo - a.mo);
@@ -616,6 +620,8 @@ T.vue = () => T.memo('vue', () => {
   if (chiffres) alertes.push({ niv: 3, icone: '', texte: `${T.nb(chiffres)} fichiers chiffrés par un rançongiciel.`, preuves: T.table('fichiers_chiffres_par_extension').slice(0, 1).map(r => r._id) });
   for (const f of ex.fenetres) if (f.niveau === 'PLAUSIBLE') alertes.push({ niv: 3, icone: '', texte: `Fenêtre ${f.id} : ${T.nb(f.envoye)} Mo envoyés sur Internet, compatible avec une copie de la base patients.`, preuves: f.preuves.slice(0, 3), onglet: 'exfil' });
   for (const a of vis.anti.slice(0, 3)) alertes.push({ niv: 2, icone: '', texte: `Anti-forensique : ${a.trace}${a.date ? ' (' + T.fcourt(a.date) + ')' : ''}`, preuves: a.id.includes('#') ? [a.id] : [], onglet: 'visibilite' });
+  const transf = T.table('comptes_transfert').filter(r => r.Outil);
+  if (transf.length) alertes.push({ niv: 3, icone: '', texte: `Compte de stockage ou de transfert configuré sur le poste : ${transf.slice(0, 3).map(r => `${r.Outil} ${r.Type || ''} ${(r.Compte || '').replace(/ ; /g, ', ')}`.replace(/\s+/g, ' ').trim()).join(' ; ')}. Mots de passe non lus.`, preuves: transf.slice(0, 3).map(r => r._id), onglet: 'exfil' });
   const ram = T.memoireVive(), ramActifs = ram.procs.filter(p => p.niveau >= 3 && !p.fin);
   if (ramActifs.length) alertes.push({ niv: 3, icone: '', texte: `Programme suspect encore en mémoire à la collecte : ${ramActifs.slice(0, 3).map(p => `${p.nom} (PID ${p.pid}, ${p.indices[0]})`).join(' ; ')}.`, preuves: ramActifs.slice(0, 3).map(p => p.id), onglet: 'memoire' });
   if (deja.length) alertes.push({ niv: 2, icone: '', texte: `Indicateurs déjà vus dans ${deja.length} autre(s) incident(s) : ${deja.map(d => d.client || d.poste).join(', ')}.`, preuves: [], onglet: 'ioc' });
