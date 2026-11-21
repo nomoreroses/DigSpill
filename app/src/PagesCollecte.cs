@@ -77,6 +77,7 @@ namespace DigSpill
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
             this.icone = icone; this.titre = titre; this.detail = detail; this.badges = badges ?? new List<Tuple<string, Niveau>>();
             Cursor = Cursors.Hand; TabStop = true;
+            AccessibleName = titre; AccessibleDescription = detail; AccessibleRole = AccessibleRole.RadioButton;
         }
         public bool Choix { get { return choisie; } set { choisie = value; Invalidate(); } }
         public int HauteurPour(int largeur) { return 24 + 26 + Mise.HauteurTexte(detail, fD, largeur - 120) + (badges.Count > 0 ? 34 : 0) + 6; }

@@ -1,0 +1,27 @@
+name: Test parcours complet
+
+# DigSpill.exe de bout en bout sur un vrai Windows, sans simulation : scenario d'attaque reel et sans danger,
+# collecte, scelle, ejection, copie verifiee, analyse complete, interface. A lancer a la main
+# (Actions > Test parcours complet). Les captures de chaque ecran sont dans le journal du job.
+on:
+  workflow_dispatch:
+  push:
+    branches: [parcours-reel]
+
+permissions:
+  contents: read
+
+jobs:
+  parcours:
+    runs-on: windows-latest
+    timeout-minutes: 170
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Parcours complet
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .\.github\tests\parcours.ps1

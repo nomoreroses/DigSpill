@@ -232,6 +232,7 @@ namespace DigSpill
             TabStop = true;
             Margin = new Padding(10, 0, 0, 0);
             Text = texte;
+            AccessibleRole = AccessibleRole.PushButton;
             Height = 44;
             Ajuster();
         }
@@ -513,6 +514,7 @@ namespace DigSpill
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
             this.icone = icone; this.titre = titre; this.texte = texte; this.note = note;
             Cursor = Cursors.Hand; TabStop = true;
+            AccessibleName = titre; AccessibleDescription = texte; AccessibleRole = AccessibleRole.PushButton;
         }
         public int HauteurPour(int largeur) { return 124 + Mise.HauteurTexte(texte, fTexte, largeur - 56) + (string.IsNullOrEmpty(note) ? 24 : 58); }
         protected override void OnMouseEnter(EventArgs e) { survol = true; Invalidate(); base.OnMouseEnter(e); }
