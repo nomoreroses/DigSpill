@@ -1,0 +1,26 @@
+[
+  {
+    "Nom": "cridex",
+    "Description": "Cheval de Troie bancaire Cridex, Windows XP SP2 x86 (echantillon de la liste Volatility)",
+    "Urls": ["http://files.sempersecurus.org/dumps/cridex_memdump.zip"],
+    "Attendus": [1484],
+    "Pourquoi": "explorer.exe (PID 1484) contient une zone executable commencant par MZ (malfind) et parle a 41.168.5.140:8080 et 125.19.103.198:8080",
+    "Source": "https://medium.com/@dorathychristopher/memory-forensics-investigation-4a438971addd"
+  },
+  {
+    "Nom": "zeus",
+    "Description": "Cheval de Troie bancaire Zeus, Windows XP (Malware Analyst's Cookbook)",
+    "Urls": ["https://webdiis.unizar.es/~ricardo/sbc-2022/malware-memory-forensics/additional/dumps/zeus.vmem.zip"],
+    "Attendus": [856],
+    "Pourquoi": "svchost.exe (PID 856) se connecte a 193.104.47.75:80 ; code injecte trouve par malfind",
+    "Source": "https://vinhtrung123456.blogspot.com/search/label/BackTrack"
+  },
+  {
+    "Nom": "stuxnet",
+    "Description": "Ver Stuxnet, Windows XP SP3 x86 (Malware Analyst's Cookbook)",
+    "Urls": ["https://webdiis.unizar.es/~ricardo/sbc-2022/malware-memory-forensics/additional/dumps/stuxnet.vmem.zip"],
+    "Attendus": [868, 1928],
+    "Pourquoi": "trois lsass.exe ; le vrai est lance par winlogon.exe, les PID 868 et 1928 sont ceux de Stuxnet",
+    "Source": "https://www.cs.wcupa.edu/SCHEN/csc497_/lab4/lab4.pdf"
+  }
+]
