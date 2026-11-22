@@ -2,7 +2,7 @@
 REM DigSpill - signe DigSpill.exe (Authenticode SHA-256 + contre-signature horodatee).
 REM Le certificat de signature de code doit etre installe (jeton USB ou HSM du fournisseur).
 REM   SIGNER.bat                  : choisit automatiquement le meilleur certificat de signature de code
-REM   SIGNER.bat "Semaphors"      : certificat dont le sujet contient ce nom
+REM   SIGNER.bat "MaSociete"      : certificat dont le sujet contient ce nom
 setlocal
 cd /d "%~dp0"
 set "EXE=%~dp0bin\DigSpill.exe"
