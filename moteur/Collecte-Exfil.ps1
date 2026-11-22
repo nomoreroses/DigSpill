@@ -12,6 +12,10 @@
       -SkipFullListing      Ne pas faire le listing complet des disques (mode Complet)
       -Destination E:\      Support de preuves (defaut : la cle des outils). La collecte va dans <Destination>\Collecte\.
                             Permet d'avoir une cle OUTILS en lecture seule et une cle PREUVES distincte (DigSpill.exe).
+      -DestinationSurLePoste
+                            La destination est un disque du poste examine (pas de cle ni de disque externe) :
+                            ce disque reste examine, seul le dossier <Destination>\Collecte\ est saute.
+                            Automatique si la destination est le disque de Windows.
       -Technicien, -Societe, -Client, -Present, -Ticket, -Motif, -Decouverte
                             Intervention (saisie dans DigSpill.exe) : ecrites dans infos_collecte.txt et reprises dans le PV.
 
@@ -31,6 +35,7 @@ param(
     [switch]$SkipFileSearch,
     [switch]$SkipFullListing,
     [string]$Destination,
+    [switch]$DestinationSurLePoste,
     [string]$Technicien,
     [string]$Societe,
     [string]$Client,
@@ -255,6 +260,8 @@ public class FsWalker {
     public Dictionary<string, ExtStat> Ext = new Dictionary<string, ExtStat>(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ExtStat> RansomExt = new Dictionary<string, ExtStat>(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, NoteStat> Notes = new Dictionary<string, NoteStat>(StringComparer.OrdinalIgnoreCase);
+    public List<string> Skip = new List<string>();   // dossiers de DigSpill (preuves ou outils sur le disque du poste)
+    bool Skipped(string p) { foreach (string x in Skip) { if (String.Equals(p.TrimEnd('\\'), x, StringComparison.OrdinalIgnoreCase)) return true; } return false; }
     static readonly HashSet<string> NoteExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".txt", ".hta", ".html", ".htm", ".rtf", ".url" };
 
     static string Q(string s) { return "\"" + s.Replace("\"", "\"\"") + "\""; }
@@ -278,7 +285,7 @@ public class FsWalker {
                     try {
                         DirectoryInfo di = fsi as DirectoryInfo;
                         if (di != null) {
-                            if ((di.Attributes & FileAttributes.ReparsePoint) == 0) stack.Push(di);
+                            if ((di.Attributes & FileAttributes.ReparsePoint) == 0 && !Skipped(di.FullName)) stack.Push(di);
                             continue;
                         }
                         FileInfo f = (FileInfo)fsi;
@@ -346,9 +353,19 @@ try {
     $script:UsbLetters = @(Get-Disk -ErrorAction Stop | Where-Object { $_.BusType -eq 'USB' } | Get-Partition -ErrorAction SilentlyContinue |
         Where-Object { "$($_.DriveLetter)" -match '^[A-Za-z]$' } | ForEach-Object { "$($_.DriveLetter):".ToUpper() })
 } catch {}
-if ($script:UsbLetters -notcontains $UsbQ.ToUpper()) { $script:UsbLetters += $UsbQ.ToUpper() }
+# Disque du poste (preuves ou outils sur C:, D:...) : le disque reste examine, seuls nos dossiers sont sautes
+$SysQ = "$env:SystemDrive".ToUpper()
+$SurLePoste = $DestinationSurLePoste -or ($UsbQ.ToUpper() -eq $SysQ)
+$script:Exclus = @()
+if ($SurLePoste) { $script:Exclus += (Join-Path $DestRoot 'Collecte') }
+elseif ($script:UsbLetters -notcontains $UsbQ.ToUpper()) { $script:UsbLetters += $UsbQ.ToUpper() }
 $OutilsQ = Split-Path $Root -Qualifier
-if ($OutilsQ -and $script:UsbLetters -notcontains $OutilsQ.ToUpper()) { $script:UsbLetters += $OutilsQ.ToUpper() }
+if ($OutilsQ -and $OutilsQ.ToUpper() -eq $SysQ) { $script:Exclus += $Cle }
+elseif ($OutilsQ -and $script:UsbLetters -notcontains $OutilsQ.ToUpper()) { $script:UsbLetters += $OutilsQ.ToUpper() }
+function Test-Exclu([string]$Chemin) {
+    foreach ($x in $script:Exclus) { if ($Chemin.StartsWith($x.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { return $true } }
+    return $false
+}
 
 # ----------------------------------------------------------------- en-tete
 Log "=== Collecte de triage v$ScriptVersion ($Mode) sur $Computer ==="
@@ -369,6 +386,7 @@ Save-Text 'infos_collecte.txt' {
     if ($Motif)      { "Motif            : $Motif" }
     if ($Decouverte) { "Decouverte       : $Decouverte" }
     if ($Destination) { "Support preuves  : $DestRoot (outils : $Root)" }
+    if ($SurLePoste) { "                   disque du poste examine (pas de support externe) : dossiers sautes $($script:Exclus -join ', ')" }
     "Administrateur   : $IsAdmin"
     "Date locale      : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')"
     "Date UTC         : $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'))"
@@ -1201,6 +1219,7 @@ if (-not $SkipFileSearch) {
         foreach ($r in $roots) {
             Get-ChildItem -LiteralPath $r -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
                 $f = $_
+                if ($script:Exclus.Count -and (Test-Exclu $f.FullName)) { return }
                 $ext = $f.Extension.ToLowerInvariant()
                 $recent = ($f.LastWriteTime -ge $Since) -or ($f.CreationTime -ge $Since)
                 if ($recent -and $archExt -contains $ext -and $archives.Count -lt 20000) {
@@ -1347,6 +1366,7 @@ if ($Full -and -not $SkipFullListing) {
         $wBas = New-Object IO.StreamWriter((P 'rancon\bases_metier.csv'), $false, $enc, 65536)
         $wAll.WriteLine($hdr); $wRan.WriteLine($hdr); $wBas.WriteLine($hdr)
         $w = New-Object FsWalker
+        foreach ($x in $script:Exclus) { $w.Skip.Add($x.TrimEnd('\')) }
         try {
             $vols = Get-CimInstance Win32_Volume -Filter 'DriveType=3' | Where-Object { $_.DriveLetter -and $script:UsbLetters -notcontains $_.DriveLetter.ToUpper() }
             foreach ($v in $vols) { Log "    Listing $($v.DriveLetter)..."; $w.Walk($v.DriveLetter + '\', $Since, $ransomRx, $baseRx, $wAll, $wRan, $wBas) }

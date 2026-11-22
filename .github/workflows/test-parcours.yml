@@ -6,7 +6,7 @@ name: Test parcours complet
 on:
   workflow_dispatch:
   push:
-    branches: [parcours-reel]
+    branches: [parcours-reel, supports-preuves]
 
 permissions:
   contents: read

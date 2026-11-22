@@ -29,8 +29,42 @@ jobs:
           $p = Start-Process -FilePath kit\DigSpill\DigSpill.exe -ArgumentList '--demo','--capture=accueil.png' -PassThru
           if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'DigSpill.exe ne repond pas' }
           if (-not (Test-Path accueil.png)) { throw 'capture absente' }
+          # page du choix du support PREUVES (demonstration : cle, cle OUTILS et disque du poste)
+          $p = Start-Process -FilePath kit\DigSpill\DigSpill.exe -ArgumentList '--demo','--page=support','--capture=support.png' -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'DigSpill.exe ne repond pas (page support)' }
+          if (Test-Path support.png) { Write-Host '@@PNG support.png'; [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path support.png).Path)) -split '(.{1,4000})' | Where-Object { $_ } | ForEach-Object { Write-Host $_ }; Write-Host '@@FINPNG' }
           foreach ($f in 'moteur\Collecte-Exfil.ps1', 'moteur\interface\modele.html', 'moteur\outils\Collecteur-Velociraptor.exe', 'moteur\outils\7zr.exe', 'moteur\outils\LICENCE-WinPmem.txt', 'moteur\outils\python\python.exe', 'moteur\outils\python\vol.py', 'moteur\secours\LANCER_COLLECTE.bat') {
             if (-not (Test-Path (Join-Path 'kit\DigSpill' $f))) { throw "absent du kit : $f" }
+          }
+      - name: Icone de DigSpill.exe telle que l'explorateur l'affiche (48 et 256 px)
+        shell: powershell
+        run: |
+          Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+          using System; using System.Drawing; using System.Runtime.InteropServices;
+          [ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+          interface IShellItemImageFactory { [PreserveSig] int GetImage(Taille t, int options, out IntPtr hbm); }
+          [StructLayout(LayoutKind.Sequential)] public struct Taille { public int cx, cy; }
+          public static class IconeExplorateur {
+              [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+              static extern void SHCreateItemFromParsingName(string chemin, IntPtr bc, [MarshalAs(UnmanagedType.LPStruct)] Guid iid, [MarshalAs(UnmanagedType.Interface)] out object item);
+              [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr h);
+              [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern uint ExtractIconEx(string f, int i, IntPtr[] grandes, IntPtr[] petites, uint n);
+              public static uint Nombre(string f) { return ExtractIconEx(f, -1, null, null, 0); }
+              public static void Rendre(string chemin, int px, string png) {
+                  object o; SHCreateItemFromParsingName(chemin, IntPtr.Zero, new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), out o);
+                  IntPtr h; int r = ((IShellItemImageFactory)o).GetImage(new Taille { cx = px, cy = px }, 0x4, out h);   // SIIGBF_ICONONLY
+                  if (r != 0) throw new Exception("GetImage 0x" + r.ToString("X8"));
+                  using (var b = Image.FromHbitmap(h)) b.Save(png); DeleteObject(h);
+              }
+          }
+          '@
+          $exe = (Resolve-Path 'kit\DigSpill\DigSpill.exe').Path
+          $n = [IconeExplorateur]::Nombre($exe)
+          Write-Host "icones dans DigSpill.exe : $n"
+          if ($n -lt 1) { throw "DigSpill.exe sans icone" }
+          foreach ($px in 48, 256) {
+            $png = "icone_$px.png"; [IconeExplorateur]::Rendre($exe, $px, (Join-Path $PWD $png))
+            Write-Host "@@PNG $png"; [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PWD $png))) -split '(.{1,4000})' | Where-Object { $_ } | ForEach-Object { Write-Host $_ }; Write-Host '@@FINPNG'
           }
       - uses: actions/upload-artifact@v4
         with:

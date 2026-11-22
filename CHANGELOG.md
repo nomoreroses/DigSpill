@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.9 (en cours)
+- **Support PREUVES au choix** : clé USB, **disque dur ou SSD externe** (USB, y compris USB 3 « UASP » qui se déclare SCSI à Windows et n'était pas reconnu, FireWire, carte SD), ou, à défaut, **un disque de ce poste** (celui de Windows compris). Le bus et le modèle du disque sont affichés.
+- **Disque du poste** : choix jamais automatique, avertissement avant de lancer (l'écriture peut effacer des fichiers supprimés récupérables, un rançongiciel actif peut chiffrer les preuves), ni fichiers pièges, ni coupure, ni éjection. Le disque reste examiné : seul le dossier `Collecte\` est sauté (`-DestinationSurLePoste`, automatique sur le disque de Windows). Noté dans `infos_collecte.txt`. Fin de collecte : « Copier la collecte hors du poste ».
+- **DigSpill lancé depuis le disque de Windows** (dossier Téléchargements, par exemple) : le disque `C:` n'est plus retiré des recherches ; seul le dossier de DigSpill est sauté.
+- **Icône de DigSpill.exe** refaite au format attendu par Windows (images bitmap de 16 à 128 px, PNG seulement en 256 px) ; le kit vérifie l'icône telle que l'explorateur l'affiche.
+
 ## 2.8 (bêta)
 Testé de A à Z sur un vrai Windows : l'appli pilotée comme par un technicien, sur des traces d'attaque réelles.
 

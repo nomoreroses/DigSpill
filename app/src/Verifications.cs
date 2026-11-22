@@ -291,7 +291,7 @@ namespace DigSpill
 
         static Constat SupportsBranches(Contexte ctx)
         {
-            var autres = Supports.Lister(ctx.RacineOutils).Where(s => !s.EstOutils).ToList();
+            var autres = Supports.Lister(ctx.RacineOutils).Where(s => s.Externe && !s.EstOutils).ToList();
             if (autres.Count == 0) return new Constat(Niveau.Ok, "Aucun autre support branché", "La clé PREUVES sera branchée à l'étape suivante.");
             return new Constat(Niveau.Info, "Support déjà branché", string.Join(", ", autres.Select(s => s.Nom).ToArray()) + ". Idéalement, ne brancher la clé PREUVES qu'après ce contrôle.");
         }

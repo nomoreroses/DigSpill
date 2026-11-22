@@ -19,7 +19,7 @@ namespace DigSpill
         public int Etape = -1;
         public bool Occupee;
 
-        public static readonly string[] ParcoursCollecte = { "Intervention", "Feu vert", "Clé PREUVES", "Collecte", "Scellé et éjection" };
+        public static readonly string[] ParcoursCollecte = { "Intervention", "Feu vert", "Support PREUVES", "Collecte", "Scellé et éjection" };
         public static readonly string[] ParcoursAnalyse = { "Collecte à analyser", "Analyse", "Rapport" };
 
         protected Page(Fenetre f)

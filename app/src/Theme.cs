@@ -243,6 +243,7 @@ namespace DigSpill
         public static string Erreur { get { return I("", "✖"); } }
         public static string Dossier { get { return I("", "▤"); } }
         public static string Usb { get { return I("", "▭"); } }
+        public static string Poste { get { return I("", "▣"); } }
         public static string Bouclier { get { return I("", "◆"); } }
         public static string Personne { get { return I("", "●"); } }
         public static string Info { get { return I("", "i"); } }
