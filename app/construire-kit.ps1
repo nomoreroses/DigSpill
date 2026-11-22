@@ -193,3 +193,6 @@ Get-ChildItem -LiteralPath $Kit -Recurse -File | Where-Object { $_.LastWriteTime
 Compress-Archive -Path (Join-Path $Kit '*') -DestinationPath $zip -CompressionLevel Optimal
 Get-ChildItem -LiteralPath $Kit -Recurse -File | ForEach-Object { '{0,12:N0}  {1}' -f $_.Length, $_.FullName.Substring($Kit.Length + 1) } | Write-Host
 Info ("Kit pret : {0} ({1:N1} Mo)" -f $zip, ((Get-Item -LiteralPath $zip).Length / 1MB))
+# tout s'est bien passe (sinon throw plus haut) : ne pas renvoyer le code de la derniere commande externe
+# ('vol.py --help' sort avec 1), que GitHub Actions prendrait pour un echec
+exit 0
