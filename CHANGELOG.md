@@ -1,9 +1,10 @@
 # Journal des versions
 
-## 2.9 (en cours)
+## 2.9 (bêta)
 - **Support PREUVES au choix** : clé USB, **disque dur ou SSD externe** (USB, y compris USB 3 « UASP » qui se déclare SCSI à Windows et n'était pas reconnu, FireWire, carte SD), ou, à défaut, **un disque de ce poste** (celui de Windows compris). Le bus et le modèle du disque sont affichés.
 - **Disque du poste** : choix jamais automatique, avertissement avant de lancer (l'écriture peut effacer des fichiers supprimés récupérables, un rançongiciel actif peut chiffrer les preuves), ni fichiers pièges, ni coupure, ni éjection. Le disque reste examiné : seul le dossier `Collecte\` est sauté (`-DestinationSurLePoste`, automatique sur le disque de Windows). Noté dans `infos_collecte.txt`. Fin de collecte : « Copier la collecte hors du poste ».
 - **DigSpill lancé depuis le disque de Windows** (dossier Téléchargements, par exemple) : le disque `C:` n'est plus retiré des recherches ; seul le dossier de DigSpill est sauté.
+- **Releases** : une release publiée depuis GitHub reçoit `DigSpill.zip` automatiquement.
 - **Icône de DigSpill.exe** refaite au format attendu par Windows (images bitmap de 16 à 128 px, PNG seulement en 256 px) ; le kit vérifie l'icône telle que l'explorateur l'affiche.
 - **Fausses alertes sur un poste sain (essai réel) corrigées** :
   - « 260 fichiers chiffrés » : icônes `icone@2x.png` (OneDrive, Steam), torrent `Film.[Groupe Release].torrent`, fichier `adresse@exemple.fr_identity_provider`. Un nom chiffré doit maintenant garder l'extension d'origine suivie de l'ajout du rançongiciel (identifiant avec un chiffre, adresse e-mail, extension connue), et il faut au moins 20 fichiers de la même extension modifiés en 24 h. Même règle dans la collecte, l'analyse et l'interface.
