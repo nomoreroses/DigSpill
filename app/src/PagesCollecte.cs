@@ -1,4 +1,4 @@
-// DigSpill - accueil et parcours "Collecter" (sur le poste suspect).
+﻿// DigSpill - accueil et parcours "Collecter" (sur le poste suspect).
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -77,6 +77,7 @@ namespace DigSpill
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
             this.icone = icone; this.titre = titre; this.detail = detail; this.badges = badges ?? new List<Tuple<string, Niveau>>();
             Cursor = Cursors.Hand; TabStop = true;
+            AccessibleName = titre; AccessibleDescription = detail; AccessibleRole = AccessibleRole.RadioButton;
         }
         public bool Choix { get { return choisie; } set { choisie = value; Invalidate(); } }
         public int HauteurPour(int largeur) { return 24 + 26 + Mise.HauteurTexte(detail, fD, largeur - 120) + (badges.Count > 0 ? 34 : 0) + 6; }
@@ -209,7 +210,7 @@ namespace DigSpill
             var g2 = c2.Contenu.Ajouter(new Grille { Colonnes = 2 });
             g2.Controls.Add(cabinet = Champ.Texte("Cabinet ou structure", i.Cabinet, true));
             g2.Controls.Add(present = Champ.Texte("Personne présente (nom, qualité)", i.Present, false));
-            var cb = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Theme.Panneau, ForeColor = Theme.Texte };
+            var cb = new ListeSombre();
             cb.Items.AddRange(new object[] { "Rançongiciel ou chiffrement", "Intrusion ou prise en main à distance", "Fuite de données suspectée", "Comportement anormal du poste", "Autre" });
             cb.SelectedIndex = Math.Max(0, cb.Items.IndexOf(i.Motif));
             g2.Controls.Add(motif = new Champ("Motif", cb, false));
@@ -600,6 +601,7 @@ namespace DigSpill
             int code = await Executer("Collecte-Exfil.ps1", ap, "Collecte PowerShell", env);
             if (urgence) return;
             Ctx.NomCollecte = TrouverCollecte();
+            Ctx.ProblemeCollecte = Ctx.NomCollecte != null ? null : "La collecte PowerShell s'est arrêtée sans créer de dossier (code de sortie " + code + ") : ni journaux, ni mémoire vive, ni manifeste. Relancez la collecte ; le détail est dans le journal de la page Collecte.";
             ePs.Definir(code == 0 && Ctx.NomCollecte != null ? Niveau.Ok : Niveau.Attention, "1. Collecte PowerShell", Ctx.NomCollecte != null ? "Dossier " + Ctx.NomCollecte + (code == 0 ? "" : " (code de sortie " + code + ", voir collecte.log)") : "Dossier de collecte introuvable : voir le journal ci-dessous.");
 
             // --- 2. Velociraptor
@@ -725,12 +727,21 @@ namespace DigSpill
         public PageFin(Fenetre f) : base(f)
         {
             var sc = Ctx.Scelle;
-            Titre = Ctx.CollecteOk ? "Collecte terminée" : "Collecte terminée avec des avertissements";
-            SousTitre = "Photographiez l'empreinte ci-dessous avec votre téléphone, puis éjectez la clé PREUVES avant de la débrancher.";
+            bool scelle = sc != null && sc.Erreur == null && sc.Empreinte != null;
+            Titre = !Ctx.CollecteOk ? "Collecte incomplète" : scelle ? "Collecte terminée" : "Collecte terminée sans scellé";
+            SousTitre = scelle ? "Photographiez l'empreinte ci-dessous avec votre téléphone, puis éjectez la clé PREUVES avant de la débrancher."
+                : "Lisez le problème ci-dessous avant d'éjecter la clé PREUVES.";
             Parcours = ParcoursCollecte; Etape = 4;
 
+            if (!scelle)
+            {
+                var pb = Corps.Ajouter(NouvelleCarte());
+                pb.Contenu.Ajouter(new LigneInfo(Niveau.Danger, Ctx.CollecteOk ? "Scellé non créé" : "Collecte incomplète",
+                    Ctx.ProblemeCollecte ?? ("Le scellé n'a pas pu être créé" + (sc != null && sc.Erreur != null ? " : " + sc.Erreur : "") + ". Il pourra être créé au bureau (DigSpill → Analyser une collecte).")));
+            }
             sombre = Corps.Ajouter(NouvelleCarte());
             sombre.Couleurs(Theme.Panneau, Theme.Ligne);
+            sombre.Visible = scelle;
             sombre.Padding = new Padding(26, 22, 26, 22);
             sombre.Contenu.Ajouter(Mise.Texte("EMPREINTE DU SCELLÉ (SHA-256)", Theme.MonoMoyen(8.5f), Theme.Texte3));
             var emp = sombre.Contenu.Ajouter(new Empreinte());
@@ -788,6 +799,16 @@ namespace DigSpill
         void Ejecter()
         {
             if (Ctx.Pieges != null) Ctx.Pieges.Retirer();
+            if (!Ctx.Demo && Ctx.Destination.EstOutils)
+            {
+                // DigSpill.exe tourne depuis cette cle : l'ejecter maintenant ferait planter l'appli
+                var q = MessageBox.Show(F, "Mode une seule clé : DigSpill tourne depuis cette clé et ne peut pas l'éjecter lui-même.\r\n\r\nOui : fermer DigSpill, puis Windows éjecte la clé (quelques secondes).\r\nNon : rester sur cette page.", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                if (q != DialogResult.Yes) return;
+                try { Supports.EjecterApresFermeture(Ctx.Destination.Lettre); }
+                catch (Exception e) { MessageBox.Show(F, "Éjection automatique impossible : " + e.Message + "\r\nFermez DigSpill puis utilisez « Retirer le périphérique en toute sécurité » de Windows.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+                F.Close();
+                return;
+            }
             string err = Ctx.Demo ? null : Supports.Ejecter(Ctx.Destination.Lettre, false);
             if (err != null)
             {

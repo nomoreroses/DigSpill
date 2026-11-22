@@ -138,6 +138,10 @@ namespace DigSpill
             }
         }
 
+        /// <summary>Page affichee et boutons du pied de page (lus par le pilote automatique).</summary>
+        public Page Courante { get { return courante; } }
+        public IEnumerable<Control> BoutonsPied { get { return boutons.Controls.Cast<Control>().ToList(); } }
+
         public void MajInfoCle()
         {
             string r = Path.GetPathRoot(Ctx.RacineOutils);

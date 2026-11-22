@@ -231,12 +231,13 @@ T.ECRANS.chrono = (c, fenId) => {
   const fens = T.fenetres(), f = fens.find(x => x.id === fenId) || T.fenetreGrave() || fens[0], id = T.identite();
   const m = h('main', { class: 'col', id: 'principal' }); c.append(m);
   if (!f) { m.append(h('h1', { class: 'recit-titre' }, 'Chronologie'), h('p', { class: 'intro' }, "Aucune fenêtre d'analyse : il n'y a pas de nuit à raconter. Tous les événements restent consultables."), h('p', { class: 'intro' }, h('a', { class: 'lk', href: '#details/evenements' }, 'Tous les événements →'))); return; }
-  const r = T.recit(f.id), n = r.etapes.length;
+  const r = T.recit(f.id), n = r.chapitres.reduce((t, ch) => t + ch.etapes.length, 0);
   m.append(h('p', { class: 'lbl', title: f.motif || null }, `Fenêtre ${f.id} · poste ${id.poste}`), h('h1', { class: 'recit-titre' }, r.periode.titre),
     h('p', { class: 'intro' }, n ? `De ${T.hm(r.debut)} à ${T.hm(r.fin)}, en ${n} étape${n > 1 ? 's' : ''}. Cliquez sur une étape pour voir ce qui la prouve.` : `De ${T.hm(f.debut)} à ${T.hm(f.fin)}. Aucun événement important dans cette fenêtre.`));
   for (const ch of r.chapitres) {
     m.append(h('section', { class: 'chap', 'aria-label': `${ch.n} ${ch.nom}` }, h('h2', { class: 'cht' }, h('span', { class: 'chn' }, ch.n), ch.nom, h('span', { class: 'rng' }, ch.plage)),
-      h('ol', { class: 'tl' }, ch.etapes.map(s => T.ligneEtape(s, f)))));
+      h('ol', { class: 'tl' }, ch.etapes.map(s => T.ligneEtape(s, f))),
+      ch.caches ? h('p', { class: 'petit doux', style: 'margin:8px 0 0 86px' }, `${T.nb(ch.caches)} autre${ch.caches > 1 ? 's' : ''} événement${ch.caches > 1 ? 's' : ''} dans cette fenêtre : `, h('a', { class: 'lk', href: '#details/evenements', onclick: () => { T.zoomFenetre = f.id; } }, 'Tous les événements →')) : ''));
   }
   const autres = fens.filter(x => x.id !== f.id);
   m.append(h('footer', { class: 'pied-page' }, autres.length ? h('span', {}, 'Autres fenêtres : ', autres.map((x, i) => [i ? ', ' : '', h('a', { class: 'lk doux', href: '#chrono/' + x.id, title: x.motif || null }, `${x.id} · ${T.jm(x.debut)}`)])) : h('span', {}, "Une seule fenêtre d'analyse."),
@@ -249,7 +250,7 @@ T.ECRANS.chrono = (c, fenId) => {
 
 /* ---------------------------------------------------------------- Details et Preuves : rubriques */
 T.RUBRIQUES = {
-  details: [['grille', 'Grille par canal'], ['fenetres', "Fenêtres d'analyse"], ['chiffres', 'Chiffres clés et alertes'], ['ip', 'IP et pays'], ['exfil', 'Exfiltration'], ['visibilite', 'Visibilité'],
+  details: [['grille', 'Grille par canal'], ['fenetres', "Fenêtres d'analyse"], ['chiffres', 'Chiffres clés et alertes'], ['ip', 'IP et pays'], ['exfil', 'Exfiltration'], ['memoire', 'Mémoire vive'], ['visibilite', 'Visibilité'],
     ['sante', 'Santé et RGPD'], ['fuites', 'Identifiants et fuites'], ['ioc', 'IOC et chasse'], ['ia', 'Analyse IA'], ['evenements', 'Tous les événements'], ['synthese', 'SYNTHESE.txt']],
   preuves: [['integrite', 'Intégrité'], ['rapports', 'Rapports']]
 };
@@ -261,7 +262,8 @@ T.CONSTATS = {
   fenetres: () => { const f = T.exfil().fenetres; if (!f.length) return "Aucune fenêtre d'analyse."; const p = f.filter(x => x.niveau === 'PLAUSIBLE').map(x => x.id); return `${pl(f.length, "fenêtre d'analyse", "fenêtres d'analyse")}, du ${T.jm(f[0].debut)} au ${T.jm(f[f.length - 1].fin)}.${p.length ? ` Copie de la base possible pendant ${p.join(', ')}.` : ''}`; },
   chiffres: () => { const a = T.vue().alertes; return a.length ? `${pl(a.length, 'alerte calculée', 'alertes calculées')} à partir des traces.` : 'Aucune alerte majeure calculée à partir des traces.'; },
   ip: () => { const a = T.analyseIp().ips.filter(e => e.type === 'PUBLIQUE'), s = a.filter(e => e.succes && !e.blanche), p = [...new Set(s.map(e => T.nomPays(e.pays)).filter(Boolean))]; return `${pl(a.length, 'IP publique vue', 'IP publiques vues')}, dont ${s.length} avec une connexion réussie${p.length ? ` (${p.join(', ')})` : ''}.`; },
-  exfil: () => { const f = T.exfil().fenetres, m = f.reduce((x, y) => !x || y.envoye > x.envoye ? y : x, null); return m ? `Jusqu'à ${T.volume(m.envoye)} envoyés pendant la fenêtre ${m.id} : ${(T.NIVEAUX[m.niveau] || T.NIVEAUX.INCONNU).lib.toLowerCase()}.` : "Aucune fenêtre d'analyse : rien à borner."; },
+  exfil: () => { const f = T.exfil().fenetres; if (f.length && f.every(x => !x.envoye && (x.niveau === 'INCONNU' || !x.niveau))) return 'Volume envoyé non mesurable : pas de relevé SRUM pendant les fenêtres (Windows Server, ou SRUM vide).'; const m = f.reduce((x, y) => !x || y.envoye > x.envoye ? y : x, null); return m ? `Jusqu'à ${T.volume(m.envoye)} envoyés pendant la fenêtre ${m.id} : ${(T.NIVEAUX[m.niveau] || T.NIVEAUX.INCONNU).lib.toLowerCase()}.` : "Aucune fenêtre d'analyse : rien à borner."; },
+  memoire: () => { const m = T.memoireVive(); if (!m.lue) return m.raison || "La mémoire vive n'a pas été lue pour cette collecte."; return `${pl(m.procs.length, 'processus lu', 'processus lus')} dans la RAM, ${m.suspects.length ? `dont ${pl(m.suspects.length, 'avec un indice fort', 'avec un indice fort')}` : 'aucun avec un indice fort'} ; ${pl(m.etablies.length, 'connexion établie lue', 'connexions établies lues')}.`; },
   visibilite: () => { const l = T.limites(); return l ? l.phrase.split('. ')[0] + '.' : 'Les sources attendues enregistraient.'; },
   sante: () => { const v = T.vue().cnil; if (!v) return 'Date de découverte à saisir pour calculer le délai CNIL de 72 h.'; const e = v.echeance, q = `${JOURS[e.getDay()]} ${T.jm(e)} à ${T.hm(e)}`; return v.restantH >= 0 ? `Notification CNIL, si le cabinet la décide, avant le ${q}.` : `Le délai CNIL de 72 h a expiré le ${q}.`; },
   fuites: () => { const n = T.identifiants().comptes.length; return n ? `${pl(n, 'compte enregistré', 'comptes enregistrés')} dans les navigateurs du poste, à faire changer.` : 'Aucun identifiant enregistré dans les navigateurs (ou liste non collectée).'; },
@@ -319,6 +321,61 @@ T.ECRANS.chiffres = c => {
   c.append(h('p', { class: 'lbl', style: 'margin-bottom:6px' }, `Alertes · ${v.alertes.length}`));
   for (const a of v.alertes) c.append(h('div', { class: 'alerte n' + a.niv }, h('div', {}, a.texte), h('div', { class: 'actions' }, T.bps(a.preuves, 2), a.onglet ? h('a', { class: 'lk doux petit', href: '#' + T.route(a.onglet) }, 'Voir →') : '')));
   if (!v.alertes.length) c.append(T.vide('Aucune alerte majeure calculée. Lire quand même la grille par canal.'));
+};
+/** traces identiques regroupees (ex. 40 evenements 5007 : une ligne x 40, premiere et derniere date) */
+T.grouperAnti = anti => {
+  const g = new Map();
+  for (const a of anti) {
+    const x = g.get(a.trace) || { trace: a.trace, n: 0, debut: a.date, fin: a.date, detail: a.detail, ids: [] };
+    x.n++; if (a.date && (!x.debut || a.date < x.debut)) x.debut = a.date; if (a.date > x.fin) x.fin = a.date;
+    if (x.ids.length < 5 && a.id) x.ids.push(a.id); g.set(a.trace, x);
+  }
+  return [...g.values()].sort((a, b) => String(a.debut).localeCompare(String(b.debut)));
+};
+
+/* ---------------------------------------------------------------- memoire vive */
+const pillRam = n => n >= 3 ? h('span', { class: 'pill rouge' }, 'fort') : n >= 2 ? h('span', { class: 'pill orange' }, 'à vérifier') : n >= 1 ? h('span', { class: 'pill gris' }, 'à noter') : '';
+T.filtreRam = '';
+T.ECRANS.memoire = c => {
+  const m = T.memoireVive();
+  c.append(h('h1', {}, 'Mémoire vive'), h('p', { class: 'sous-titre' }, "Ce qui tournait sur le poste au moment de la collecte, lu au bureau dans la copie de la RAM (Volatility 3). Montre aussi ce qui n'a laissé aucune trace sur le disque."));
+  if (!m.lue) { c.append(T.vide("Elle est lue au bureau : DigSpill → Analyser une collecte, option « Analyse complète ». Il faut une image RAM dans la collecte (collecte complète, clé PREUVES exFAT ou NTFS assez grande).")); if (m.lecture) c.append(T.carte('Comment la RAM a été traitée', 'ram_lecture.txt', h('pre', { class: 'apercu' }, m.lecture))); return; }
+  c.append(h('div', { class: 'grille g4', style: 'margin-bottom:16px' },
+    T.kpi('', T.nb(m.procs.length), 'processus lus dans la RAM', '', m.ecartees ? `${m.ecartees} lignes illisibles écartées (copie faite pendant que Windows tournait)` : ''),
+    T.kpi('', T.nb(m.suspects.length), 'avec un indice fort', m.suspects.length ? 'rouge' : 'vert'),
+    T.kpi('', T.nb(m.procs.filter(p => !p.fin).length), 'encore actifs à la collecte'),
+    T.kpi('', T.nb(m.etablies.length), 'connexions établies lues', m.etablies.some(x => x.niveau >= 2) ? 'rouge' : '')));
+  const aRegarder = m.procs.filter(p => p.niveau >= 1).sort((a, b) => b.niveau - a.niveau || (T.pdate(a.debut) - T.pdate(b.debut)));
+  c.append(T.carte(`À regarder · ${aRegarder.length}`, 'processus qui portent un indice : nom imité, outil d\'envoi, dossier public, commande encodée…', T.tableau([
+    { t: '', l: '84px', v: p => pillRam(p.niveau) },
+    { t: 'Processus', v: p => h('div', {}, h('div', { class: 'mono gras' }, p.nom), h('div', { class: 'pale petit' }, `PID ${p.pid} · parent ${p.parent || '?'} (${p.ppid})`)) },
+    { t: 'Lancé', l: '110px', v: p => h('div', {}, h('div', { class: 'mono' }, T.fcourt(p.debut)), h('div', { class: 'pale petit' }, p.fin ? 'terminé ' + T.fcourt(p.fin) : 'actif à la collecte')) },
+    { t: 'Pourquoi', v: p => h('ul', { class: 'petit', style: 'margin:0;padding-left:16px' }, p.indices.map(i => h('li', {}, i))) },
+    { t: 'Ligne de commande', v: p => h('div', { class: 'mono petit', style: 'word-break:break-all' }, p.cmd.slice(0, 260) || '–') },
+    { t: 'Preuve', l: '150px', v: p => T.bp(p.id) }], aRegarder, { vide: 'Aucun processus ne porte d\'indice.', cls: p => p.niveau >= 3 ? 'attention' : '' })));
+  const ext = m.reseau.filter(x => x.ip && !/^(0\.0\.0\.0|::|\*|127\.|::1$)/.test(x.ip)).sort((a, b) => b.niveau - a.niveau);
+  const note = m.lecture.split(/\r?\n/).find(l => /ne lit pas encore la table des connexions/.test(l));
+  c.append(T.carte(`Connexions lues dans la RAM · ${ext.length}`, m.reseau.length ? `module ${m.reseau[0].source} · ${m.reseau.length} lignes au total (ports en écoute compris)` : '',
+    note ? h('div', { class: 'alerte n1' }, h('div', {}, note.trim(), ' ', h('a', { class: 'lk', href: '#details/ip' }, 'Connexions relevées en direct →'))) : '',
+    T.tableau([{ t: '', l: '84px', v: x => pillRam(x.niveau) }, { t: 'Distant', v: x => h('span', { class: 'mono' }, `${x.ip}:${x.port}`) }, { t: 'État', l: '110px', v: x => x.etat },
+      { t: 'Processus', v: x => h('span', {}, h('span', { class: 'mono' }, x.nom || '?'), h('span', { class: 'pale petit' }, ` PID ${x.pid}`)) }, { t: 'Local', v: x => h('span', { class: 'mono petit' }, x.local) },
+      { t: 'Créée', l: '110px', v: x => h('span', { class: 'mono' }, T.fcourt(x.cree)) }, { t: 'Preuve', l: '150px', v: x => T.bp(x.id) }], ext, { max: 300, vide: 'Aucune connexion vers une autre machine lue dans la RAM.' })));
+  const tous = h('div');
+  const rendre = () => {
+    const q = T.filtreRam.toLowerCase();
+    const l = m.procs.filter(p => !q || (p.nom + ' ' + p.cmd + ' ' + p.pid).toLowerCase().includes(q));
+    tous.innerHTML = '';
+    tous.append(T.tableau([{ t: 'PID', l: '64px', v: p => h('span', { class: 'mono' }, p.pid) }, { t: 'Processus', v: p => h('span', { class: 'mono' + (p.niveau >= 2 ? ' gras' : '') }, p.nom) },
+      { t: 'Parent', v: p => h('span', { class: 'petit' }, `${p.parent || '?'} (${p.ppid})`) }, { t: 'Lancé', l: '110px', v: p => h('span', { class: 'mono' }, T.fcourt(p.debut)) },
+      { t: 'Fin', l: '110px', v: p => h('span', { class: 'mono pale' }, p.fin ? T.fcourt(p.fin) : 'actif') },
+      { t: 'Ligne de commande', v: p => h('span', { class: 'mono petit', style: 'word-break:break-all' }, p.cmd.slice(0, 200)) }, { t: '', l: '84px', v: p => pillRam(p.niveau) }],
+      l, { max: 600, hauteur: '520px', vide: 'Aucun processus pour ce filtre.' }));
+  };
+  c.append(T.carte(`Tous les processus · ${m.procs.length}`, 'triés par heure de lancement', h('div', { class: 'filtres' },
+    h('input', { type: 'search', class: 'texte', placeholder: 'Filtrer : nom, PID, ligne de commande', value: T.filtreRam, 'aria-label': 'Filtrer les processus', style: 'width:320px', oninput: e => { T.filtreRam = e.target.value; rendre(); } }),
+    h('button', { class: 'btn', style: 'margin-left:auto', onclick: () => T.telecharger(`${T.identite().poste}_ram_processus.csv`, T.texte('ram_processus')) }, 'CSV')), tous));
+  rendre();
+  c.append(T.carte('Comment la RAM a été lue', 'ram_lecture.txt : image, symboles, modules Volatility, limites', h('pre', { class: 'apercu' }, m.lecture)));
 };
 T.ECRANS.synthese = c => {
   const s = T.texte('SYNTHESE.txt');
@@ -450,8 +507,11 @@ T.ECRANS.exfil = c => {
   const gs = h('div', { class: 'graph', id: 'gSrum' });
   c.append(T.carte('Volumes envoyés par le poste (SRUM)', ex.ref ? `référence : moyenne ${T.nb(ex.ref.moyenne, 1)} · P95 ${T.nb(ex.ref.p95, 1)} · max ${T.nb(ex.ref.max, 1)} Mo/h` : '', ex.serie.length ? gs : T.vide('SRUM absent de l\'analyse.')));
   if (ex.serie.length) requestAnimationFrame(() => T.graphSrum(gs, ex));
-  c.append(h('div', { class: 'grille g2' },
-    T.carte('Bases métier sur le disque', '', T.tableau([{ t: 'Chemin', v: b => h('span', { class: 'mono petit' }, b.chemin) }, { t: 'Taille', l: '90px', v: b => T.nb(b.mo) + ' Mo' }, { t: '', v: b => b.sauvegarde ? h('span', { class: 'pill gris' }, 'sauvegarde') : '' }, { t: 'Preuve', v: b => T.bp(b.id) }], ex.bases, { vide: 'Aucune base métier trouvée (rancon\\bases_metier.csv).', defile: false })),
+  c.append(
+    T.carte('Comptes de transfert configurés', 'rclone, FileZilla, WinSCP · identifiants seulement, mots de passe jamais lus', T.tableau([{ t: 'Outil', l: '90px', v: r => h('span', { class: 'gras' }, r.Outil) }, { t: 'Type', l: '80px', v: r => r.Type },
+      { t: 'Compte', v: r => h('span', { class: 'mono petit' }, r.Compte) }, { t: 'Secrets', v: r => h('span', { class: 'petit doux' }, r.Secrets) }, { t: 'Configuré', l: '110px', v: r => h('span', { class: 'mono' }, T.fcourt(r.Modifie)) },
+      { t: 'Profil', l: '110px', v: r => r.Profil }, { t: 'Preuve', v: r => T.bp(r._id) }], T.table('comptes_transfert').filter(r => r.Outil), { vide: 'Aucune configuration rclone, FileZilla ou WinSCP trouvée dans les profils.', defile: false })),
+    h('div', { class: 'grille g2' }, T.carte('Bases métier sur le disque', '', T.tableau([{ t: 'Chemin', v: b => h('span', { class: 'mono petit' }, b.chemin) }, { t: 'Taille', l: '90px', v: b => T.nb(b.mo) + ' Mo' }, { t: '', v: b => b.sauvegarde ? h('span', { class: 'pill gris' }, 'sauvegarde') : '' }, { t: 'Preuve', v: b => T.bp(b.id) }], ex.bases, { max: 20, vide: 'Aucune base métier trouvée (rancon\\bases_metier.csv).', defile: false })),
     T.carte('Limites du test', '', h('ul', { class: 'lignes' }, T.LIMITES_EXFIL.map(x => h('li', {}, h('span', { class: 'ic' }, '•'), h('span', { class: 'petit' }, x)))))));
 };
 
@@ -465,7 +525,10 @@ T.ECRANS.visibilite = c => {
   c.append(h('div', { class: 'grille g2' },
     T.carte('Par fenêtre', '', v.fenetres.length ? h('ul', { class: 'lignes' }, v.fenetres.map(w => h('li', {}, h('span', { class: 'ic gras' }, w.id),
       h('div', {}, h('div', {}, h('b', {}, w.taux + ' %'), ' des sources couvrent la fenêtre'), h('div', { class: 'petit doux' }, w.sources.filter(s => s.statut !== 'couverte').map(s => `${s.source} : ${s.statut}`).join(' · ') || 'toutes couvertes'))))) : T.vide()),
-    T.carte("Traces d'anti-forensique", 'effacements, désactivations, exclusions', v.anti.length ? h('ul', { class: 'lignes' }, v.anti.map(a => h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('div', { class: 'gras' }, a.trace), h('div', { class: 'petit doux' }, (a.date ? T.fcourt(a.date) + ' · ' : '') + a.detail.slice(0, 160))), h('div', { class: 'droite' }, T.bp(a.id))))) : h('div', {}, 'Aucune trace détectée.'))));
+    T.carte("Traces d'anti-forensique", 'effacements, désactivations, exclusions', v.anti.length ? h('ul', { class: 'lignes' }, T.grouperAnti(v.anti).map(g => h('li', {}, h('span', { class: 'ic' }, ''),
+      h('div', {}, h('div', { class: 'gras' }, g.trace, g.n > 1 ? h('span', { class: 'pill gris', style: 'margin-left:8px' }, `× ${g.n}`) : ''),
+        h('div', { class: 'petit doux' }, (g.debut ? (g.n > 1 && g.fin !== g.debut ? `du ${T.fcourt(g.debut)} au ${T.fcourt(g.fin)}` : T.fcourt(g.debut)) + ' · ' : '') + g.detail.slice(0, 160))),
+      h('div', { class: 'droite' }, T.bps(g.ids, 2))))) : h('div', {}, 'Aucune trace détectée.'))));
   c.append(T.carte('Sources', '', T.tableau([{ t: 'Source', v: s => s.source }, { t: 'État', v: s => h('span', { class: 'pill ' + (s.etat === 'present' ? 'vert' : s.etat === 'desactive' ? 'rouge' : 'gris') }, s.etat === 'present' ? 'présente' : s.etat === 'desactive' ? 'désactivée' : 'absente') },
     { t: 'Du', v: s => T.fcourt(s.debut) }, { t: 'Au', v: s => T.fcourt(s.fin) }, { t: 'Preuve', v: s => T.bp(s.id) }], v.sources, { defile: false })));
 };
@@ -816,6 +879,7 @@ T.indexRecherche = () => T.memo('indexRecherche', () => {
   T.RUBRIQUES.preuves.forEach(([k, l]) => ajouter('Rubrique', `Preuves · ${l}`, { aller: 'preuves/' + k }));
   for (const f of T.fenetres()) { const r = T.recit(f.id); if (r) r.etapes.forEach(s => ajouter('Étape', `${f.id} · ${T.hm(s.t)} · ${s.titre}`, { aller: 'chrono/' + f.id, etape: s.cle, plus: s.sens })); }
   for (const e of T.analyseIp().ips.filter(x => x.type !== 'Privee')) ajouter('IP', `${e.ip}${e.pays ? ' · ' + T.nomPays(e.pays) : ''}${e.succes ? ` · ${e.succes} connexion(s) réussie(s)` : ''}${e.echecs ? ` · ${T.nb(e.echecs)} échecs` : ''}${e.active ? ' · connexion ouverte' : ''}`, { aller: 'details/ip', preuve: e.preuves[0] });
+  for (const p of T.memoireVive().procs.filter(x => x.niveau >= 1)) ajouter('Processus', `${p.nom} · PID ${p.pid} · en mémoire${p.indices.length ? ' · ' + p.indices[0] : ''}`, { aller: 'details/memoire', preuve: p.id });
   for (const e of T.hachages()) ajouter('Empreinte', `${e.hash} · ${e.noms.slice(0, 2).join(', ')}`, { aller: 'details/ioc', preuve: e.preuves[0] });
   const comptes = new Set();
   T.analyseIp().ips.forEach(e => (e.comptes || []).forEach(c => comptes.add(String(c).split('\\').pop())));

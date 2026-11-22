@@ -1,4 +1,4 @@
-// DigSpill.exe - point d'entree, contexte partage, reglages (moteur\digspill.ini sur la cle OUTILS).
+﻿// DigSpill.exe - point d'entree, contexte partage, reglages (moteur\digspill.ini sur la cle OUTILS).
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -105,6 +105,8 @@ namespace DigSpill
         public string RaisonAlerte;
         public List<string> ActionsUrgence;
         public bool CollecteOk;
+        public string ProblemeCollecte;
+        public string ProblemeAnalyse;    // analyse en echec : l'interface est faite, mais sans l'analyse   // pourquoi la collecte est incomplete (affiche en fin de collecte)
 
         // analyse
         public string SourceCollecte, DossierTravail, MotDePasse, Interface;
@@ -171,8 +173,18 @@ namespace DigSpill
             // identifiants lus par l'instance non elevee, juste avant de relancer en administrateur
             foreach (var a in args) if (a.StartsWith("--identifiants=")) ctx.IdentifiantsSession = Identifiants.DepuisBase64(a.Substring(15));
             foreach (var a in args) if (a.StartsWith("--compte=")) ctx.CompteSession = a.Substring(9);
-            Application.ThreadException += (s, e) => MessageBox.Show(e.Exception.ToString(), "DigSpill : erreur inattendue", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            Application.Run(new Fenetre(ctx, depart, capture));
+            // test de bout en bout : --auto=<dossier> --auto-preuves=R: --auto-travail=C:\travail (voir Autopilote.cs)
+            string auto = null, autoPreuves = null, autoTravail = null;
+            foreach (var a in args) if (a.StartsWith("--auto=")) auto = a.Substring(7);
+            foreach (var a in args) if (a.StartsWith("--auto-preuves=")) autoPreuves = a.Substring(15);
+            foreach (var a in args) if (a.StartsWith("--auto-travail=")) autoTravail = a.Substring(15);
+            if (auto != null)
+                Application.ThreadException += (s, e) => { try { File.AppendAllText(Path.Combine(auto, "auto.log"), "[!] erreur inattendue : " + e.Exception + "\r\n"); } catch { } Environment.Exit(11); };
+            else
+                Application.ThreadException += (s, e) => MessageBox.Show(e.Exception.ToString(), "DigSpill : erreur inattendue", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            var fenetre = new Fenetre(ctx, depart, capture);
+            if (auto != null && !ctx.Demo) new Autopilote(fenetre, auto, autoPreuves, autoTravail);
+            Application.Run(fenetre);
         }
     }
 }

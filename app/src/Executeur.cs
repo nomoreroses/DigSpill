@@ -1,4 +1,4 @@
-// DigSpill - lancement des scripts PowerShell et de Velociraptor, sortie lue ligne a ligne.
+﻿// DigSpill - lancement des scripts PowerShell et de Velociraptor, sortie lue ligne a ligne.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -43,9 +43,26 @@ namespace DigSpill
             if (env != null) foreach (var kv in env) psi.EnvironmentVariables[kv.Key] = kv.Value;
             p = new Process { StartInfo = psi, EnableRaisingEvents = true };
             var fin = new TaskCompletionSource<int>();
-            p.OutputDataReceived += (s, e) => { if (e.Data != null) Emettre(e.Data); };
-            p.ErrorDataReceived += (s, e) => { if (e.Data != null) Emettre("[!] " + e.Data); };
-            p.Exited += (s, e) => { try { p.WaitForExit(); fin.TrySetResult(p.ExitCode); } catch { fin.TrySetResult(-1); } };
+            var finSortie = new System.Threading.ManualResetEvent(false);
+            var finErreurs = new System.Threading.ManualResetEvent(false);
+            p.OutputDataReceived += (s, e) => { if (e.Data != null) Emettre(e.Data); else finSortie.Set(); };
+            p.ErrorDataReceived += (s, e) => { if (e.Data != null) Emettre("[!] " + e.Data); else finErreurs.Set(); };
+            // Pas de WaitForExit() sans delai : il attend aussi la fin des sorties, et un programme lance par le script
+            // qui reste ouvert (ex. une console MMC) les garde ouvertes pour toujours. On laisse 10 s aux dernieres lignes.
+            p.Exited += (s, e) =>
+            {
+                try
+                {
+                    p.WaitForExit(2000);
+                    var t0 = DateTime.Now;
+                    bool ok = finSortie.WaitOne(10000);
+                    ok = finErreurs.WaitOne(Math.Max(0, 10000 - (int)(DateTime.Now - t0).TotalMilliseconds)) && ok;
+                    if (!ok)
+                        Emettre("[i] Un programme lancé par le script garde sa sortie ouverte : DigSpill passe à la suite.");
+                    fin.TrySetResult(p.ExitCode);
+                }
+                catch { fin.TrySetResult(-1); }
+            };
             p.Start();
             p.StandardInput.Close(); // aucun script ne doit attendre une saisie
             p.BeginOutputReadLine();

@@ -1,4 +1,4 @@
-// DigSpill - parcours "Analyser" (sur le PC du technicien, jamais sur le poste suspect).
+﻿// DigSpill - parcours "Analyser" (sur le PC du technicien, jamais sur le poste suspect).
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -44,8 +44,8 @@ namespace DigSpill
             o.Contenu.Ajouter(Intertitre("Options"));
             o.Contenu.Espace = 8;
             copie = o.Contenu.Ajouter(new Case("Copie vérifiée des preuves avant l'analyse (SHA-256 de chaque fichier, PV de copie). Recommandé.", Ctx.CopieVerifiee));
-            complete = o.Contenu.Ajouter(new Case("Analyse complète, avec la $MFT (plus longue)", Ctx.AnalyseComplete));
-            internet = o.Contenu.Ajouter(new Case("Utiliser Internet : bases publiques à jour et horodatage du scellé (seules des empreintes sont envoyées)", Ctx.AvecInternet));
+            complete = o.Contenu.Ajouter(new Case("Analyse complète, avec la $MFT et la mémoire vive (plus longue)", Ctx.AnalyseComplete));
+            internet = o.Contenu.Ajouter(new Case("Utiliser Internet : bases publiques à jour, symboles Windows pour la mémoire vive, horodatage du scellé (seules des empreintes sont envoyées)", Ctx.AvecInternet));
             proteger = o.Contenu.Ajouter(new Case("Protéger l'interface par un mot de passe (pour l'envoyer)", Ctx.Proteger));
             var g = o.Contenu.Ajouter(new Grille { Colonnes = 2 });
             g.Controls.Add(mdp1 = new Champ("Mot de passe", new TextBox { UseSystemPasswordChar = true }, true));
@@ -167,7 +167,7 @@ namespace DigSpill
             var e = Corps.Ajouter(NouvelleCarte());
             e.Contenu.Ajouter(Intertitre("Étapes"));
             eCopie = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "1. Copie vérifiée", "Chaque fichier copié est re-haché et comparé au manifeste de la collecte. PV de copie."));
-            eAna = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "2. Analyse exfiltration", "Sessions, volumes envoyés (SRUM), exécutions, navigation, \\\\tsclient, $MFT."));
+            eAna = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "2. Analyse exfiltration", "Sessions, volumes envoyés (SRUM), exécutions, navigation, \\\\tsclient, $MFT, mémoire vive."));
             eInt = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "3. Interface et scellé", "Fichier HTML autonome, bases publiques, scellé horodaté, PV de collecte."));
             Corps.Ajouter(journal);
         }
@@ -184,11 +184,12 @@ namespace DigSpill
 
         void Etat(string t, double v) { if (!IsDisposed) BeginInvoke(new Action(() => { etat.Text = t; if (v >= 0) barre.Valeur = v; else barre.Indeterminee = true; Ajuster(); })); }
 
-        Task<int> Ps(string script, List<string> args, IDictionary<string, string> env)
+        Task<int> Ps(string script, List<string> args, IDictionary<string, string> env, Action<string> suivi = null)
         {
             if (Ctx.Demo) return Simuler(script);
             exec = new Executeur();
             exec.Ligne += l => journal.Ajouter(l);
+            if (suivi != null) exec.Ligne += suivi;
             journal.Ajouter("> " + script + " " + string.Join(" ", args.ToArray()));
             return exec.Lancer("powershell.exe", Executeur.ArgumentsPowerShell(Ctx.Script(script), args), Ctx.RacineOutils, Executeur.Console850(), env);
         }
@@ -196,7 +197,7 @@ namespace DigSpill
         async Task<int> Simuler(string script)
         {
             var l = script.StartsWith("Copier") ? new[] { "Copie de 1 534 fichiers (3,4 Go)", "  verification 1000 / 1534", "Resultat : toutes les copies sont identiques aux originaux" }
-                : script.StartsWith("Analyse") ? new[] { "[*] Sessions reconstituees", "[*] SRUM : volumes par application", "[*] Executions pendant les fenetres", "[*] Navigation", "[*] $MFT du conteneur" }
+                : script.StartsWith("Analyse") ? new[] { "[*] Sessions reconstituees", "[*] SRUM : volumes par application", "[*] Executions pendant les fenetres", "[*] Navigation", "[*] $MFT du conteneur", "[*] Memoire vive : processus et connexions" }
                 : new[] { "  [+] bases publiques a jour", "  [+] scelle cree : SCELLE_20261119_183512", "  [+] scelle horodate par un tiers : 2026-11-19 17:35:13 UTC", "  Interface : SECRETARIAT-01_20261119_102233_INTERFACE.html" };
             foreach (var x in l) { await Task.Delay(700); journal.Ajouter(x); }
             return 0;
@@ -223,7 +224,13 @@ namespace DigSpill
                 Etat("Copie vérifiée des preuves…", -1);
                 var a = new List<string> { "-Source", Executeur.Echapper(parent), "-Destination", Executeur.Echapper(dossier), "-Collecte", Executeur.Echapper(nom) };
                 if (tech != "") { a.Add("-Operateur"); a.Add(Executeur.Echapper(tech + " - " + Environment.UserDomainName + "\\" + Environment.UserName)); }
-                int c = await Ps("Copier-Preuves.ps1", a, null);
+                // "  verification 200 / 420" : avancement de la copie verifiee
+                var rxV = new System.Text.RegularExpressions.Regex(@"verification (\d+) / (\d+)");
+                int c = await Ps("Copier-Preuves.ps1", a, null, l =>
+                {
+                    var m = rxV.Match(l);
+                    if (m.Success) Etat("Copie vérifiée : " + m.Groups[1].Value + " / " + m.Groups[2].Value + " fichiers re-hachés…", 0.3 * int.Parse(m.Groups[1].Value) / Math.Max(1, int.Parse(m.Groups[2].Value)));
+                });
                 if (arret) { Fin(false); return; }
                 analysee = Path.Combine(dossier, Path.GetFileName(parent), nom);
                 eCopie.Definir(c == 0 ? Niveau.Ok : Niveau.Danger, "1. Copie vérifiée", c == 0 ? "Copie identique aux originaux : " + Path.Combine(dossier, Path.GetFileName(parent)) : (c == 2 ? "ANOMALIES : des fichiers diffèrent du manifeste. Voir hachages_*.csv avant toute conclusion." : "Copie en échec (code " + c + ")."));
@@ -232,12 +239,26 @@ namespace DigSpill
             else eCopie.Definir(Niveau.Ignore, "1. Copie vérifiée", "Non demandée : l'analyse écrit à côté de la collecte d'origine.");
 
             eAna.Etat(Niveau.EnCours);
-            Etat("Analyse exfiltration" + (Ctx.AnalyseComplete ? " (avec la $MFT : plusieurs minutes)" : "") + "…", -1);
+            Etat("Analyse exfiltration" + (Ctx.AnalyseComplete ? " (avec la $MFT et la mémoire vive : plusieurs minutes)" : "") + "…", -1);
             var aa = new List<string> { "-Collecte", Executeur.Echapper(analysee) };
-            if (!Ctx.AnalyseComplete) aa.Add("-SansMFT");
-            int ca = await Ps("Analyse-Exfil.ps1", aa, null);
+            if (!Ctx.AnalyseComplete) { aa.Add("-SansMFT"); aa.Add("-SansRam"); }
+            if (!Ctx.AvecInternet) aa.Add("-SansInternet");
+            // "[*] Etape" : chaque etape de l'analyse fait avancer la barre (19 etapes environ)
+            int etapes = 0;
+            int ca = await Ps("Analyse-Exfil.ps1", aa, null, l =>
+            {
+                int i = l.IndexOf("[*] ", StringComparison.Ordinal);
+                if (i < 0) return;
+                etapes++;
+                string nomEtape = l.Substring(i + 4);
+                int par = nomEtape.IndexOf(" (", StringComparison.Ordinal);
+                Etat("Analyse : " + (par > 0 ? nomEtape.Substring(0, par) : nomEtape) + "…", 0.3 + 0.6 * Math.Min(1.0, etapes / 19.0));
+            });
             if (arret) { Fin(false); return; }
-            eAna.Definir(ca == 0 ? Niveau.Ok : Niveau.Attention, "2. Analyse exfiltration", ca == 0 ? "Synthèse : " + nom + "_analyse\\SYNTHESE_EXFILTRATION.txt" : "Analyse incomplète (code " + ca + ") : l'interface reste utilisable.");
+            bool synthese = Ctx.Demo || File.Exists(Path.Combine(analysee + "_analyse", "SYNTHESE_EXFILTRATION.txt"));
+            Ctx.ProblemeAnalyse = synthese ? null : "L'analyse s'est arrêtée (code " + ca + ") sans écrire sa synthèse : l'interface montre la collecte brute, sans chronologie racontée, grille ni mémoire vive. Voir le journal de l'analyse.";
+            eAna.Definir(!synthese ? Niveau.Danger : ca == 0 ? Niveau.Ok : Niveau.Attention, "2. Analyse exfiltration",
+                !synthese ? "Analyse en échec (code " + ca + ") : voir le journal ci-dessous." : ca == 0 ? "Synthèse : " + nom + "_analyse\\SYNTHESE_EXFILTRATION.txt" : "Analyse terminée avec des erreurs (code " + ca + ") : voir analyse.log.");
 
             eInt.Etat(Niveau.EnCours);
             Etat("Interface, bases publiques et scellé…", -1);
@@ -290,9 +311,10 @@ namespace DigSpill
     {
         public PageRapport(Fenetre f) : base(f)
         {
-            Titre = "Rapport prêt";
+            Titre = Ctx.ProblemeAnalyse == null ? "Rapport prêt" : "Rapport partiel";
             SousTitre = "Un seul fichier HTML : il s'ouvre sur n'importe quel PC, sans installation ni Internet.";
             Parcours = ParcoursAnalyse; Etape = 2;
+            if (Ctx.ProblemeAnalyse != null) Corps.Ajouter(NouvelleCarte()).Contenu.Ajouter(new LigneInfo(Niveau.Danger, "Analyse en échec", Ctx.ProblemeAnalyse));
             var c = Corps.Ajouter(NouvelleCarte());
             c.Couleurs(Theme.Panneau, Theme.Ligne);
             c.Contenu.Ajouter(Mise.Texte("INTERFACE", Theme.MonoMoyen(8.5f), Theme.Texte3));

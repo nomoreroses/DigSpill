@@ -59,7 +59,7 @@ Une vraie fenêtre Windows à la place de la console, avec la même direction ar
 |---|---|
 | 1. **Intervention** : technicien, cabinet, personne présente, ticket, motif | 1. **Collecte à analyser** : détectée sur la clé PREUVES (même en lecture seule) |
 | 2. **Feu vert** : signes de chiffrement en cours, sans rien écrire sur le poste | 2. **Copie vérifiée** dans un dossier de travail (SHA-256, PV de copie) |
-| 3. **Clé PREUVES** : branchée seulement maintenant, fichiers pièges posés | 3. **Analyse complète** ($MFT) puis **interface HTML** et scellé horodaté |
+| 3. **Clé PREUVES** : branchée seulement maintenant, fichiers pièges posés | 3. **Analyse complète** ($MFT, mémoire vive) puis **interface HTML** et scellé horodaté |
 | 4. **Collecte** surveillée : coupure immédiate de la clé au moindre signe | 4. **Rapport** : interface, PV de collecte à imprimer et faire signer |
 | 5. **Scellé** affiché en grand (à photographier), puis **éjection** propre | |
 
@@ -72,11 +72,14 @@ Une vraie fenêtre Windows à la place de la console, avec la même direction ar
 - 🆘 Secours : `moteur\secours\*.bat` (mode console), si un poste bloque DigSpill.exe.
 
 <details>
-<summary>Autres écrans de l'appli (rendu de test sous Linux, mode démonstration)</summary>
+<summary>Autres écrans de l'appli (vrai Windows, parcours de test complet)</summary>
 
-![Feu vert](docs/captures/appli_feuvert.png)
+![Feu vert : chiffrement détecté avant de brancher la clé PREUVES](docs/captures/appli_feuvert.png)
 ![Clé PREUVES](docs/captures/appli_support.png)
-![Fin de collecte : scellé et éjection](docs/captures/appli_fin.png)
+![Collecte en cours, clé surveillée](docs/captures/appli_collecte.png)
+![Fin de collecte : scellé horodaté par un tiers, éjection](docs/captures/appli_fin.png)
+![Au bureau : analyse en cours, lecture de la mémoire vive](docs/captures/appli_analyse.png)
+![Rapport prêt](docs/captures/appli_rapport.png)
 
 </details>
 
@@ -99,9 +102,9 @@ Quatre onglets, trois niveaux de lecture : la phrase en haut (5 secondes), les a
 
 | Onglet | Ce qu'il montre |
 |---|---|
-| 🎯 Résumé | Une phrase de faits (« Une connexion à distance depuis la Roumanie, 1,9 Go envoyés sur Internet, puis 48 213 fichiers chiffrés. »), les **actions à faire maintenant** (cases à cocher, compte à rebours CNIL, procédure « Isoler le poste »), ce que la collecte ne peut pas voir |
+| 🎯 Résumé | Une phrase de faits (d'où venait la connexion, combien est parti sur Internet, combien de fichiers sont chiffrés), les **actions à faire maintenant** (cases à cocher, compte à rebours CNIL, procédure « Isoler le poste »), ce que la collecte ne peut pas voir |
 | 🕒 Chronologie | La fenêtre de l'attaquant **racontée en 4 chapitres** : il entre, il s'installe, il emporte les données, il détruit. Chaque étape s'ouvre sur ses preuves : ce que dit la ligne, fichier, n° de ligne, SHA256 du manifeste |
-| 🔎 Détails | Grille par canal, fenêtres, chiffres clés et alertes, IP et pays, exfiltration, visibilité, santé et RGPD, identifiants et fuites, IOC et chasse, analyse IA, tous les événements (frise), SYNTHESE.txt |
+| 🔎 Détails | Grille par canal, fenêtres, chiffres clés et alertes, IP et pays, exfiltration, **mémoire vive**, visibilité, santé et RGPD, identifiants et fuites, IOC et chasse, analyse IA, tous les événements (frise), SYNTHESE.txt |
 | 🔏 Preuves | Intégrité (scellé horodaté, chaîne de possession, vérification des fichiers) et rapports à imprimer (praticien, technique, PV de collecte) |
 
 - **Ctrl K** : recherche dans les IP, empreintes, comptes, étapes du récit, rubriques, et identifiants de preuve (`executions_fenetres#14`).
@@ -111,21 +114,19 @@ Quatre onglets, trois niveaux de lecture : la phrase en haut (5 secondes), les a
 
 Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable qui affiche la ligne du CSV d'origine et le SHA256 du fichier dans le manifeste.
 
-![Chronologie racontée : l'étape MEGA ouverte sur ses 8 preuves](docs/captures/chrono.png)
+![Chronologie racontée : la fenêtre de l'attaque du test (compte administrateur, Defender, rclone, journaux effacés)](docs/captures/chrono.png)
 
 <details>
-<summary>Autres captures (collecte fictive de démonstration)</summary>
+<summary>Autres captures (vrai Windows, parcours de test complet)</summary>
 
-![Recherche Ctrl K](docs/captures/recherche.png)
-![Isoler le poste : procédure](docs/captures/isoler.png)
 ![Grille par canal](docs/captures/grille.png)
+![Mémoire vive](docs/captures/memoire.png)
+![Exfiltration : compte MEGA de rclone, bases métier](docs/captures/exfil.png)
 ![IP et pays](docs/captures/ip.png)
-![Exfiltration](docs/captures/exfil.png)
 ![Visibilité](docs/captures/visibilite.png)
 ![Santé et RGPD](docs/captures/sante.png)
 ![Identifiants et fuites](docs/captures/fuites.png)
 ![IOC et chasse](docs/captures/ioc.png)
-![Analyse IA : réponse d'exemple passée au vérificateur](docs/captures/ia.png)
 ![Tous les événements](docs/captures/evenements.png)
 <img src="docs/captures/mobile.png" alt="Téléphone (390 px)" width="300">
 
@@ -204,18 +205,26 @@ Collecte\
 - **Fiche à compléter** par le technicien : découverte de l'incident, patients concernés, heure de la box et écart d'horloge, redirections de ports, journaux de la box, demande type au FAI.
 - **Velociraptor** : `_SANS_Triage` ($MFT, $J, registre, evtx…), Autoruns, SRUM.
 
-### Mémoire vive : test réel
+### Mémoire vive
 
-Vraie collecte en mode complet, lancée depuis une clé exFAT sur un Windows GitHub (Server 2025, build 26100, 8 Go de RAM), puis lecture de l'image par Volatility 3 sans réseau. Ce sont les valeurs réelles du test, mises en page. Ce ne sont pas encore des écrans de DigSpill : l'analyse de la RAM viendra plus tard. Le test se relance à la main : Actions › **Test collecte et RAM**.
+La RAM est copiée sur le poste, puis **lue au bureau** (jamais sur le poste suspect) par Volatility 3, embarqué dans le kit avec un Python autonome. La collecte note l'identité exacte du noyau (`memoire\noyau.json`) : à la première analyse, les symboles de ce Windows sont pris sur le serveur de symboles Microsoft puis gardés dans `moteur\outils\symboles` (ensuite, plus besoin d'Internet pour ce Windows).
 
-- **Copie** : 11 Go pour 8 Go de RAM (l'image couvre aussi les trous d'adresses), en 9 min avec le SHA256. Le pilote Windows `pmem` reste intact. Le service `digspill_pmem` et son pilote sont retirés à la fin.
-- **Processus et lignes de commande** : lus dans l'image, y compris ceux des programmes encore actifs.
-- **Réseau** : sur ce Windows, Volatility retrouve les ports ouverts, pas les connexions établies. Les connexions viennent de la collecte en direct (`volatile\tcp_connexions.csv`).
+- **Processus** et **lignes de commande** lus dans l'image, avec les programmes encore actifs.
+- **Indices** : nom qui imite un processus Windows (`svhost.exe` pour `svchost.exe`), outil d'envoi ou de vol d'identifiants, lancement depuis un dossier où tout le monde peut écrire, PowerShell encodé, parent anormal (`svchost.exe` hors de `services.exe`, plusieurs `lsass.exe`).
+- **Réseau** : sur Windows 11 24H2 et Server 2025 (build 26100), Volatility ne lit pas encore les connexions établies, seulement les ports ouverts. L'interface le dit et renvoie aux connexions relevées en direct pendant la collecte.
+- **Limite constatée** : sur le Windows de test, Volatility n'a pas retrouvé le noyau dans 2 copies sur 7 (copie faite pendant que Windows tourne). L'interface le dit et renvoie aux processus et connexions relevés en direct pendant la collecte.
+- Résultats dans `ram\` de l'analyse, rubrique **Mémoire vive** de l'interface, voie « Mémoire vive » de la chronologie, alerte si un programme suspect tournait encore.
 
-![Copie de la RAM pendant une vraie collecte](docs/captures/ram_copie.png)
-![Processus lus dans la RAM](docs/captures/ram_processus.png)
-![Lignes de commande lues dans la RAM](docs/captures/ram_commandes.png)
-![Réseau lu dans la RAM](docs/captures/ram_connexions.png)
+## Testé de A à Z sur un vrai Windows
+
+Le workflow **Test parcours complet** (Actions) rejoue une intervention entière sur un Windows de GitHub (Server 2025, 8 Go de RAM), sans simulation :
+
+1. Kit fabriqué comme pour une release, sur une clé OUTILS ; clé PREUVES en exFAT.
+2. **Scénario d'attaque réel et sans danger** (`.github/tests/scenario.ps1`) : outil renommé `svhost.exe` et antidaté, compte administrateur `support_it`, tâche planifiée et clé Run, exclusion Defender, rclone avec un compte MEGA fictif (copie locale seulement), archive, visites de mega.nz et wetransfer, échecs de connexion, journal effacé, PowerShell encodé, 30 fichiers `.lockbit3` et une note de rançon.
+3. **DigSpill.exe piloté comme par un technicien** : intervention, feu vert, clé PREUVES, collecte, scellé horodaté, éjection, puis au bureau copie vérifiée, analyse complète avec la RAM, interface.
+4. L'interface est ouverte dans Chrome : chaque écran est capturé, les erreurs relevées, et **chaque action du scénario est cherchée dans les données**.
+
+Résultat (dernier parcours) : les 13 actions vérifiables du scénario sont retrouvées dans les données de l'interface ; la chronologie de l'attaque raconte le compte administrateur créé, l'antivirus neutralisé, rclone lancé, les journaux effacés et les 30 fichiers chiffrés ; la RAM signale `svhost.exe` (nom imité, dossier public, adresse Internet) ; le compte MEGA est affiché, son mot de passe jamais lu. Le Windows de test a aussi sa propre histoire (préparation de l'image par GitHub : connexions depuis Azure, journaux vidés) : DigSpill la montre telle quelle, dans d'autres fenêtres. Ce test a trouvé et fait corriger de vrais bugs (collecte bloquée sur Windows Server, copie vérifiée qui manquait de mémoire, analyse qui ne démarrait pas sous PowerShell 5.1…) : voir CHANGELOG 2.8.
 
 ## Ce que fait l'analyse exfiltration
 

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
     DigSpill - Collecte-Exfil.ps1 v2.2 - Collecte de triage forensique pour suspicion d'intrusion / exfiltration / rancongiciel.
     A lancer EN ADMINISTRATEUR sur le poste suspect (par DigSpill.exe, ou en secours moteur\secours\LANCER_COLLECTE.bat).
@@ -196,6 +196,32 @@ function Save-Ram([string]$raw, [string]$dir, [string]$log) {
     }
     return $null
 }
+# Identite des symboles du noyau (PDB, GUID, age) lue dans ntoskrnl.exe et tcpip.sys : au bureau, Volatility
+# prepare les symboles exacts de ce Windows sans avoir a les chercher dans l'image.
+function Get-PdbId([string]$chemin) {
+    $o = [IO.File]::ReadAllBytes($chemin)
+    $pe = [BitConverter]::ToInt32($o, 0x3C); $nsec = [BitConverter]::ToUInt16($o, $pe + 6)
+    $opt = $pe + 24; $tOpt = [BitConverter]::ToUInt16($o, $pe + 20)
+    $dd = $opt + 112 + 6 * 8
+    $rva = [BitConverter]::ToUInt32($o, $dd); $tDbg = [BitConverter]::ToUInt32($o, $dd + 4)
+    $pos = $null
+    for ($i = 0; $i -lt $nsec; $i++) {
+        $sh = $opt + $tOpt + 40 * $i
+        $va = [BitConverter]::ToUInt32($o, $sh + 12); $vs = [Math]::Max([BitConverter]::ToUInt32($o, $sh + 8), [BitConverter]::ToUInt32($o, $sh + 16))
+        if ($rva -ge $va -and $rva -lt $va + $vs) { $pos = $rva - $va + [BitConverter]::ToUInt32($o, $sh + 20) }
+    }
+    if ($null -eq $pos) { return $null }
+    for ($k = 0; $k -lt [int]($tDbg / 28); $k++) {
+        $en = $pos + 28 * $k
+        if ([BitConverter]::ToUInt32($o, $en + 12) -ne 2) { continue }   # IMAGE_DEBUG_TYPE_CODEVIEW
+        $cv = [BitConverter]::ToUInt32($o, $en + 24)
+        if ([Text.Encoding]::ASCII.GetString($o, $cv, 4) -ne 'RSDS') { continue }
+        $gu = New-Object Guid (, [byte[]]$o[($cv + 4)..($cv + 19)])
+        $fin = [Array]::IndexOf($o, [byte]0, $cv + 24)
+        return [ordered]@{ Fichier = $chemin; Pdb = [Text.Encoding]::ASCII.GetString($o, $cv + 24, $fin - $cv - 24); Guid = $gu.ToString('N').ToUpper(); Age = [BitConverter]::ToUInt32($o, $cv + 20) }
+    }
+    return $null
+}
 function Test-RamService { & sc.exe query $RamService 2>&1 | Out-Null; return ($LASTEXITCODE -ne 1060) }   # 1060 : service inexistant
 function Remove-RamService {
     # Velociraptor retire le service a la fin de la requete ; s'il reste (arret refuse), on le retire nous-memes
@@ -222,7 +248,7 @@ using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
 public class ExtStat { public long Count; public long Bytes; public DateTime First = DateTime.MaxValue; public DateTime Last = DateTime.MinValue; public string Sample; }
-public class NoteStat { public int Count; public long Size; public DateTime Last = DateTime.MinValue; public List<string> Samples = new List<string>(); }
+public class NoteStat { public int Count; public long Size; public bool Variee; public DateTime Last = DateTime.MinValue; public List<string> Samples = new List<string>(); }
 
 public class FsWalker {
     public long Files, Dirs, Errors, RansomHits, BaseHits;
@@ -272,6 +298,7 @@ public class FsWalker {
                         if (len < 102400 && NoteExt.Contains(ext)) {
                             NoteStat n;
                             if (!Notes.TryGetValue(name, out n)) { n = new NoteStat(); Notes[name] = n; }
+                            if (n.Count > 0 && n.Size != len) n.Variee = true;   // une note de rancon est la meme partout
                             n.Count++; n.Size = len;
                             if (t > n.Last) n.Last = t;
                             if (n.Samples.Count < 3) n.Samples.Add(f.FullName);
@@ -448,6 +475,10 @@ if ($Full) {
             New-Item -ItemType Directory -Force -Path $memDir | Out-Null
             $raw = Join-Path $memDir "${Computer}_$Stamp.raw"
             $log = P 'memoire\winpmem.log'
+            $noyau = foreach ($bin in "$env:SystemRoot\System32\ntoskrnl.exe", "$env:SystemRoot\System32\drivers\tcpip.sys") { try { Get-PdbId $bin } catch { Log "    [i] symboles de $bin non lus : $($_.Exception.Message)" } }
+            $os = Get-CimInstance Win32_OperatingSystem
+            [ordered]@{ Windows = "$($os.Caption) $($os.Version)"; Build = [Environment]::OSVersion.Version.Build; Ubr = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue).UBR
+                Image = (Split-Path $raw -Leaf); Modules = @($noyau | Where-Object { $_ }) } | ConvertTo-Json -Depth 4 | Out-File (P 'memoire\noyau.json') -Encoding utf8
             Log "    Capture RAM vers $raw (plusieurs minutes)..."
             $t0 = Get-Date
             $drv = Save-Ram $raw $memDir $log
@@ -1004,7 +1035,8 @@ Step 'Artefacts utilisateurs (registre, historiques, navigateurs, outils distant
         foreach ($t in $tl) { Copy-Locked $t "$d\outils" }
         Get-ChildItem "$lp\AppData\Roaming\TeamViewer" -Filter '*.log' -ErrorAction SilentlyContinue | ForEach-Object { Copy-Locked $_.FullName "$d\outils" }
         foreach ($rd in "$lp\AppData\Roaming\RustDesk\log", "$lp\AppData\Local\Splashtop", "$lp\AppData\Roaming\Netbird") {
-            Get-ChildItem -LiteralPath $rd -Recurse -File -Include '*.log', '*.txt' -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB } |
+            # -Include est ignore avec -LiteralPath sous PowerShell 5.1 : filtre sur le nom
+            Get-ChildItem -LiteralPath $rd -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)\.(log|txt)$' -and $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB } |
                 ForEach-Object { Copy-Locked $_.FullName "$d\outils\$(Split-Path $rd -Leaf)" }
         }
 
@@ -1026,8 +1058,9 @@ Step "Outils d'acces distant : journaux propres (NetBird, Splashtop, TSplus, Dat
     $script:ToolBytes = [int64]0
     function Copy-ToolLogs([string]$src, [string]$name, [string[]]$inc = @('*.log', '*.txt', '*.log.*', '*.trace', '*.csv', '*.sqlite3', '*.db')) {
         if (-not (Test-Path -LiteralPath $src)) { return }
-        Get-ChildItem -LiteralPath $src -Recurse -File -Force -Include $inc -ErrorAction SilentlyContinue |
-            Where-Object { $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB -and $_.Name -notmatch '(?i)HowToRecover|readme' -and $_.FullName -notmatch '\\(Packages|Cache|Code Cache)\\' } | ForEach-Object {
+        # -Include est ignore avec -LiteralPath sous PowerShell 5.1 : filtre sur le nom
+        Get-ChildItem -LiteralPath $src -Recurse -File -Force -ErrorAction SilentlyContinue |
+            Where-Object { $n = $_.Name; @($inc | Where-Object { $n -like $_ }).Count -and $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB -and $_.Name -notmatch '(?i)HowToRecover|readme' -and $_.FullName -notmatch '\\(Packages|Cache|Code Cache)\\' } | ForEach-Object {
                 if (($script:ToolBytes + $_.Length) -gt 400MB) { return }
                 $script:ToolBytes += $_.Length
                 Copy-Locked $_.FullName (Join-Path (P "outils_distants\$name") (Split-Path $_.FullName.Substring($src.TrimEnd('\').Length) -Parent))
@@ -1212,7 +1245,10 @@ Step 'Cliches instantanes (VSS), options de recuperation, commandes destructrice
         '### Win32_ShadowCopy';             Get-CimInstance Win32_ShadowCopy -ErrorAction SilentlyContinue | Format-List ID, InstallDate, VolumeName, DeviceObject, Persistent, ClientAccessible
         '### bcdedit (recoveryenabled No = desactive par un rancongiciel ?)'; bcdedit /enum
         '### reagentc /info';               reagentc /info
-        '### wbadmin get versions';         wbadmin get versions
+        # chemin complet : sans la Sauvegarde Windows Server, 'wbadmin' ouvre wbadmin.msc (console MMC qui ne se ferme
+        # jamais et bloquait la fin de la collecte)
+        $wb = Join-Path $env:SystemRoot 'System32\wbadmin.exe'
+        '### wbadmin get versions';         if (Test-Path -LiteralPath $wb) { & $wb get versions } else { 'wbadmin.exe absent (Sauvegarde Windows non installee)' }
     }
     $rx = '(?i)vssadmin.*(delete|resize)|shadowcopy.*delete|bcdedit.*(recoveryenabled|bootstatuspolicy|safeboot)|wbadmin.*delete|wevtutil.*\s(cl|clear-log)\s|cipher(\.exe)?\s+/w|(Set|Add)-MpPreference|DisableRealtimeMonitoring|netsh.*(firewall|advfirewall).*(off|disable|state)|taskkill.*/f|net\s+stop|sc\s+(stop|config)|reg(\.exe)?\s+add.*(Defender|Terminal Server)|net\s+user\s+\S+\s+\S+|net\s+localgroup.*/add'
     Save-Csv 'rancon\commandes_destructrices_4688.csv' {
@@ -1302,7 +1338,7 @@ Step 'Binaires suspects : hash + archive chiffree (mot de passe : infected) + qu
 if ($Full -and -not $SkipFullListing) {
     Step 'Listing complet des disques + fichiers chiffres, notes de rancon, bases metier (plusieurs minutes)' {
         if (-not $script:CsOk) { Log '    [!] Moteur C# indisponible : listing ignore'; return }
-        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.\[[^\]]{3,80}\]\.[^.]{2,15}$|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|\.(locked|encrypted|crypted|lockbit|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.\[[^\]]{3,80}\]\.[^.]{2,15}$|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
         $baseRx   = New-Object Text.RegularExpressions.Regex('(?i)(\.(fdp|fdb|gdb|mdf|ldf|ndf|accdb|mdb|4dd|4dindx|dbf)(\.|$)|axi_database)', 'Compiled')
         $enc = New-Object Text.UTF8Encoding($true)
         $hdr = 'Chemin,Taille,Creation,Modification,Acces,Attributs'
@@ -1325,16 +1361,16 @@ if ($Full -and -not $SkipFullListing) {
         & $fmt $w.Ext | Sort-Object NbFichiers -Descending | Select-Object -First 400 | Export-Csv (P 'rancon\extensions_fichiers_recents.csv') -NoTypeInformation -Encoding UTF8
 
         # Notes de rancon : petits fichiers texte recents au nom evocateur ou repetes dans de nombreux dossiers
-        $noteRx = '(?i)(read.?me|decrypt|restore|recover|how.?to|ransom|instruction|unlock|encrypted|crypted|files?.?back|^info\.|attention|warning|help|rancon|lisez)'
+        $noteRx = '(?i)(read.?me|decrypt|restore|recover|how.?to|ransom|instruction|unlock|encrypted|crypted|files?.?back|^info\.|attention|warning|help|rancon|lisez|lire.?(moi|pour)|restaur|d[eé]chiffr|r[eé]cup[eé]r|vos.?fichiers)'
         $notes = foreach ($k in $w.Notes.Keys) {
             $n = $w.Notes[$k]; $m = $k -match $noteRx
             if (($m -and $n.Count -ge 1) -or $n.Count -ge 5) {
-                [pscustomobject]@{ Nom = $k; NbDossiers = $n.Count; NomEvocateur = $m; TailleOctets = $n.Size; Derniere = $n.Last.ToString('yyyy-MM-dd HH:mm:ss'); Exemples = ($n.Samples -join ' | '); _p = $n.Samples[0]
+                [pscustomobject]@{ Nom = $k; NbDossiers = $n.Count; NomEvocateur = $m; TailleIdentique = (-not $n.Variee); TailleOctets = $n.Size; Derniere = $n.Last.ToString('yyyy-MM-dd HH:mm:ss'); Exemples = ($n.Samples -join ' | '); _p = $n.Samples[0]
                     _score = $(if ($m -and $n.Count -ge 3) { 3 } elseif ($m) { 2 } else { 1 }) }
             }
         }
         $notes = @($notes | Sort-Object @{e='_score'; Descending=$true}, @{e='NbDossiers'; Descending=$true})
-        $notes | Select-Object Nom, NbDossiers, NomEvocateur, TailleOctets, Derniere, Exemples | Export-Csv (P 'rancon\notes_rancon_candidates.csv') -NoTypeInformation -Encoding UTF8
+        $notes | Select-Object Nom, NbDossiers, NomEvocateur, TailleIdentique, TailleOctets, Derniere, Exemples | Export-Csv (P 'rancon\notes_rancon_candidates.csv') -NoTypeInformation -Encoding UTF8
         $nd = P 'rancon\notes'
         New-Item -ItemType Directory -Force -Path $nd | Out-Null
         $i = 0
@@ -1497,9 +1533,16 @@ Step 'Synthese automatique (SYNTHESE.txt)' {
 # =================================================================== 15. MANIFESTE D'INTEGRITE
 Step 'Calcul du manifeste SHA256 des elements collectes' {
     $manifest = P 'manifeste_sha256.csv'
-    Get-ChildItem $Out -Recurse -File -Force | Where-Object { $_.FullName -ne $manifest -and $_.FullName -ne $LogFile } |
-        ForEach-Object { [pscustomobject]@{ Fichier = $_.FullName.Substring($Out.Length + 1); Taille = $_.Length; SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } } |
-        Export-Csv $manifest -NoTypeInformation -Encoding UTF8
+    $aHacher = @(Get-ChildItem -LiteralPath $Out -Recurse -File -Force | Where-Object { $_.FullName -ne $manifest -and $_.FullName -ne $LogFile })
+    Log ('    {0} fichiers, {1:N1} Go a hacher' -f $aHacher.Count, (($aHacher | Measure-Object Length -Sum).Sum / 1GB))
+    $nH = 0; $tH = Get-Date
+    $aHacher | ForEach-Object {
+        $nH++
+        if ($_.Length -ge 256MB) { Log ('    hachage {0} ({1:N1} Go)' -f $_.FullName.Substring($Out.Length + 1), ($_.Length / 1GB)) }
+        elseif (((Get-Date) - $tH).TotalSeconds -ge 60) { Log ('    hachage : {0} / {1} fichiers' -f $nH, $aHacher.Count); $tH = Get-Date }
+        [pscustomobject]@{ Fichier = $_.FullName.Substring($Out.Length + 1); Taille = $_.Length; SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+    } | Export-Csv $manifest -NoTypeInformation -Encoding UTF8
+    Log "    manifeste : $nH fichiers"
 }
 
 $dur = (Get-Date) - $StartTime

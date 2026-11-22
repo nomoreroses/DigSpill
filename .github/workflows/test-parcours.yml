@@ -1,0 +1,53 @@
+name: Test parcours complet
+
+# DigSpill.exe de bout en bout sur un vrai Windows, sans simulation : scenario d'attaque reel et sans danger,
+# collecte, scelle, ejection, copie verifiee, analyse complete, interface. A lancer a la main
+# (Actions > Test parcours complet). Les captures de chaque ecran sont dans le journal du job.
+on:
+  workflow_dispatch:
+  push:
+    branches: [parcours-reel]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-parcours
+  cancel-in-progress: true
+
+jobs:
+  # une minute : une erreur de syntaxe ne doit pas couter un parcours de 2 h.
+  # Windows PowerShell 5.1 (celui des postes) : il refuse des ecritures que PowerShell 7 accepte.
+  syntaxe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntaxe PowerShell 5.1
+        shell: powershell
+        run: |
+          $n = 0
+          foreach ($f in Get-ChildItem -Recurse -File -Include *.ps1 -Path moteur, app, .github) {
+            $t = $null; $e = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$t, [ref]$e)
+            foreach ($x in $e) { Write-Host "::error file=$($f.FullName),line=$($x.Extent.StartLineNumber)::$($x.Message)"; $n++ }
+          }
+          Write-Host "$n erreur(s) de syntaxe"
+          if ($n) { exit 1 }
+      - name: Syntaxe JavaScript
+        shell: bash
+        run: for f in moteur/interface/js/*.js .github/tests/interface.js; do node --check "$f" || exit 1; done
+
+  parcours:
+    needs: syntaxe
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Parcours complet
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .\.github\tests\parcours.ps1

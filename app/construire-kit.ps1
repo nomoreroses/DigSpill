@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     DigSpill - fabrique le kit de la cle OUTILS : DigSpill.exe + moteur\, outils tiers compris, et DigSpill.zip.
 .DESCRIPTION
@@ -14,6 +14,8 @@
         Velociraptor copie aussi la RAM avec son pilote WinPmem integre (Velocidex, Apache 2.0).
         winpmem_mini_x64_rc2.exe n'est plus fourni : il installait son pilote sous le nom 'pmem',
         celui du pilote Windows de memoire persistante, et le desactivait.
+      python\ : Python embarquable (PSF) + Volatility 3 (Volatility Foundation) + pefile (MIT), pour lire
+        l'image RAM au bureau.                                https://github.com/volatilityfoundation/volatility3
 #>
 param(
     [string]$Sortie,
@@ -139,6 +141,43 @@ if (-not $SansOutilsTiers) {
     $notes.Add("  SHA256 binaire officiel $(Sha $velo)")
     $notes.Add("  SHA256 collecteur       $(Sha $f)")
     $notes.Add('')
+
+    # Python embarque + Volatility 3 : lecture de l'image RAM AU BUREAU (jamais sur le poste collecte)
+    $pyVer = '3.12.10'
+    $roues = @(
+        @{ N = 'volatility3-2.28.2-py3-none-any.whl'; U = 'https://files.pythonhosted.org/packages/py3/v/volatility3/volatility3-2.28.2-py3-none-any.whl'; H = '0461D6DD71B9DDBAF70C96E079C06EFDF174AC65383B3DCF10DD165181FBD3C3' },
+        @{ N = 'pefile-2024.8.26-py3-none-any.whl'; U = 'https://files.pythonhosted.org/packages/py3/p/pefile/pefile-2024.8.26-py3-none-any.whl'; H = '76F8B485DCD3B1BB8166F1128D395FA3D87AF26360C2358FB75B80019B957C6F' })
+    $py = Join-Path $Outils 'python'
+    $zpy = Join-Path $Tmp "python-$pyVer-embed-amd64.zip"
+    Telecharger "https://www.python.org/ftp/python/$pyVer/python-$pyVer-embed-amd64.zip" $zpy
+    Expand-Archive -LiteralPath $zpy -DestinationPath $py -Force
+    $sp = Join-Path $py 'Lib\site-packages'
+    New-Item -ItemType Directory -Force -Path $sp | Out-Null
+    foreach ($r in $roues) {
+        $w = Join-Path $Tmp $r.N
+        Telecharger $r.U $w
+        if ((Sha $w) -ne $r.H) { throw "SHA256 inattendu pour $($r.N) : $(Sha $w)" }
+        $wz = "$w.zip"; Copy-Item -LiteralPath $w -Destination $wz
+        Expand-Archive -LiteralPath $wz -DestinationPath $sp -Force
+    }
+    $pth = Get-ChildItem -LiteralPath $py -Filter 'python*._pth' | Select-Object -First 1
+    Add-Content -LiteralPath $pth.FullName -Value 'Lib\site-packages' -Encoding ASCII
+    @('import sys', 'from volatility3.cli import main', 'sys.exit(main())') | Set-Content -LiteralPath (Join-Path $py 'vol.py') -Encoding ASCII
+    $ErrorActionPreference = 'Continue'
+    $ver = (& (Join-Path $py 'python.exe') (Join-Path $py 'vol.py') --help 2>&1 | ForEach-Object { "$_" } | Select-String -Pattern 'Volatility 3 Framework' | Select-Object -First 1)
+    $ErrorActionPreference = 'Stop'
+    if (-not $ver) { throw 'Volatility 3 ne demarre pas avec le Python embarque' }
+    Info "   $ver"
+    Copy-Item -LiteralPath (Join-Path $sp 'volatility3-2.28.2.dist-info\LICENSE.txt') -Destination (Join-Path $py 'LICENCE-Volatility.txt')
+    Copy-Item -LiteralPath (Join-Path $sp 'pefile-2024.8.26.dist-info\LICENSE') -Destination (Join-Path $py 'LICENCE-pefile.txt')
+    $notes.Add('python\ (Python embarque + Volatility 3)')
+    $notes.Add("  Python $pyVer pour Windows, version embarquable officielle (Python Software Foundation, licence PSF : python\LICENSE.txt).")
+    $notes.Add("  SHA256 python-$pyVer-embed-amd64.zip $(Sha $zpy)")
+    $notes.Add('  Volatility 3 2.28.2 (Volatility Foundation, Volatility Software License : python\LICENCE-Volatility.txt) et pefile 2024.8.26 (MIT),')
+    $notes.Add('  roues officielles de PyPI, SHA256 verifies : ' + (($roues | ForEach-Object { "$($_.N) $($_.H)" }) -join ' ; '))
+    $notes.Add('  Sert uniquement au bureau, sur une copie des preuves : lecture de l''image RAM (processus, lignes de commande, reseau).')
+    $notes.Add('  Symboles du noyau : telecharges a la premiere analyse depuis le serveur de symboles Microsoft, gardes dans outils\symboles.')
+    $notes.Add('')
 } else {
     Info '3. Outils tiers : non inclus (-SansOutilsTiers)'
     $notes.Add('Kit fabrique SANS outils tiers : ajouter 7zr.exe et Collecteur-Velociraptor.exe dans ce dossier.')
@@ -154,3 +193,6 @@ Get-ChildItem -LiteralPath $Kit -Recurse -File | Where-Object { $_.LastWriteTime
 Compress-Archive -Path (Join-Path $Kit '*') -DestinationPath $zip -CompressionLevel Optimal
 Get-ChildItem -LiteralPath $Kit -Recurse -File | ForEach-Object { '{0,12:N0}  {1}' -f $_.Length, $_.FullName.Substring($Kit.Length + 1) } | Write-Host
 Info ("Kit pret : {0} ({1:N1} Mo)" -f $zip, ((Get-Item -LiteralPath $zip).Length / 1MB))
+# tout s'est bien passe (sinon throw plus haut) : ne pas renvoyer le code de la derniere commande externe
+# ('vol.py --help' sort avec 1), que GitHub Actions prendrait pour un echec
+exit 0

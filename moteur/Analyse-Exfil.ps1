@@ -16,6 +16,9 @@
       -ReferenceJours 21         base de reference SRUM : N jours avant la premiere fenetre
       -SansMFT                   ne pas extraire / analyser la $MFT (1 a 2 Go, plusieurs minutes)
       -SansHashConteneurs        ne pas calculer le SHA256 complet des conteneurs Velociraptor
+      -Ram <fichier.raw>         image RAM (defaut : memoire\ de la collecte, ou <disque>\MEMOIRE\<collecte>)
+      -SansRam                   ne pas lire l'image RAM (Volatility 3, 5 a 20 min)
+      -SansInternet              ne rien telecharger (symboles du noyau : seulement ceux deja dans outils\symboles)
 
     Toutes les heures sont en heure locale de la machine d'analyse (voir 00_LISEZMOI.txt pour le fuseau).
     Le script ne conclut pas : il produit des tableaux chiffres et une grille de verification.
@@ -33,7 +36,10 @@ param(
     [switch]$SansHashConteneurs,
     [string[]]$Etapes = @(),
     [switch]$DerniereDuPoste,
-    [switch]$GarderExtraits
+    [switch]$GarderExtraits,
+    [string]$Ram,
+    [switch]$SansRam,
+    [switch]$SansInternet
 )
 
 $ErrorActionPreference = 'Continue'
@@ -326,7 +332,7 @@ Step 'Reconstitution des sessions (4624/4634/4647, LSM 21-25, RCM 1149, RdpCoreT
     Out-Csv ($pts | Sort-Object Date) 'connexions_rdp_points.csv'
 }
 
-Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, fenetres manuelles)" {
+Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, indices forts, fenetres manuelles)" {
     $cand = New-Object System.Collections.Generic.List[object]
     foreach ($s in $script:Sessions) {
         $why = $null
@@ -337,6 +343,37 @@ Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, fene
         $fin = if ($s.Fin) { $s.Fin } else { $s.Debut.AddHours(2) }
         $cand.Add([pscustomobject]@{ Debut = $s.Debut.AddMinutes(-$MargeMinutes); Fin = $fin.AddMinutes($MargeMinutes); Motif = $why + $(if (-not $s.Fin) { ' (fin inconnue : +2 h)' } else { '' }) })
     }
+    # Indices forts horodates : une attaque menee sur place ou par un outil d'acces distant n'ouvre pas de session
+    # RDP depuis Internet ; sans eux il n'y aurait pas de fenetre, donc rien a raconter.
+    $ind = New-Object System.Collections.Generic.List[object]
+    function Indice($date, [string]$quoi) { $d = Parse-Date $date; if ($d) { $ind.Add([pscustomobject]@{ T = $d; Quoi = $quoi }) } }
+    foreach ($r in (Read-Csv (C 'comptes\evenements_comptes.csv'))) {
+        if ($r.EventID -eq '4720') { Indice $r.Date "compte $($r.CibleOuGroupe) cree" }
+        elseif ($r.EventID -match '^(4728|4732|4756)$' -and "$($r.CibleOuGroupe)" -match '(?i)admin') { Indice $r.Date "$($r.Membre) ajoute a $($r.CibleOuGroupe)" }
+    }
+    foreach ($r in (Read-Csv (C 'evenements\resume_evenements_cles.csv'))) {
+        $m = "$($r.Message)"
+        switch ("$($r.EventID)") {
+            '1102' { Indice $r.Date 'journal Securite efface' }
+            '104'  { Indice $r.Date ('journal efface' + $(if ($m -match '(?i)the (\S+) log file') { " ($($Matches[1]))" })) }
+            '5001' { Indice $r.Date 'protection temps reel Defender desactivee' }
+            '4688' { if ($m -match '(?i)\\(rclone|megasync|megacmd|mimikatz|lazagne|procdump|winscp|filezilla|pscp|ngrok|chisel)[^\\\s]*\.exe') { Indice $r.Date "$($Matches[1]) lance" } }
+        }
+    }
+    foreach ($r in (Read-Csv (C 'rancon\commandes_destructrices_4688.csv'))) { $l = "$($r.LigneDeCommande)"; Indice $r.Date ('commande ' + $l.Substring(0, [Math]::Min(70, $l.Length))) }
+    foreach ($r in (Read-Csv (C 'rancon\fichiers_chiffres_par_extension.csv'))) {
+        if ([int]("0$($r.NbFichiers)" -replace '\D', '') -ge 20) { Indice $r.Premier "debut du chiffrement ($($r.NbFichiers) fichiers $($r.Extension))"; Indice $r.Dernier "fin du chiffrement $($r.Extension)" }
+    }
+    $grp = $null
+    foreach ($x in ($ind | Sort-Object T)) {
+        if ($grp -and ($x.T - $grp.Fin).TotalMinutes -le 60) { $grp.Fin = $x.T; $grp.Quoi.Add($x.Quoi) }
+        else {
+            if ($grp) { $cand.Add([pscustomobject]@{ Debut = $grp.Debut.AddMinutes(-$MargeMinutes); Fin = $grp.Fin.AddMinutes($MargeMinutes); Motif = "activite suspecte : $(@($grp.Quoi | Select-Object -Unique | Select-Object -First 3) -join ', ')$(if ($grp.Quoi.Count -gt 3) { " ($($grp.Quoi.Count) indices)" })" }) }
+            $grp = [pscustomobject]@{ Debut = $x.T; Fin = $x.T; Quoi = (New-Object System.Collections.Generic.List[string]) }; $grp.Quoi.Add($x.Quoi)
+        }
+    }
+    if ($grp) { $cand.Add([pscustomobject]@{ Debut = $grp.Debut.AddMinutes(-$MargeMinutes); Fin = $grp.Fin.AddMinutes($MargeMinutes); Motif = "activite suspecte : $(@($grp.Quoi | Select-Object -Unique | Select-Object -First 3) -join ', ')$(if ($grp.Quoi.Count -gt 3) { " ($($grp.Quoi.Count) indices)" })" }) }
+    if ($ind.Count) { Log "    $($ind.Count) indice(s) fort(s) horodate(s) : comptes, journaux effaces, Defender, outils, commandes, chiffrement" }
     foreach ($f in $Fenetres) {
         $parts = $f -split '[;|]'
         $d1 = Parse-Date $parts[0]; $d2 = Parse-Date $parts[-1]
@@ -367,7 +404,7 @@ Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, fene
     Out-Csv $cov 'journaux_couverture.csv'
     $nc = @($cov | Where-Object { $p = $_; @($script:Win | Where-Object { $p.($_.Id) -ne 'couvert' }).Count })
     if ($script:Win.Count -and $nc.Count) { G 'Couverture des journaux' 'A LIRE' "$($nc.Count) journal(aux) ne couvrent pas toutes les fenetres (rotation, journal recent) : absence d'evenement non probante" 'journaux_couverture.csv' }
-    if (-not $script:Win.Count) { G 'Fenetres d analyse' 'A FAIRE' 'Aucune session suspecte detectee : preciser les fenetres avec -Fenetres' 'fenetres_analyse.csv' }
+    if (-not $script:Win.Count) { G 'Fenetres d analyse' 'A FAIRE' 'Aucune session suspecte ni indice fort horodate : preciser les fenetres avec -Fenetres' 'fenetres_analyse.csv' }
 }
 function WinOf($d) {
     if (-not ($d -is [datetime])) { return '' }
@@ -1056,6 +1093,51 @@ Step "Exposition des identifiants : mimikatz execute ?, outils NirSoft, gestionn
     G "Gestionnaire d'identifiants (cibles hors serveur)" 'A FAIRE' "$(@($cm | Group-Object Utilisateur).Count) compte(s) avec entrees ; $(if ($netp.Count) { 'netpass EXECUTE : les identifiants reseau / RDP du compte qui l''a lance sont a considerer comme exposes. ' })Cibles a lister avec cmdkey dans chaque session." 'identifiants_exposition.txt'
 }
 
+# =================================================================== 10 bis. COMPTES DE STOCKAGE / TRANSFERT CONFIGURES
+# rclone, FileZilla, WinSCP : vers quel compte ou quel serveur les donnees pouvaient partir. On montre l'identifiant
+# (adresse, utilisateur, serveur) ; les mots de passe et jetons ne sont JAMAIS lus ni decodes : seulement "present".
+Step 'Comptes de stockage et de transfert configures (rclone, FileZilla, WinSCP)' {
+    $secrets = '(?i)^(pass|password|pass2|token|secret|secret_access_key|client_secret|key|key_file|service_account_credentials|sas_url|session_token|access_token|refresh_token|private_key|password2)$'
+    $identite = '(?i)^(user|username|account|email|host|url|endpoint|bucket|tenant|client_id|drive_id|region|provider)$'
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($f in @(Get-ChildItem -LiteralPath (C 'utilisateurs') -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)^(rclone\.conf|sitemanager\.xml|recentservers\.xml|winscp\.ini)$' })) {
+        $prof = ($f.FullName.Substring((C 'utilisateurs').Length + 1) -split '\\')[0]
+        if ($f.Name -ieq 'rclone.conf') {
+            $sec = $null; $h = $null
+            $lignes = @(Get-Content -LiteralPath $f.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)
+            if ($lignes.Count -and $lignes[0] -match '^RCLONE_ENCRYPT_V0') { $rows.Add([pscustomobject]@{ Profil = $prof; Outil = 'rclone'; Nom = '(configuration chiffree)'; Type = ''; Compte = ''; Secrets = 'configuration entiere chiffree (non dechiffree)'; Modifie = Fmt $f.LastWriteTime; Fichier = $f.FullName.Substring($Collecte.Length + 1) }); continue }
+            foreach ($l in ($lignes + '[]')) {
+                if ($l -match '^\s*\[(.*)\]\s*$') {
+                    if ($sec) { $rows.Add([pscustomobject]@{ Profil = $prof; Outil = 'rclone'; Nom = $sec; Type = $h['type']; Compte = (($h.Keys | Where-Object { $_ -match $identite } | ForEach-Object { "$_=$($h[$_])" }) -join ' ; ')
+                        Secrets = (($h.Keys | Where-Object { $_ -match $secrets } | ForEach-Object { "$_ present (non decode)" }) -join ' ; '); Modifie = Fmt $f.LastWriteTime; Fichier = $f.FullName.Substring($Collecte.Length + 1) }) }
+                    $sec = $Matches[1]; $h = [ordered]@{}
+                } elseif ($sec -and $l -match '^\s*([^=#;]+?)\s*=\s*(.*)$') {
+                    $k = $Matches[1].Trim().ToLower(); $val = $Matches[2].Trim()
+                    $h[$k] = $(if ($k -match $secrets) { '' } else { $val })   # valeur d'un secret jamais gardee
+                }
+            }
+        } elseif ($f.Name -match '(?i)\.xml$') {
+            try { [xml]$x = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 } catch { continue }
+            foreach ($srv in @($x.SelectNodes('//Server'))) {
+                $rows.Add([pscustomobject]@{ Profil = $prof; Outil = 'FileZilla'; Nom = "$($srv.Name)"; Type = $(switch ("$($srv.Protocol)") { '1' { 'sftp' } '0' { 'ftp' } default { "protocole $($srv.Protocol)" } })
+                    Compte = "host=$($srv.Host):$($srv.Port) ; user=$($srv.User)"; Secrets = $(if ($srv.Pass) { 'mot de passe present (non decode)' } else { '' }); Modifie = Fmt $f.LastWriteTime; Fichier = $f.FullName.Substring($Collecte.Length + 1) })
+            }
+        } else {
+            $sec = $null; $h = @{}
+            foreach ($l in (@(Get-Content -LiteralPath $f.FullName -ErrorAction SilentlyContinue) + '[]')) {
+                if ($l -match '^\[(.*)\]$') {
+                    if ($sec -and $h['HostName']) { $rows.Add([pscustomobject]@{ Profil = $prof; Outil = 'WinSCP'; Nom = [uri]::UnescapeDataString(($sec -replace '^Sessions\\', '')); Type = 'session'; Compte = "host=$($h['HostName']) ; user=$($h['UserName'])"; Secrets = $(if ($h['Password']) { 'mot de passe present (non decode)' } else { '' }); Modifie = Fmt $f.LastWriteTime; Fichier = $f.FullName.Substring($Collecte.Length + 1) }) }
+                    $sec = $Matches[1]; $h = @{}
+                } elseif ($l -match '^([^=]+)=(.*)$') { $k = $Matches[1]; $val = $Matches[2]; $h[$k] = $(if ($k -match '(?i)pass') { 'x' } else { $val }) }
+            }
+        }
+    }
+    Out-Csv $rows 'comptes_transfert.csv'
+    $txt = if ($rows.Count) { "$($rows.Count) compte(s) configure(s) : " + (($rows | Select-Object -First 4 | ForEach-Object { "$($_.Outil) $($_.Type) $($_.Compte)".Trim() }) -join ' | ') + '. Identifiants seulement : mots de passe jamais lus.' } else { 'Aucune configuration rclone, FileZilla ou WinSCP dans les profils collectes.' }
+    G 'Comptes de stockage / transfert configures (rclone, FileZilla, WinSCP)' $(if ($rows.Count) { 'INDICE' } else { 'RAS' }) $txt 'comptes_transfert.csv'
+    Log "    $txt"
+}
+
 # =================================================================== 11. IOC : HACHAGES DES OUTILS DE L'ATTAQUANT
 Step 'IOC : hachages SHA256 / SHA1 (fichiers presents, Amcache, quarantaine Defender)' {
     $ioc = New-Object System.Collections.Generic.List[object]
@@ -1110,6 +1192,231 @@ Step 'Conteneurs Velociraptor : SHA256 complet et controle de la fin d''archive 
     Out-Csv $rows 'conteneurs_velociraptor.csv'
     $bad = @($rows | Where-Object { $_.FinArchive -eq 'ABSENTE' })
     if ($rows) { G 'Conteneurs Velociraptor (hachage complet, integrite)' $(if ($bad.Count) { 'A FAIRE' } else { 'RAS' }) "$(@($rows).Count) conteneur(s) hache(s) en entier ; $($bad.Count) tronque(s) : $(($bad | ForEach-Object { $_.Conteneur }) -join ', ')" 'conteneurs_velociraptor.csv' }
+}
+
+# =================================================================== 12 bis. MEMOIRE VIVE (Volatility 3, au bureau seulement)
+function Get-Osa([string]$a, [string]$b) {
+    # distance d'edition avec transposition (svhost / svchost = 1, scvhost / svchost = 1)
+    # tableau a une dimension : PowerShell 5.1 refuse $d[$i, $j] dans les arguments d'une methode
+    $n = $a.Length; $m = $b.Length; $w = $m + 1
+    $d = New-Object int[] (($n + 1) * $w)
+    for ($i = 0; $i -le $n; $i++) { $d[$i * $w] = $i }
+    for ($j = 0; $j -le $m; $j++) { $d[$j] = $j }
+    for ($i = 1; $i -le $n; $i++) {
+        for ($j = 1; $j -le $m; $j++) {
+            $c = 1; if ($a[$i - 1] -eq $b[$j - 1]) { $c = 0 }
+            $sup = $d[($i - 1) * $w + $j] + 1
+            $gau = $d[$i * $w + $j - 1] + 1
+            $dia = $d[($i - 1) * $w + $j - 1] + $c
+            $v = $sup; if ($gau -lt $v) { $v = $gau }; if ($dia -lt $v) { $v = $dia }
+            if ($i -gt 1 -and $j -gt 1 -and $a[$i - 1] -eq $b[$j - 2] -and $a[$i - 2] -eq $b[$j - 1]) {
+                $tr = $d[($i - 2) * $w + $j - 2] + 1; if ($tr -lt $v) { $v = $tr }
+            }
+            $d[$i * $w + $j] = $v
+        }
+    }
+    return $d[$n * $w + $m]
+}
+function Invoke-Py([string]$exe, [string[]]$arguments, [string]$stdout, [int]$minutes) {
+    $ligne = ($arguments | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join ' '
+    $pr = Start-Process -FilePath $exe -ArgumentList $ligne -RedirectStandardOutput $stdout -RedirectStandardError "$stdout.err" -NoNewWindow -PassThru
+    $null = $pr.Handle
+    if (-not $pr.WaitForExit($minutes * 60000)) { try { $pr.Kill() } catch {}; return 'delai depasse' }
+    $pr.WaitForExit()
+    return $pr.ExitCode
+}
+function From-VolDate([string]$s) {
+    # '2026-11-21 15:30:12.000000 UTC' -> heure locale
+    if ($s -notmatch '^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)') { return '' }
+    $u = [datetime]::ParseExact($Matches[1], 'yyyy-MM-dd HH:mm:ss', $Inv)
+    return Fmt ([DateTime]::SpecifyKind($u, 'Utc').ToLocalTime())
+}
+Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''image RAM (Volatility 3)' {
+    $ramDir = P 'ram'
+    New-Item -ItemType Directory -Force -Path $ramDir | Out-Null
+    $lect = New-Object System.Collections.Generic.List[string]
+    $lect.Add("Lecture de la memoire vive - $Computer - $(Get-Date -Format 'yyyy-MM-dd HH:mm')")
+    $nomCol = Split-Path $Collecte -Leaf
+    $infoMem = C 'memoire\memoire_info.txt'
+    if (Test-Path -LiteralPath $infoMem) { $lect.Add(''); $lect.Add('Copie sur le poste (memoire_info.txt) :'); Get-Content -LiteralPath $infoMem -Encoding UTF8 | ForEach-Object { $lect.Add("  $_") } }
+    # image : -Ram, memoire\ de la collecte, chemin note a la collecte, ou <disque>\MEMOIRE\<collecte>
+    $cands = @()
+    if ($Ram) { $cands += $Ram }
+    $cands += @(Get-ChildItem -LiteralPath (C 'memoire') -Filter '*.raw' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    if (Test-Path -LiteralPath $infoMem) { foreach ($l in (Get-Content -LiteralPath $infoMem -Encoding UTF8)) { if ($l -match '^RAM capturee : (.+?\.raw) \(') { $cands += $Matches[1] } } }
+    foreach ($dl in [IO.DriveInfo]::GetDrives()) { if ($dl.IsReady) { $cands += @(Get-ChildItem -LiteralPath (Join-Path $dl.RootDirectory.FullName "MEMOIRE\$nomCol") -Filter '*.raw' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) } }
+    $img = $cands | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    $etat = $null
+    if ($SansRam) { $etat = 'Lecture de la RAM non demandee (-SansRam).' }
+    elseif (-not $img) { $etat = 'Pas d''image RAM pour cette collecte (collecte legere, support FAT32 ou trop petit, ou copie en echec : voir memoire_info.txt).' }
+    elseif ($Computer -ieq $env:COMPUTERNAME -and $env:DIGSPILL_RAM_MEME_POSTE -ne '1') { $etat = "Image RAM presente mais non lue : l'analyse tourne sur le poste collecte ($env:COMPUTERNAME). La lire au bureau, sur la copie des preuves." }
+    $py = Join-Path $PSScriptRoot 'outils\python\python.exe'
+    if (-not $etat -and -not (Test-Path -LiteralPath $py)) { $etat = "Python et Volatility 3 absents du kit ($py) : refaire la cle avec le kit complet." }
+    if ($etat) {
+        Log "    [i] $etat"
+        $lect.Add(''); $lect.Add($etat)
+        $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8
+        G 'Memoire vive (processus et connexions lus dans la RAM)' $(if ($img -and -not $SansRam) { 'A FAIRE' } else { 'NON VERIFIABLE' }) $etat 'ram\ram_lecture.txt'
+        return
+    }
+    if ($Computer -ieq $env:COMPUTERNAME) { Log '    [i] DIGSPILL_RAM_MEME_POSTE=1 : lecture de la RAM sur le poste collecte (recette uniquement)' }
+    $imgItem = Get-Item -LiteralPath $img
+    $lect.Add(''); $lect.Add(('Image lue : {0} ({1:N1} Go)' -f $img, ($imgItem.Length / 1GB)))
+    Log ('    Image RAM : {0} ({1:N1} Go)' -f $img, ($imgItem.Length / 1GB))
+    $vol = Join-Path (Split-Path $py -Parent) 'vol.py'
+    $env:PYTHONIOENCODING = 'utf-8'; $env:PYTHONUTF8 = '1'
+    $cache = Join-Path $Work 'volatility_cache'; New-Item -ItemType Directory -Force -Path $cache | Out-Null
+
+    # symboles du noyau : outils\symboles (garde d'une analyse a l'autre), sinon dossier de travail
+    $symb = Join-Path $PSScriptRoot 'outils\symboles'
+    try { New-Item -ItemType Directory -Force -Path $symb -ErrorAction Stop | Out-Null; [IO.File]::WriteAllText((Join-Path $symb '.ecriture'), ''); Remove-Item -LiteralPath (Join-Path $symb '.ecriture') -Force }
+    catch { $symb = Join-Path $Work 'symboles'; New-Item -ItemType Directory -Force -Path $symb | Out-Null }
+    $noyauF = C 'memoire\noyau.json'
+    $horsLigne = $false
+    if (Test-Path -LiteralPath $noyauF) {
+        $noyau = Get-Content -LiteralPath $noyauF -Raw -Encoding UTF8 | ConvertFrom-Json
+        $lect.Add("Windows du poste : $($noyau.Windows) (build $($noyau.Build).$($noyau.Ubr))")
+        $horsLigne = $true
+        foreach ($mod in @($noyau.Modules)) {
+            $dirS = Join-Path $symb "windows\$($mod.Pdb)"; New-Item -ItemType Directory -Force -Path $dirS | Out-Null
+            $isf = Join-Path $dirS ('{0}-{1}.json.xz' -f $mod.Guid, $mod.Age)
+            if (-not (Test-Path -LiteralPath $isf) -and -not $SansInternet) {
+                for ($n = 1; $n -le 3 -and -not (Test-Path -LiteralPath $isf); $n++) {
+                    Log "    Symboles $($mod.Pdb) $($mod.Guid)-$($mod.Age) : serveur de symboles Microsoft (essai $n)"
+                    $null = Invoke-Py $py @('-m', 'volatility3.framework.symbols.windows.pdbconv', '-p', $mod.Pdb, '-g', ($mod.Guid + ('{0:X}' -f [int]$mod.Age)), '-o', $isf) (Join-Path $Work 'pdbconv.txt') 10
+                    if (-not (Test-Path -LiteralPath $isf)) { Start-Sleep -Seconds 15 }
+                }
+            }
+            $ok = Test-Path -LiteralPath $isf
+            $lect.Add("Symboles $($mod.Pdb) $($mod.Guid)-$($mod.Age) : $(if ($ok) { 'prets' } elseif ($SansInternet) { 'ABSENTS (analyse sans Internet)' } else { 'ECHEC du telechargement' })")
+            if (-not $ok -and $mod.Pdb -match '^ntkrnl') { $horsLigne = $false }
+        }
+    } else { $lect.Add('noyau.json absent (collecte anterieure a DigSpill 2.8) : Volatility cherche lui-meme les symboles en ligne.') }
+    if (-not $horsLigne -and $SansInternet) {
+        $etat = 'Symboles du noyau absents et analyse sans Internet : RAM non lue. Relancer l''analyse avec Internet une fois (les symboles sont ensuite gardes dans outils\symboles).'
+        Log "    [!] $etat"; $lect.Add($etat); $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8
+        G 'Memoire vive (processus et connexions lus dans la RAM)' 'A FAIRE' $etat 'ram\ram_lecture.txt'
+        return
+    }
+
+    $res = @{}
+    $lect.Add(''); $lect.Add('Modules Volatility 3 :')
+    # Un module qui echoue ecrit son message (ex. "Unsatisfied requirement") au lieu du CSV : on le garde dans
+    # ram_lecture.txt, et on refait un essai sans --offline (Volatility cherche alors lui-meme les symboles).
+    function Lancer-Vol([string]$pl, [bool]$hl, [bool]$vider = $false) {
+        $out = Join-Path $Work "$pl.csv"
+        Remove-Item -LiteralPath $out, "$out.err" -ErrorAction SilentlyContinue
+        $argv = @($vol, '-q', '-r', 'csv', '--cache-path', $cache, '-s', $symb)
+        if ($vider) { $argv += '--clear-cache' }   # un echec est garde en cache : sinon le nouvel essai echoue en 3 s
+        if ($hl) { $argv += '--offline' }
+        $argv += @('-f', $img, $pl)
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        Log "    Volatility $pl$(if (-not $hl) { ' (symboles en ligne)' })..."
+        $code = Invoke-Py $py $argv $out 30
+        $brut = @(); foreach ($f in $out, "$out.err") { if (Test-Path -LiteralPath $f) { $brut += @(Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { "$_".Trim() }) } }
+        $lignes = @()
+        if ("$($brut | Select-Object -First 1)" -match '^TreeDepth,') { try { $lignes = @(Import-Csv -LiteralPath $out -Encoding UTF8) } catch {} }
+        $msg = if (-not $lignes.Count -and "$($brut | Select-Object -First 1)" -notmatch '^TreeDepth,') { @($brut | Where-Object { $_ -notmatch '^Volatility 3 Framework' } | Select-Object -Last 6) } else { @() }
+        $lect.Add(('  {0,-16} {1,5} lignes, {2,4} s, code {3}{4}' -f $pl, $lignes.Count, [int]$sw.Elapsed.TotalSeconds, $code, $(if (-not $hl) { ', symboles en ligne' })))
+        foreach ($x in $msg) { $lect.Add("      | $x") }
+        Log ('    {0} : {1} lignes en {2} s{3}' -f $pl, $lignes.Count, [int]$sw.Elapsed.TotalSeconds, $(if ($msg.Count) { ' : ' + ($msg -join ' / ') }))
+        return ,$lignes
+    }
+    $noyauIntrouvable = $false
+    foreach ($pl in 'windows.info', 'windows.pslist', 'windows.cmdline', 'windows.netscan', 'windows.netstat') {
+        # netstat seulement si netscan n'a rien donne de lisible (table inconnue sur les Windows tres recents)
+        if ($pl -eq 'windows.netstat' -and @($res['windows.netscan'] | Where-Object { "$($_.LocalAddr)" -match '^[0-9a-fA-F:.*]+$' }).Count) { continue }
+        $lignes = Lancer-Vol $pl $horsLigne
+        if (-not $lignes.Count -and $pl -eq 'windows.info') {
+            # nouvel essai cache vide, puis en laissant Volatility chercher lui-meme les symboles
+            $lignes = Lancer-Vol $pl $horsLigne $true
+            if (-not $lignes.Count -and $horsLigne -and -not $SansInternet) { $lignes = Lancer-Vol $pl $false $true; if ($lignes.Count) { $horsLigne = $false } }
+            if (-not $lignes.Count) { $noyauIntrouvable = $true; $res[$pl] = $lignes; break }
+        }
+        $res[$pl] = $lignes
+    }
+    $infoV = $res['windows.info']
+    if ($infoV.Count) { $infoV | Select-Object Variable, Value | Export-Csv (Join-Path $ramDir 'ram_info.csv') -NoTypeInformation -Encoding UTF8 }
+    $ps = $res['windows.pslist']
+    if (-not $ps.Count) {
+        $etat = if ($noyauIntrouvable) { 'Volatility n''a pas retrouvé le noyau de Windows dans cette image (cela arrive avec une copie faite pendant que Windows tourne). Les processus et connexions relevés en direct pendant la collecte restent dans volatile\processus.csv et volatile\tcp_connexions.csv.' }
+                 else { 'Volatility n''a pas pu lire la liste des processus (symboles ou format de l''image) : voir ram_lecture.txt.' }
+        Log "    [!] $etat"; $lect.Add(''); $lect.Add($etat); $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8
+        G 'Memoire vive (processus et connexions lus dans la RAM)' 'A FAIRE' $etat 'ram\ram_lecture.txt'
+        return
+    }
+
+    # ------- processus : lignes valides, lignes de commande, indices
+    $cmd = @{}
+    foreach ($r in $res['windows.cmdline']) { $a = ("$($r.Args)" -replace '\\\\', '\').Trim(); if ($a -and $a -notmatch '^(Required memory|Process .* (is|was) |N/A)') { $cmd["$($r.PID)"] = $a } }
+    # processus releves en direct pendant la collecte : chemin et ligne de commande quand la RAM ne les donne pas
+    $vivants = @{}
+    foreach ($r in (Read-Csv (C 'volatile\processus.csv'))) { $vivants["$($r.ProcessId)|$("$($r.Name)".ToLower())"] = $r }
+    $valides = @($ps | Where-Object { $_.CreateTime -match '^\d{4}-' -and $_.ImageFileName -match '^[\x20-\x7E]+$' })
+    $rejetes = $ps.Count - $valides.Count
+    $noms = @{}; foreach ($r in $valides) { $noms["$($r.PID)"] = "$($r.ImageFileName)" }
+    $systeme = 'svchost.exe', 'lsass.exe', 'csrss.exe', 'services.exe', 'winlogon.exe', 'wininit.exe', 'smss.exe', 'explorer.exe', 'spoolsv.exe', 'taskhostw.exe', 'dllhost.exe', 'conhost.exe', 'rundll32.exe', 'sihost.exe', 'dashost.exe', 'runtimebroker.exe', 'searchindexer.exe', 'msmpeng.exe', 'ctfmon.exe', 'dwm.exe', 'userinit.exe', 'fontdrvhost.exe', 'lsaiso.exe', 'regsvr32.exe', 'taskmgr.exe', 'audiodg.exe', 'wmiprvse.exe'
+    $rxEnvoi = 'rclone|megasync|megacmd|winscp|filezilla|pscp|restic|mimikatz|lazagne|procdump|netpass|webbrowserpass|mailpass|chromepass'
+    $rxAcces = 'anydesk|rustdesk|ngrok|cloudflared|chisel|teamviewer|screenconnect|plink|psexe'
+    $rxNav = '^(chrome|msedge|firefox|brave|opera|iexplore|msedgewebview2|onedrive|teams|ms-teams)\.exe$'
+    $procs = foreach ($r in $valides) {
+        $nom = "$($r.ImageFileName)"; $pidS = "$($r.PID)"; $ligneCmd = $cmd[$pidS]; $niv = 0
+        # Windows ne garde que 14 caracteres du nom (fontdrvhost.exe -> fontdrvhost.ex) : nom complet repris de la ligne de commande
+        $exe = if ($ligneCmd -match '^\s*"?([^"]*?\\)?([^\\"]+\.(exe|com|scr))\b') { $Matches[2] } else { '' }
+        if ($nom.Length -ge 14 -and $exe -and $exe.StartsWith($nom, [StringComparison]::OrdinalIgnoreCase)) { $nom = $exe }
+        $vu = $vivants["$pidS|$($nom.ToLower())"]
+        if (-not $vu -and $nom.Length -ge 14) { $vu = $vivants.Keys | Where-Object { $_ -like "$pidS|$($nom.ToLower())*" } | Select-Object -First 1 | ForEach-Object { $vivants[$_] } }
+        if ($vu -and $nom.Length -ge 14 -and "$($vu.Name)".StartsWith($nom, [StringComparison]::OrdinalIgnoreCase)) { $nom = "$($vu.Name)" }
+        $chemin = if ($vu -and $vu.ExecutablePath) { "$($vu.ExecutablePath)" } else { '' }
+        if ((-not $ligneCmd -or $ligneCmd -eq '-') -and $vu -and $vu.CommandLine) { $ligneCmd = "$($vu.CommandLine)" }
+        $bas = $nom.ToLower()
+        $ind = New-Object System.Collections.Generic.List[string]
+        if ($systeme -notcontains $bas -and -not ($bas.Length -ge 14 -and @($systeme | Where-Object { $_.StartsWith($bas) }).Count)) {
+            $proche = $systeme | Where-Object { $_.Length -ge 7 -and [Math]::Abs($_.Length - $bas.Length) -le 1 -and (Get-Osa $bas $_) -eq 1 } | Select-Object -First 1
+            if ($proche) { $ind.Add("nom presque identique à $proche (processus de Windows)"); $niv = [Math]::Max($niv, 3) }
+        }
+        # l'outil se reconnait a son nom ou a son chemin, pas a une adresse (curl vers rclone.org n'est pas rclone)
+        $exeCmd = if ($ligneCmd -match '^\s*"?([^"]+?\.(exe|com|scr))\b') { $Matches[1] } else { '' }
+        if ("$bas $chemin $exeCmd" -match $rxEnvoi) { $ind.Add("outil d'envoi ou de vol d'identifiants ($($Matches[0]))"); $niv = [Math]::Max($niv, 3) }
+        elseif ("$bas $chemin $exeCmd" -match $rxAcces) { $ind.Add("outil d'accès à distance ($($Matches[0]))"); $niv = [Math]::Max($niv, 2) }
+        if ("$chemin $ligneCmd" -match '(?i)\\Users\\Public\\|\\Windows\\Temp\\|\\AppData\\Local\\Temp\\|\\PerfLogs\\|\\\$Recycle') { $ind.Add('lancé depuis un dossier où tout le monde peut écrire'); $niv = [Math]::Max($niv, 2) }
+        if ($ligneCmd -match '(?i)\s-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{20,}') { $ind.Add('PowerShell avec une commande encodée'); $niv = [Math]::Max($niv, 2) }
+        if ($ligneCmd -match '(?i)https?://([^/\s"]+)' -and $bas -notmatch $rxNav) { $ind.Add("adresse Internet dans la ligne de commande ($($Matches[1]))"); $niv = [Math]::Max($niv, 1) }
+        $par = $noms["$($r.PPID)"]
+        if ($bas -eq 'svchost.exe' -and $par -and $par -ne 'services.exe') { $ind.Add("svchost.exe lancé par $par (attendu : services.exe)"); $niv = [Math]::Max($niv, 2) }
+        if ($bas -eq 'lsass.exe' -and $par -and $par -ne 'wininit.exe') { $ind.Add("lsass.exe lancé par $par (attendu : wininit.exe)"); $niv = [Math]::Max($niv, 3) }
+        [pscustomobject]@{ PID = $r.PID; PPID = $r.PPID; Parent = $par; Processus = $nom; Debut = (From-VolDate $r.CreateTime); Fin = (From-VolDate $r.ExitTime)
+            Threads = $r.Threads; Chemin = $chemin; LigneDeCommande = $ligneCmd; Niveau = $niv; Indices = ($ind -join ' ; ') }
+    }
+    $nLsass = @($procs | Where-Object { $_.Processus -ieq 'lsass.exe' -and -not $_.Fin }).Count
+    if ($nLsass -gt 1) { foreach ($x in ($procs | Where-Object { $_.Processus -ieq 'lsass.exe' })) { $x.Niveau = 3; $x.Indices = (@($x.Indices, "$nLsass processus lsass.exe actifs (un seul attendu)") | Where-Object { $_ }) -join ' ; ' } }
+    Out-Csv ($procs | Sort-Object Debut) 'ram\ram_processus.csv'
+
+    # ------- reseau
+    $src = if (@($res['windows.netscan'] | Where-Object { "$($_.LocalAddr)" -match '^[0-9a-fA-F:.*]+$' }).Count -or -not $res.ContainsKey('windows.netstat')) { 'windows.netscan' } else { 'windows.netstat' }
+    $reseau = foreach ($r in $res[$src]) {
+        $loc = "$($r.LocalAddr)"; $dist = "$($r.ForeignAddr)"
+        if ($loc -notmatch '^[0-9a-fA-F:.*]+$') { continue }
+        $p = $procs | Where-Object { "$($_.PID)" -eq "$($r.PID)" } | Select-Object -First 1
+        [pscustomobject]@{ Protocole = $r.Proto; Local = "${loc}:$($r.LocalPort)"; IP = $dist; Port = $r.ForeignPort; Etat = $r.State; PID = $r.PID
+            Processus = $(if ($p) { $p.Processus } else { "$($r.Owner)" }); Cree = (From-VolDate "$($r.Created)"); Niveau = $(if ($p) { $p.Niveau } else { 0 }); Source = $src }
+    }
+    $reseau = @($reseau)
+    Out-Csv $reseau 'ram\ram_reseau.csv'
+    $etablies = @($reseau | Where-Object { $_.Etat -match 'ESTABLISHED' -and $_.IP -notmatch '^(0\.0\.0\.0|::|\*|127\.|::1)' })
+
+    $susp = @($procs | Where-Object { $_.Niveau -ge 2 })
+    $lect.Add('')
+    $lect.Add(('Processus lus : {0} ({1} lignes illisibles ecartees : image copiee pendant que Windows tournait)' -f @($procs).Count, $rejetes))
+    $lect.Add(('Lignes de commande lues : {0}' -f $cmd.Count))
+    $lect.Add(('Connexions lues ({0}) : {1}, dont {2} etablie(s) vers l''exterieur' -f $src, $reseau.Count, $etablies.Count))
+    if (-not $etablies.Count) { $lect.Add('  Aucune connexion établie lue dans la RAM : sur Windows 11 24H2 / Server 2025 (build 26100), Volatility 3 ne lit pas encore la table des connexions. Voir les connexions relevées en direct pendant la collecte (tcp_connexions.csv).') }
+    $lect.Add(('Processus avec indice fort : {0}' -f $susp.Count))
+    foreach ($x in $susp) { $lect.Add("  PID $($x.PID) $($x.Processus) : $($x.Indices)") }
+    $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8
+    $txt = "$(@($procs).Count) processus et $($reseau.Count) connexions lus dans la RAM ; $($susp.Count) processus avec indice fort$(if ($susp.Count) { ' : ' + (($susp | Select-Object -First 4 | ForEach-Object { "$($_.Processus) (PID $($_.PID))" }) -join ', ') })"
+    G 'Memoire vive (processus et connexions lus dans la RAM)' $(if ($susp.Count) { 'INDICE' } else { 'RAS' }) $txt 'ram\ram_processus.csv'
+    Log "    $txt"
 }
 
 # =================================================================== 13. SYNTHESE
@@ -1176,8 +1483,11 @@ Step 'Synthese (SYNTHESE_EXFILTRATION.txt) et lisez-moi' {
         '  verifications_sources.csv         pare-feu, BITS, USB, SMB, DNS : etat de chaque source'
         '  note_rancon_analyse.txt           contacts, revendication de vol, veille'
         '  identifiants_exposition.txt       mimikatz, outils NirSoft, gestionnaire d''identifiants'
+        '  comptes_transfert.csv             comptes rclone / FileZilla / WinSCP configures (identifiants, jamais les mots de passe)'
         '  ioc_hachages.csv                  IOC'
         '  conteneurs_velociraptor.csv       hachage complet et integrite des conteneurs'
+        '  ram\ram_processus.csv              processus lus dans l''image RAM (Volatility 3), avec indices'
+        '  ram\ram_reseau.csv                 connexions lues dans l''image RAM ; ram\ram_lecture.txt : comment'
         ''
         '_extraits\ : copies de travail (fichiers extraits du conteneur, bases copiees) ; peut etre supprime.'
     ) | Out-File (P '00_LISEZMOI.txt') -Encoding utf8
