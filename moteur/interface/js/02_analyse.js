@@ -107,7 +107,7 @@ const EVT_JOURNAUX = { 1102: 'Journal Securite efface', 104: 'Journal efface (Sy
 
 /** services crees par Windows a chaque ouverture de session (Nom_1a2b3c) et service de copie de la RAM de DigSpill :
  *  ni l'un ni l'autre n'est une action de l'attaquant */
-T.serviceOrdinaire = (svc, bin) => /^digspill_pmem$|^pmem$/i.test(svc || '') || (/_[0-9a-f]{4,8}$/i.test(svc || '') && /\\svchost\.exe/i.test(bin || ''));
+T.serviceOrdinaire = (svc, bin) => /^digspill_pmem$|^pmem$/i.test(svc || '') || (/^[a-z0-9]+_[0-9a-f]{4,8}$/i.test(svc || '') && /^"?%?(systemroot%|[a-z]:\\windows)\\system32\\/i.test(bin || ''));
 
 /* ======================================================================== memoire vive (Analyse-Exfil : Volatility 3 sur l'image RAM) */
 T.memoireVive = () => T.memo('memoireVive', () => {

@@ -223,7 +223,7 @@ Le workflow **Test parcours complet** (Actions) rejoue une intervention entière
 3. **DigSpill.exe piloté comme par un technicien** : intervention, feu vert, clé PREUVES, collecte, scellé horodaté, éjection, puis au bureau copie vérifiée, analyse complète avec la RAM, interface.
 4. L'interface est ouverte dans Chrome : chaque écran est capturé, les erreurs relevées, et **chaque action du scénario est cherchée dans les données**.
 
-Résultat : les 13 actions vérifiables du scénario sont retrouvées dans les données de l'interface ; la RAM signale `svhost.exe` (nom imité, dossier public, adresse Internet) ; le compte MEGA est affiché, son mot de passe jamais lu. Ce test a trouvé et fait corriger de vrais bugs (collecte bloquée sur Windows Server, copie vérifiée qui manquait de mémoire, analyse qui ne démarrait pas sous PowerShell 5.1…) : voir CHANGELOG 2.8.
+Résultat (dernier parcours) : les 13 actions vérifiables du scénario sont retrouvées dans les données de l'interface ; la chronologie de l'attaque raconte le compte administrateur créé, l'antivirus neutralisé, rclone lancé, les journaux effacés et les 30 fichiers chiffrés ; la RAM signale `svhost.exe` (nom imité, dossier public, adresse Internet) ; le compte MEGA est affiché, son mot de passe jamais lu. Le Windows de test a aussi sa propre histoire (préparation de l'image par GitHub : connexions depuis Azure, journaux vidés) : DigSpill la montre telle quelle, dans d'autres fenêtres. Ce test a trouvé et fait corriger de vrais bugs (collecte bloquée sur Windows Server, copie vérifiée qui manquait de mémoire, analyse qui ne démarrait pas sous PowerShell 5.1…) : voir CHANGELOG 2.8.
 
 ## Ce que fait l'analyse exfiltration
 
