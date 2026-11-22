@@ -744,8 +744,10 @@ T.actions = () => T.memo('actions', () => {
   }
   // 6. services installes pendant une fenetre (7045)
   for (const r of T.table('resume_evenements_cles').filter(x => x.EventID === '7045' && dansFen(x))) {
-    const m = /:\s*([^,]+),\s*(.+)$/.exec(r.Message || '') || [];
-    const svc = (m[1] || '').trim(), bin = (m[2] || '').trim();
+    const msg = r.Message || '';
+    const m = /Service Name:\s*(.+?)\s+Service File Name:\s*(.+?)(?:\s+Service Type:|$)/i.exec(msg) || /Nom du service\s*:\s*(.+?)\s+Nom du fichier du service\s*:\s*(.+?)(?:\s+Type de service|$)/i.exec(msg) || /:\s*([^,]+),\s*(.+)$/.exec(msg) || [];
+    const svc = (m[1] || '').trim(), bin = (m[2] || '').trim().replace(/^"([^"]*)".*$/, '$1');
+    if (!svc && !bin) continue;
     const dossier = bin.includes('\\') ? bin.slice(0, bin.lastIndexOf('\\')) : '';
     out.push({ id: 'svc-' + svc, titre: `Supprimer le service ${svc}${bin ? ' et ' + bin.split('\\').pop() : ''}`, sous: `Installé à ${T.hm(T.pdate(r.Date))}${dossier ? ' depuis ' + dossier : ''}.` });
   }
@@ -845,7 +847,7 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
   for (const [a, l] of Object.entries(fb)) {
     const n = l.reduce((s, e) => s + (T.num(e.n) || 1), 0), z = l[l.length - 1].t;
     const cpt = [...new Set(l.flatMap(e => String(e.detail).replace(/^comptes essayes : /, '').split(/,\s*/)).map(c => c.replace(/^\\/, '').trim()).filter(Boolean))];
-    etape(0, l[0].t, `Tente des mots de passe depuis ${a}`, `${T.nb(n)} échec${n > 1 ? 's' : ''}${l.length > 1 ? ` entre ${T.hm(l[0].t)} et ${T.hm(z)}` : ''}. Comptes essayés : ${cpt.slice(0, 8).join(', ')}${cpt.length > 8 ? '…' : ''}.`, l.map(e => e.id));
+    etape(0, l[0].t, /^(-|\?|)$/.test(a) ? 'Tente des mots de passe (adresse non enregistrée)' : `Tente des mots de passe depuis ${a}`, `${T.nb(n)} échec${n > 1 ? 's' : ''}${l.length > 1 ? ` entre ${T.hm(l[0].t)} et ${T.hm(z)}` : ''}. Comptes essayés : ${cpt.slice(0, 8).join(', ')}${cpt.length > 8 ? '…' : ''}.`, l.map(e => e.id));
   }
 
   /* ---------- 02 il s'installe ---------- */
@@ -891,11 +893,13 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
   }
   for (const e of comptes) if (!pris.has(e.id)) etape(1, e.t, 'Modifie un compte', e.titre, [e.id]);
   for (const e of ev('Journaux', /^(7045|4697)/)) {
-    const m = /:\s*([^,]+),\s*(.+)$/.exec(e.detail) || [], svc = (m[1] || '').trim(), bin = (m[2] || '').trim(), b = base(bin);
+    // message en anglais (« Service Name: X Service File Name: Y ») ou en français (« Nom du service : X Nom du fichier du service : Y »)
+    const en = /Service Name:\s*(.+?)\s+Service File Name:\s*(.+?)(?:\s+Service Type:|$)/i.exec(e.detail) || /Nom du service\s*:\s*(.+?)\s+Nom du fichier du service\s*:\s*(.+?)(?:\s+Type de service|$)/i.exec(e.detail);
+    const m = en || /:\s*([^,]+),\s*(.+)$/.exec(e.detail) || [], svc = (m[1] || '').trim(), bin = (m[2] || '').trim().replace(/^"([^"]*)".*$/, '$1'), b = base(bin);
     const faux = /^(svhost|scvhost|svch0st|svchosts|scvhost|lsas|lsasss|csrsss|expl0rer|svchost32)$/i.test(b);
     const runs = execs.filter(x => x.prog === b);
     const lance = runs.find(x => /Prefetch/i.test(x.r.Source || '')) || runs[0];
-    etape(1, e.t, faux ? `Installe un faux service « ${b} »` : `Installe le service « ${svc || b} »`,
+    etape(1, e.t, faux ? `Installe un faux service « ${b} »` : (svc || b) ? `Installe le service « ${svc || b} »` : 'Installe un service',
       `${b}.exe${faux ? ', au nom proche de svchost.exe,' : ''} est installé comme service ${svc}${lance ? `, puis lancé à ${T.hm(lance.t)}` : ''}.`, [e.id, ...[...runs].sort((x, y) => (/Prefetch/i.test(x.r.Source || '') ? -1 : 1)).map(x => x.id)]);
   }
   for (const e of ev('Journaux', /^4698/)) etape(1, e.t, 'Crée une tâche planifiée', e.detail, [e.id]);
