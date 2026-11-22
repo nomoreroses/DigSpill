@@ -13,6 +13,7 @@ if not exist bin mkdir bin
 "%CSC%" /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 ^
   /win32manifest:app.manifest /win32icon:digspill.ico /out:bin\DigSpill.exe ^
   /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll ^
+  /r:System.Web.Extensions.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll ^
   /resource:polices\Geist-Regular.ttf,DigSpill.Geist-Regular.ttf /resource:polices\Geist-SemiBold.ttf,DigSpill.Geist-SemiBold.ttf ^
   /resource:polices\GeistMono-Regular.ttf,DigSpill.GeistMono-Regular.ttf /resource:polices\GeistMono-Medium.ttf,DigSpill.GeistMono-Medium.ttf ^
   src\*.cs

@@ -45,6 +45,11 @@ Copy-Item -LiteralPath (Join-Path $Depot 'app\bin\DigSpill.exe') -Destination $K
 # ---------------------------------------------------------------- 2. moteur (sans les outils de developpement)
 Info '2. Moteur : scripts, interface, secours'
 Copy-Item -LiteralPath (Join-Path $Depot 'moteur') -Destination $Moteur -Recurse
+# version du kit (1re ligne) : celle du premier titre de CHANGELOG.md ; lue par DigSpill.exe (mise a jour, barre laterale)
+$version = (Select-String -LiteralPath (Join-Path $Depot 'CHANGELOG.md') -Pattern '^## (\d+(\.\d+){1,3})' | Select-Object -First 1).Matches[0].Groups[1].Value
+$commit = if ($env:GITHUB_SHA) { $env:GITHUB_SHA.Substring(0, 7) } else { try { (& git -C $Depot rev-parse --short HEAD) } catch { '' } }
+[IO.File]::WriteAllLines((Join-Path $Moteur 'VERSION.txt'), [string[]]@($version, "commit $commit", "fabrique le $(Get-Date -Format 'yyyy-MM-dd HH:mm')"))
+Info "   version $version ($commit)"
 foreach ($x in 'interface\dev', 'outils\bases', 'outils\.gitkeep', 'digspill.ini') {
     $p = Join-Path $Moteur $x
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }

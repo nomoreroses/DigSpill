@@ -1,6 +1,8 @@
 # Journal des versions
 
 ## 2.9.1 (bêta)
+- **Mise à jour depuis l'appli** : accueil › *Mises à jour*. Dernière release GitHub, empreinte SHA256 vérifiée, remplacement après fermeture avec retour à l'ancienne version si une étape échoue ; `digspill.ini` et les bases téléchargées sont gardés. Jamais de connexion au démarrage (poste examiné). La version du kit (`moteur\VERSION.txt`) s'affiche dans la barre latérale.
+- **Releases automatiques** : chaque nouvelle version de ce journal fusionnée dans main est publiée avec `DigSpill.zip`.
 - **Analyse** : un conteneur Velociraptor de plus de 4 Go est lu (NTFS, exFAT). Avant, il était ignoré sans le dire : SRUM, Prefetch, Amcache et `$MFT` jamais analysés sur une collecte complète d'un gros poste (13,6 Go sur le poste d'essai). Seul un conteneur coupé par FAT32 (exactement 4 Gio − 1 octet) est écarté.
 - **Analyse en échec** : l'appli affiche la fin du journal du script, et dit si l'antivirus a bloqué le script d'analyse.
 - **Kit** : plus de double fabrication en échec quand une release est créée sur le site ; le test complet tourne sur chaque demande de fusion.
