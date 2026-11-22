@@ -37,6 +37,8 @@ T.geo = () => T.memo('geo', () => {
 T.listeBlanche = () => (T.reglages().liste_blanche || []).filter(l => l && l.valeur);
 T.estBlanche = ip => { for (const l of T.listeBlanche()) if (T.dansCidr(ip, l.valeur.trim())) return l.note || l.valeur; return ''; };
 
+/** processus proteges dont Windows ne donne pas le chemin, meme a un administrateur (antivirus, noyau) */
+const RX_PROCESSUS_PROTEGES = /^(msmpeng|nissrv|mssense|sensendr|sensecncproxy|mpdefendercoreservice|securityhealthservice|memory compression|registry|secure system)(\.exe)?$/i;
 T.ipCollecte = () => T.memo('ipCollecte', () => {
   const ips = {};
   const ajout = (ip, o) => {
@@ -60,9 +62,12 @@ T.ipCollecte = () => T.memo('ipCollecte', () => {
   }
   for (const r of T.table('sessions_reconstituees')) for (const ip of String(r.IP || '').split(/\s*\/\s*/)) ajout(ip, { premier: r.Debut, comptes: r.Compte, sources: 'session ' + (r.Type || ''), preuve: r._id });
   for (const r of T.table('tcp_connexions')) if (T.typeIp(r.RemoteAddress) === 'PUBLIQUE' && /established/i.test(r.State || 'Established')) {
-    // suspect = processus lance depuis un dossier a risque, non signe, ou sans chemin connu
-    const sig = signature[(r.Path || '').toLowerCase()];
-    const suspect = RISQUE.test(r.Path || '') || (sig !== undefined && sig !== 'Valid') || !r.Path;
+    // suspect = programme non signe, ou sans chemin connu (hors processus proteges de Windows et de Defender),
+    // ou lance depuis un dossier a risque sans signature valide ou s'il s'agit d'un outil d'acces / de transfert.
+    // Pas suspect : Defender (MsMpEng, chemin illisible) vers le cloud Microsoft, Battle.net signe dans ProgramData.
+    const sig = signature[(r.Path || '').toLowerCase()], signe = sig === 'Valid';
+    const protege = !r.Path && RX_PROCESSUS_PROTEGES.test(r.Process || '');
+    const suspect = (sig !== undefined && !signe) || (!r.Path && !protege) || (RISQUE.test(r.Path || '') && (!signe || RX_OUTILS.test(r.Path)));
     ajout(r.RemoteAddress, { sources: `connexion active a la collecte (${r.Process || r.OwningProcess || '?'})`, preuve: r._id, active: true, activeSuspecte: suspect, processus: r.Path || r.Process });
   }
   return ips;
@@ -97,6 +102,53 @@ T.analyseIp = () => T.memo('analyseIp', () => {
   }
   return { ips: lignes, pays: Object.values(pays).sort((a, b) => b.succes - a.succes || b.echecs - a.echecs) };
 });
+
+/* ======================================================================== rancongiciel */
+// Nom typique d'un fichier chiffre : extension d'origine PUIS ajout du rancongiciel (identifiant entre crochets avec un chiffre,
+// adresse e-mail, extension connue) ou document bureautique suivi d'une extension inconnue.
+// Ecartes : « icone@2x.png », « Film.[Groupe Release].torrent », « compte@exemple.fr_identity_provider » (meme regle que la collecte 2.9).
+const RX_RANCON_NOM = /\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(?:locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,}/i;
+T.RX_RANCON_NOM = RX_RANCON_NOM;
+/** Chiffrement retenu : extension dont au moins 20 fichiers au nom typique ont ete modifies en 24 h.
+ *  Un rancongiciel chiffre en minutes ou en heures ; une installation de jeu ou des icones etalees sur des mois, non. */
+T.chiffrement = () => T.memo('chiffrement', () => {
+  const parExt = new Map();
+  for (const r of T.table('fichiers_chiffres_suspects')) {
+    const nom = (r.Chemin || '').split('\\').pop();
+    if (!RX_RANCON_NOM.test(nom)) continue;
+    const ext = ((/\.[^.]+$/.exec(nom) || [''])[0]).toLowerCase();
+    const d = T.pdate(r.Modification) || T.pdate(r.Creation);
+    const g = parExt.get(ext) || { ext, n: 0, octets: 0, dates: [], exemple: r.Chemin, ids: [] };
+    g.n++; g.octets += T.num(r.Taille); if (d) g.dates.push(+d); if (g.ids.length < 3) g.ids.push(r._id);
+    parExt.set(ext, g);
+  }
+  const groupes = [...parExt.values()].map(g => {
+    g.dates.sort((a, b) => a - b);
+    let pic = 0, debut = null, fin = null;
+    for (let i = 0, j = 0; j < g.dates.length; j++) {
+      while (g.dates[j] - g.dates[i] > 24 * T.HEURE) i++;
+      if (j - i + 1 > pic) { pic = j - i + 1; debut = g.dates[i]; fin = g.dates[j]; }
+    }
+    return { ext: g.ext, n: g.n, pic, mo: g.octets / 1048576, debut: debut ? new Date(debut) : null, fin: fin ? new Date(fin) : null, exemple: g.exemple, ids: g.ids };
+  });
+  // detail absent ou tronque (tres gros chiffrement) : le resume par extension, si les fichiers tiennent en 24 h
+  const detail = T.table('fichiers_chiffres_suspects').length, tronque = !!(T.infoFichier('fichiers_chiffres_suspects') || {}).tronque;
+  for (const r of T.table('fichiers_chiffres_par_extension')) {
+    const ext = (r.Extension || '').toLowerCase(), n = T.num(r.NbFichiers), g = groupes.find(x => x.ext === ext);
+    if (g) { if (tronque && n > g.n) g.n = n; continue; }
+    if (detail && !tronque) continue;
+    if (!RX_RANCON_NOM.test((r.Exemple || '').split('\\').pop())) continue;
+    groupes.push({ ext, n, pic: T.num(r.DureeMinutes) <= 1440 ? n : 0, mo: T.num(r.TailleMo), debut: T.pdate(r.Premier), fin: T.pdate(r.Dernier), exemple: r.Exemple || '', ids: [r._id] });
+  }
+  const retenus = groupes.filter(g => g.pic >= 20).sort((a, b) => b.n - a.n);
+  return { groupes: retenus, ecartes: groupes.filter(g => g.pic < 20), total: retenus.reduce((s, g) => s + g.n, 0) };
+});
+/** Note de rancon : nom evocateur dans 3 dossiers ou plus avec la meme taille, ou meme fichier dans 20 dossiers ou plus.
+ *  Les README, help.html et LICENSE de tailles differentes (logiciels, extensions de navigateur) n'en sont pas. */
+T.notesRancon = () => T.memo('notesRancon', () => T.table('notes_rancon_candidates').filter(r => {
+  const n = T.num(r.NbDossiers), evoc = r.NomEvocateur === 'True', meme = r.TailleIdentique === undefined ? null : r.TailleIdentique === 'True';
+  return (evoc && n >= 3 && meme !== false) || (meme === true && n >= 20);
+}));
 
 /* ======================================================================== chronologie */
 T.VOIES = ['Sessions', 'Connexions', 'Force brute', 'Comptes', 'Executions', 'Mémoire vive', 'Fichiers', 'Navigation', 'Antivirus', 'Rancongiciel', 'Journaux', 'USB'];
@@ -184,17 +236,12 @@ T.chronologie = () => T.memo('chrono', () => {
   }
   for (const r of T.table('telechargements')) add(r.Date, 'Navigation', `Telechargement : ${(r.Fichier || '').split('\\').pop()}`, r.Fenetre ? 2 : 0, r.Url, r._id);
   for (const r of T.table('defender_detections')) add(r.InitialDetectionTime, 'Antivirus', `Defender : detection ${r.ThreatID || ''}`, 3, `${r.ProcessName || ''} ${r.Resources || ''} · action ${r.ActionSuccess || ''}`, r._id);
-  for (const r of T.table('fichiers_chiffres_par_extension')) {
-    const n = T.num(r.NbFichiers); if (n < 20) continue;
-    add(r.Premier, 'Rancongiciel', `Chiffrement : ${T.nb(n)} fichiers ${r.Extension}`, 3, `${T.nb(T.num(r.TailleMo))} Mo en ${r.DureeMinutes} min · ex. ${r.Exemple || ''}`, r._id, { fin: r.Dernier });
-  }
+  for (const g of T.chiffrement().groupes)
+    add(g.debut, 'Rancongiciel', `Chiffrement : ${T.nb(g.n)} fichiers ${g.ext}`, 3, `${T.nb(g.mo, 1)} Mo · ${T.nb(g.pic)} en 24 h au plus · ex. ${g.exemple}`, g.ids[0], { fin: g.fin });
   for (const r of T.table('commandes_destructrices_4688')) add(r.Date, 'Rancongiciel', 'Commande destructrice', 3, r.CommandLine || r.Commande || Object.values(r).join(' '), r._id);
   // note de rancon : nom evocateur dans 3 dossiers ou plus, ou meme fichier (meme taille) dans 20 dossiers ou plus.
   // Les README et LICENSE de tailles differentes d'un poste de developpeur ne sont pas des notes.
-  for (const r of T.table('notes_rancon_candidates')) {
-    const n = T.num(r.NbDossiers), evoc = r.NomEvocateur === 'True', meme = r.TailleIdentique === undefined ? null : r.TailleIdentique === 'True';
-    if ((evoc && n >= 3 && meme !== false) || (meme === true && n >= 20)) add(r.Derniere, 'Rancongiciel', `Note de rancon : ${r.Nom} (${r.NbDossiers} dossiers)`, 3, r.Exemples, r._id);
-  }
+  for (const r of T.notesRancon()) add(r.Derniere, 'Rancongiciel', `Note de rancon : ${r.Nom} (${r.NbDossiers} dossiers)`, 3, r.Exemples, r._id);
   for (const r of T.table('resume_evenements_cles')) if (EVT_JOURNAUX[r.EventID]) add(r.Date, 'Journaux', `${r.EventID} ${EVT_JOURNAUX[r.EventID]}`, ['1102', '104', '4616', '4719', '5001'].includes(r.EventID) ? 3 : 1, (r.Message || '').slice(0, 300), r._id);
   for (const r of T.table('usb_chronologie')) add(r.Date, 'USB', `USB : ${(r.Peripherique || '').slice(0, 60)}`, r.Fenetre ? 2 : 0, `${r.Source || ''} · serie ${r.Serie || '-'}`, r._id);
   ev.sort((a, b) => a.t - b.t);
@@ -299,6 +346,10 @@ const ANTI = [[/wevtutil(\.exe)?\s+(cl|clear-log)/i, 'Effacement de journal (wev
   [/wbadmin(\.exe)?\s+delete/i, 'Suppression des sauvegardes Windows'], [/bcdedit.*recoveryenabled\s+no/i, 'Réparation au démarrage désactivée'],
   [/cipher(\.exe)?\s+\/w/i, "Effacement de l'espace libre (cipher /w)"], [/sdelete/i, 'Effacement sécurisé (SDelete)'],
   [/set-mppreference.*-disable|add-mppreference.*-exclusion/i, 'Defender modifié en ligne de commande'], [/auditpol(\.exe)?\s+\/(clear|remove|set)/i, "Politique d'audit modifiée"]];
+/** 5007 : Defender ecrit ses changements internes (demarrage, mises a jour, notifications) ; seuls ceux-ci l'affaiblissent */
+const RX_DEFENDER_AFFAIBLI = /\\Exclusions\\|\\Disable\w*\s*=\s*0x1\b|TamperProtection\s*=\s*0x[04]\b|SpyNetReporting\s*=\s*0x0\b|SubmitSamplesConsent\s*=\s*0x2\b|EnableControlledFolderAccess\s*=\s*0x0\b|PUAProtection\s*=\s*0x0\b/i;
+/** cle de Defender modifiee (ou dont la modification a ete bloquee), pour le libelle : « DisableBmNetworkSensor = 0x1 » */
+const cleDefender = m => { const x = /.*\\([^\\=]+?)\s*=\s*(0x[0-9a-f]+)?/i.exec(String(m || '').replace(/\s+/g, ' ')); return x ? (x[1].trim() + (x[2] ? ' = ' + x[2] : '')) : ''; };
 const EVT_ANTI = { 1102: 'Journal Sécurité effacé', 104: 'Journal effacé', 4616: 'Heure système modifiée', 4719: "Politique d'audit modifiée", 5001: 'Protection temps réel Defender désactivée', 5007: 'Configuration Defender modifiée', 5013: 'Falsification de Defender bloquée' };
 
 T.visibilite = () => T.memo('visi', () => {
@@ -346,7 +397,7 @@ T.visibilite = () => T.memo('visi', () => {
     return { id: w.id, debut: w.debut, fin: w.fin, motif: w.motif, sources: lignes, taux: lignes.length ? Math.round(100 * lignes.filter(l => l.statut === 'couverte').length / lignes.length) : 0 };
   });
   const anti = [];
-  for (const nom of ['resume_evenements_cles', 'evenements_fenetres']) for (const r of T.table(nom)) if (EVT_ANTI[r.EventID]) anti.push({ date: r.Date || '', trace: `${r.EventID} ${EVT_ANTI[r.EventID]}`, detail: (r.Message || '').slice(0, 300), id: r._id });
+  for (const nom of ['resume_evenements_cles', 'evenements_fenetres']) for (const r of T.table(nom)) if (EVT_ANTI[r.EventID] && (!['5007', '5013'].includes(r.EventID) || RX_DEFENDER_AFFAIBLI.test(r.Message || ''))) anti.push({ date: r.Date || '', trace: `${r.EventID} ${EVT_ANTI[r.EventID]}${['5007', '5013'].includes(r.EventID) && cleDefender(r.Message) ? ' : ' + cleDefender(r.Message) : ''}`, detail: (r.Message || '').slice(0, 300), id: r._id });
   for (const [nom, cols] of [['commandes_destructrices_4688', null], ['executions_chronologie', ['Detail', 'Chemin']]]) for (const r of T.table(nom)) {
     const txt = cols ? cols.map(k => r[k] || '').join(' ') : Object.entries(r).filter(([k]) => k !== '_id').map(([, v]) => v).join(' ');
     for (const [rx, lib] of ANTI) if (rx.test(txt)) { anti.push({ date: r.Date || '', trace: lib, detail: txt.slice(0, 300), id: r._id }); break; }
@@ -438,8 +489,8 @@ T.iocs = () => T.memo('iocs', () => {
     const d = T.pdate(r.Date), nom = (r.CibleOuGroupe || '').split('\\').pop();
     if (nom && (!fen.length || fen.some(w => d && d >= w.debut && d <= w.fin))) comptes.push({ nom, date: r.Date, id: r._id });
   }
-  const ext = T.table('fichiers_chiffres_par_extension').filter(r => T.num(r.NbFichiers) >= 50).map(r => r.Extension).filter(Boolean).slice(0, 5);
-  const notes = T.table('notes_rancon_candidates').filter(r => T.num(r.NbDossiers) >= 10).map(r => r.Nom).filter(Boolean).slice(0, 5);
+  const ext = T.chiffrement().groupes.map(g => g.ext).filter(Boolean).slice(0, 5);
+  const notes = T.notesRancon().map(r => r.Nom).filter(Boolean).slice(0, 5);
   const pub = T.analyseIp().ips.filter(e => e.type === 'PUBLIQUE' && !e.blanche);
   const ip = pub.filter(e => e.succes || e.activeSuspecte).map(e => ({ ip: e.ip, pays: e.pays, score: e.score }));
   const ipBrute = pub.filter(e => !e.succes && !e.activeSuspecte && e.echecs >= 20 && e.score >= 3).map(e => ({ ip: e.ip, pays: e.pays, score: e.score }));
@@ -613,7 +664,7 @@ T.pwned = async motDePasse => {
 T.vue = () => T.memo('vue', () => {
   const ip = T.analyseIp(), ex = T.exfil(), vis = T.visibilite(), deja = T.dejaVu();
   const pub = ip.ips.filter(e => e.type === 'PUBLIQUE'), succes = pub.filter(e => e.succes && !e.blanche);
-  const chiffres = T.table('fichiers_chiffres_par_extension').filter(r => T.num(r.NbFichiers) >= 20).reduce((s, r) => s + T.num(r.NbFichiers), 0);
+  const chiffres = T.chiffrement().total;
   const sessionsDist = T.table('sessions_reconstituees').filter(r => ['PUBLIQUE', 'VPN/CGNAT'].includes(r.TypeIP) && !T.estBlanche(T.nettoyerIp((r.IP || '').split('/')[0])));
   // outils sensibles lances pendant des fenetres qui ne sont pas toutes en liste blanche (ex. NetBird du technicien exclu)
   const legit = new Set(ex.fenetres.filter(f => f.legitime).map(f => f.id));
@@ -626,9 +677,10 @@ T.vue = () => T.memo('vue', () => {
   const grille = T.table('grille_verification').map(r => ({ canal: r.Canal, statut: r.Statut, constat: r.Constat, fichier: r.Fichier, id: r._id })).sort((a, b) => (ordre[a.statut] ?? 5) - (ordre[b.statut] ?? 5));
   const alertes = [];
   if (actives.length) alertes.push({ niv: 3, icone: '', texte: `Connexion encore active vers ${actives.map(a => `${a.ip} (${(a.processus || '?').split('\\').pop()})`).join(', ')} au moment de la collecte : l'attaquant est peut-être toujours là. Isoler le poste du réseau.`, preuves: actives.flatMap(a => a.preuves.filter(x => x.startsWith('tcp_')).slice(0, 2)) });
-  if (chiffres) alertes.push({ niv: 3, icone: '', texte: `${T.nb(chiffres)} fichiers chiffrés par un rançongiciel.`, preuves: T.table('fichiers_chiffres_par_extension').slice(0, 1).map(r => r._id) });
+  if (chiffres) alertes.push({ niv: 3, icone: '', texte: `${T.nb(chiffres)} fichiers chiffrés par un rançongiciel (${T.chiffrement().groupes.slice(0, 3).map(g => g.ext).join(', ')}).`, preuves: T.chiffrement().groupes.slice(0, 2).map(g => g.ids[0]) });
   for (const f of ex.fenetres) if (f.niveau === 'PLAUSIBLE') alertes.push({ niv: 3, icone: '', texte: `Fenêtre ${f.id} : ${T.nb(f.envoye)} Mo envoyés sur Internet, compatible avec une copie de la base patients.`, preuves: f.preuves.slice(0, 3), onglet: 'exfil' });
-  for (const a of vis.anti.slice(0, 3)) alertes.push({ niv: 2, icone: '', texte: `Anti-forensique : ${a.trace}${a.date ? ' (' + T.fcourt(a.date) + ')' : ''}`, preuves: a.id.includes('#') ? [a.id] : [], onglet: 'visibilite' });
+  const antiVus = new Map(); for (const a of vis.anti) { const x = antiVus.get(a.trace); if (x) x.n++; else antiVus.set(a.trace, Object.assign({ n: 1 }, a)); }
+  for (const a of [...antiVus.values()].slice(0, 3)) alertes.push({ niv: 2, icone: '', texte: `Anti-forensique : ${a.trace}${a.n > 1 ? ` (× ${a.n}, dès le ${T.fcourt(a.date)})` : a.date ? ' (' + T.fcourt(a.date) + ')' : ''}`, preuves: a.id.includes('#') ? [a.id] : [], onglet: 'visibilite' });
   const transf = T.table('comptes_transfert').filter(r => r.Outil);
   if (transf.length) alertes.push({ niv: 3, icone: '', texte: `Compte de stockage ou de transfert configuré sur le poste : ${transf.slice(0, 3).map(r => `${r.Outil} ${r.Type || ''} ${(r.Compte || '').replace(/ ; /g, ', ')}`.replace(/\s+/g, ' ').trim()).join(' ; ')}. Mots de passe non lus.`, preuves: transf.slice(0, 3).map(r => r._id), onglet: 'exfil' });
   const ram = T.memoireVive(), ramActifs = ram.procs.filter(p => p.niveau >= 3 && !p.fin);

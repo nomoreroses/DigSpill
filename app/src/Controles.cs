@@ -439,7 +439,7 @@ namespace DigSpill
     class Barre : Control, IHauteur
     {
         double valeur;
-        bool indeterminee;
+        bool indeterminee, vivante;
         int phase;
         readonly Timer minuterie = new Timer { Interval = 40 };
         public Color Couleur = Theme.Texte;
@@ -457,7 +457,19 @@ namespace DigSpill
             {
                 if (value == indeterminee) return;
                 indeterminee = value;
-                if (value) minuterie.Start(); else minuterie.Stop();
+                if (value || vivante) minuterie.Start(); else minuterie.Stop();
+                Invalidate();
+            }
+        }
+        /// <summary>Travail en cours : un reflet parcourt la partie remplie, meme quand le pourcentage ne bouge pas (gros fichier).</summary>
+        public bool Vivante
+        {
+            get { return vivante; }
+            set
+            {
+                if (value == vivante) return;
+                vivante = value;
+                if (value || indeterminee) minuterie.Start(); else minuterie.Stop();
                 Invalidate();
             }
         }
@@ -471,7 +483,17 @@ namespace DigSpill
             RectangleF plein;
             if (indeterminee) { float l = Width * 0.25f; float x = (Width + l) * phase / 1000f - l; plein = new RectangleF(Math.Max(0, x), 0, Math.Min(l, Width - Math.Max(0, x)), Height - 1); }
             else plein = new RectangleF(0, 0, (float)((Width - 1) * valeur), Height - 1);
-            if (plein.Width > 2) using (var p = Theme.Arrondi(plein, Height / 2f)) using (var b = new SolidBrush(Couleur)) g.FillPath(b, p);
+            if (plein.Width > 2) using (var p = Theme.Arrondi(plein, Height / 2f)) using (var b = new SolidBrush(Couleur))
+            {
+                g.FillPath(b, p);
+                if (vivante && !indeterminee && plein.Width > 12)
+                {
+                    float l = Math.Min(70f, plein.Width * 0.5f), x = (plein.Width + l) * phase / 1000f - l;
+                    g.SetClip(p);
+                    using (var r2 = new SolidBrush(Color.FromArgb(90, Carte.FondDe(Parent)))) g.FillRectangle(r2, x, 0, l, Height);
+                    g.ResetClip();
+                }
+            }
         }
         protected override void Dispose(bool d) { if (d) minuterie.Dispose(); base.Dispose(d); }
     }
@@ -482,8 +504,27 @@ namespace DigSpill
         string[] etapes = new string[0];
         int courante = -1;
         readonly Font f = Theme.Police(10.5f), fg = Theme.Police(10.5f, FontStyle.Bold), fn = Theme.Mono(8.5f);
+        HashSet<int> cliquables = new HashSet<int>();
+        int survol = -1;
+        public event Action<int> EtapeCliquee;
         public ListeEtapes() { SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true); }
         public void Definir(string[] e, int c) { etapes = e ?? new string[0]; courante = c; Invalidate(); }
+        /// <summary>Etapes precedentes ou l'on peut revenir (soulignees au survol, curseur main).</summary>
+        public HashSet<int> Cliquables { set { cliquables = value ?? new HashSet<int>(); survol = -1; Cursor = Cursors.Default; Invalidate(); } }
+        int Ligne(Point p) { int i = p.Y / 44; return p.Y % 44 < 26 && i >= 0 && i < etapes.Length ? i : -1; }
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            int i = Ligne(e.Location); if (!cliquables.Contains(i)) i = -1;
+            if (i != survol) { survol = i; Cursor = i >= 0 ? Cursors.Hand : Cursors.Default; Invalidate(); }
+            base.OnMouseMove(e);
+        }
+        protected override void OnMouseLeave(EventArgs e) { if (survol >= 0) { survol = -1; Cursor = Cursors.Default; Invalidate(); } base.OnMouseLeave(e); }
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            int i = Ligne(e.Location);
+            if (cliquables.Contains(i) && EtapeCliquee != null) EtapeCliquee(i);
+            base.OnMouseClick(e);
+        }
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
@@ -498,7 +539,9 @@ namespace DigSpill
                 var puce = new RectangleF(32, y + 8.5f, 9, 9);
                 using (var b = new SolidBrush(cour ? Theme.Rouge : fait ? Theme.Texte2 : Theme.Fond)) g.FillEllipse(b, puce);
                 if (!cour && !fait) using (var p = new Pen(Theme.Texte3, 1.5f)) g.DrawEllipse(p, puce);
-                TextRenderer.DrawText(g, etapes[i], cour ? fg : f, new Rectangle(54, y, Width - 56, 26), cour ? Theme.Texte : (fait ? Theme.Texte2 : Theme.Texte3), TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+                bool lien = cliquables.Contains(i);
+                using (var fl = lien && i == survol ? new Font(f, FontStyle.Underline) : null)
+                    TextRenderer.DrawText(g, etapes[i], cour ? fg : (fl ?? f), new Rectangle(54, y, Width - 56, 26), cour ? Theme.Texte : lien && i == survol ? Theme.Texte : (fait ? Theme.Texte2 : Theme.Texte3), TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
             }
         }
     }

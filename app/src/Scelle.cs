@@ -55,13 +55,29 @@ namespace DigSpill
             if (Directory.Exists(velo))
                 fichiers.AddRange(Directory.GetFiles(velo, "*.zip").Where(f => File.GetLastWriteTime(f) >= debut.AddMinutes(-1)));
             var lignes = new List<string>();
+            int k = 0;
             foreach (var f in fichiers)
             {
+                k++;
                 var fi = new FileInfo(f);
                 string nom = fi.Name;
-                string h = Sha256(f, (lu, tot) => { if (tot > 50L << 20) etat(string.Format("Empreinte de {0} : {1:0} %", nom, 100.0 * lu / tot)); });
+                bool gros = fi.Length > 50L << 20;
+                string rang = fichiers.Count > 1 ? string.Format(" (fichier {0}/{1})", k, fichiers.Count) : "";
+                // ouverture : un antivirus peut analyser une grosse archive avant de la laisser lire
+                if (gros) etat(string.Format("Empreinte de {0}{1} : ouverture…", nom, rang));
+                int dernier = -1;
+                string h = Sha256(f, (lu, tot) =>
+                {
+                    if (!gros) return;
+                    int pm = (int)(1000 * lu / Math.Max(1, tot));          // pour mille : 1 000 mises a jour au plus, l'interface suit
+                    if (pm == dernier) return;
+                    dernier = pm;
+                    etat(string.Format("Empreinte de {0}{1} : {2:0.0} / {3:0.0} Go ({4:0.0} %)", nom, rang, lu / 1073741824.0, tot / 1073741824.0, pm / 10.0));
+                });
+                if (gros) etat(string.Format("Empreinte de {0}{1} : terminée", nom, rang));
                 lignes.Add(string.Format("{0}  {1}  {2}", h, fi.Length, f.Substring(dossierCollecteRacine.TrimEnd('\\').Length + 1)));
             }
+            etat("écriture du fichier de scellé…");
             lignes = lignes.OrderBy(l => l.Split(new[] { "  " }, 3, StringSplitOptions.None)[2], StringComparer.OrdinalIgnoreCase).ToList();
             r.NombreElements = lignes.Count;
             if (lignes.Count == 0) { r.Erreur = "aucun fichier à sceller (manifeste absent ?)"; return r; }

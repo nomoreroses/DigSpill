@@ -59,7 +59,7 @@ Une vraie fenêtre Windows à la place de la console, avec la même direction ar
 |---|---|
 | 1. **Intervention** : technicien, cabinet, personne présente, ticket, motif | 1. **Collecte à analyser** : détectée sur la clé PREUVES (même en lecture seule) |
 | 2. **Feu vert** : signes de chiffrement en cours, sans rien écrire sur le poste | 2. **Copie vérifiée** dans un dossier de travail (SHA-256, PV de copie) |
-| 3. **Clé PREUVES** : branchée seulement maintenant, fichiers pièges posés | 3. **Analyse complète** ($MFT, mémoire vive) puis **interface HTML** et scellé horodaté |
+| 3. **Support PREUVES** : clé ou disque externe branché seulement maintenant, fichiers pièges posés ; à défaut, un disque du poste | 3. **Analyse complète** ($MFT, mémoire vive) puis **interface HTML** et scellé horodaté |
 | 4. **Collecte** surveillée : coupure immédiate de la clé au moindre signe | 4. **Rapport** : interface, PV de collecte à imprimer et faire signer |
 | 5. **Scellé** affiché en grand (à photographier), puis **éjection** propre | |
 

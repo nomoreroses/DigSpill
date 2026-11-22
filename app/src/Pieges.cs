@@ -53,7 +53,7 @@ namespace DigSpill
         {
             veille = new FileSystemWatcher(racine) { IncludeSubdirectories = true, InternalBufferSize = 64 * 1024, NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName };
             veille.Renamed += (s, e) => Renomme(e.OldFullPath, e.FullPath);
-            veille.Deleted += (s, e) => { if (EstPiege(e.FullPath)) Declencher("Fichier piège supprimé : " + Path.GetFileName(e.FullPath)); };
+            veille.Deleted += (s, e) => { if (EstPiege(e.FullPath)) Declencher("Fichier-appât supprimé : " + Path.GetFileName(e.FullPath)); };
             veille.Created += (s, e) => { if (Rancon.IsMatch(e.Name) && !e.FullPath.StartsWith(Path.Combine(racine, "Collecte") + "\\", StringComparison.OrdinalIgnoreCase)) Declencher("Note de rançon créée sur la clé : " + e.Name); };
             veille.Error += (s, e) => Verifier();
             veille.EnableRaisingEvents = true;
@@ -64,7 +64,7 @@ namespace DigSpill
 
         void Renomme(string ancien, string nouveau)
         {
-            if (EstPiege(ancien)) { Declencher("Fichier piège renommé : " + Path.GetFileName(ancien) + " → " + Path.GetFileName(nouveau)); return; }
+            if (EstPiege(ancien)) { Declencher("Fichier-appât renommé : " + Path.GetFileName(ancien) + " → " + Path.GetFileName(nouveau)); return; }
             // motif typique : rapport.csv -> rapport.csv.lockbit (une extension ajoutee a un fichier existant)
             if (nouveau.Length > ancien.Length + 1 && nouveau.StartsWith(ancien + ".", StringComparison.OrdinalIgnoreCase))
             {
@@ -85,12 +85,12 @@ namespace DigSpill
                 try
                 {
                     var fi = new FileInfo(p.Chemin);
-                    if (!fi.Exists) { Declencher("Fichier piège disparu : " + Path.GetFileName(p.Chemin)); return; }
-                    if (fi.Length != p.Taille || fi.LastWriteTimeUtc != p.Ecriture) { Declencher("Fichier piège modifié : " + Path.GetFileName(p.Chemin)); return; }
-                    if (Hacher(p.Chemin) != p.Empreinte) { Declencher("Contenu d'un fichier piège modifié : " + Path.GetFileName(p.Chemin)); return; }
+                    if (!fi.Exists) { Declencher("Fichier-appât disparu : " + Path.GetFileName(p.Chemin)); return; }
+                    if (fi.Length != p.Taille || fi.LastWriteTimeUtc != p.Ecriture) { Declencher("Fichier-appât modifié : " + Path.GetFileName(p.Chemin)); return; }
+                    if (Hacher(p.Chemin) != p.Empreinte) { Declencher("Contenu d'un fichier-appât modifié : " + Path.GetFileName(p.Chemin)); return; }
                 }
                 catch (IOException) { /* fichier ouvert par un autre programme : on regarde au prochain passage */ }
-                catch (UnauthorizedAccessException) { Declencher("Accès refusé à un fichier piège : " + Path.GetFileName(p.Chemin)); return; }
+                catch (UnauthorizedAccessException) { Declencher("Accès refusé à un fichier-appât : " + Path.GetFileName(p.Chemin)); return; }
             }
             DernierControle = DateTime.Now;
         }

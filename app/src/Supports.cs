@@ -12,21 +12,37 @@ using Microsoft.Win32.SafeHandles;
 
 namespace DigSpill
 {
+    /// <summary>Cle : support amovible. DisqueExterne : disque USB, FireWire ou carte SD (disque dur ou SSD externe).
+    /// DisquePoste : disque interne du poste examine (celui de Windows ou un autre) : ni pieges, ni coupure, ni ejection.</summary>
+    enum GenreSupport { Cle, DisqueExterne, DisquePoste }
+
     class Support
     {
         public string Lettre;          // "E:"
         public string Etiquette = "";
         public string Systeme = "";    // NTFS, exFAT, FAT32
+        public string Bus = "";        // USB, SATA, NVMe... (vide si inconnu)
+        public string Modele = "";     // fabricant et modele lus sur le disque
         public long Libre, Total;
         public bool Amovible, Usb, LectureSeule, EstOutils, EstSysteme;
+        public GenreSupport Genre = GenreSupport.Cle;
+        /// <summary>Support separe du poste : fichiers pieges, coupure d'urgence et ejection possibles.</summary>
+        public bool Externe { get { return Genre != GenreSupport.DisquePoste; } }
         public string Racine { get { return Lettre + "\\"; } }
         public string Nom { get { return string.IsNullOrEmpty(Etiquette) ? Lettre : Lettre + "  " + Etiquette; } }
+        /// <summary>"Clé PREUVES", "Disque PREUVES", "Disque du poste".</summary>
+        public string NomCourt { get { return Genre == GenreSupport.Cle ? "Clé PREUVES" : Genre == GenreSupport.DisqueExterne ? "Disque PREUVES" : "Disque du poste"; } }
+        /// <summary>"la clé PREUVES", "le disque PREUVES", "le disque du poste".</summary>
+        public string Appellation { get { return Genre == GenreSupport.Cle ? "la clé PREUVES" : Genre == GenreSupport.DisqueExterne ? "le disque PREUVES" : "le disque du poste (" + Lettre + ")"; } }
         public string Description
         {
             get
             {
                 var t = new List<string>();
-                t.Add(Usb ? "USB" : (Amovible ? "Amovible" : "Disque"));
+                if (Genre == GenreSupport.Cle) t.Add(Usb ? "Clé USB" : "Amovible");
+                else if (Genre == GenreSupport.DisqueExterne) t.Add("Disque externe" + (Bus != "" ? " " + Bus : ""));
+                else t.Add((EstSysteme ? "Disque de Windows" : "Disque interne") + (Bus != "" ? " " + Bus : ""));
+                if (!string.IsNullOrEmpty(Modele)) t.Add(Modele);
                 if (!string.IsNullOrEmpty(Systeme)) t.Add(Systeme);
                 if (Total > 0) t.Add(string.Format("{0} libres sur {1}", Taille(Libre), Taille(Total)));
                 return string.Join(" · ", t.ToArray());
@@ -47,6 +63,7 @@ namespace DigSpill
         const uint FSCTL_LOCK_VOLUME = 0x00090018, FSCTL_DISMOUNT_VOLUME = 0x00090020;
         const uint IOCTL_STORAGE_EJECT_MEDIA = 0x002D4808, IOCTL_STORAGE_MEDIA_REMOVAL = 0x002D4804, IOCTL_STORAGE_GET_DEVICE_NUMBER = 0x002D1080;
         const uint IOCTL_DISK_SET_DISK_ATTRIBUTES = 0x0007C0F4;
+        const uint IOCTL_STORAGE_QUERY_PROPERTY = 0x002D1400;
         const uint FILE_READ_ONLY_VOLUME = 0x00080000;
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -94,15 +111,18 @@ namespace DigSpill
             return l;
         }
 
-        /// <summary>Lecteurs acceptes comme destination meme s'ils ne sont pas USB (test de bout en bout : disques virtuels).</summary>
+        /// <summary>Lecteurs acceptes comme destination externe meme s'ils ne sont pas USB (test de bout en bout : disques virtuels).</summary>
         public static readonly HashSet<string> Ajoutees = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>Tous les lecteurs ou l'on peut ecrire des preuves : cles et disques externes d'abord, puis les disques du poste
+        /// (celui de Windows compris). A filtrer avec Externe selon l'usage.</summary>
         public static List<Support> Lister(string racineOutils)
         {
             var res = new List<Support>();
             var usb = LettresUsb();
             string systeme = Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.Windows)).TrimEnd('\\');
             string outils = string.IsNullOrEmpty(racineOutils) ? "" : Path.GetPathRoot(racineOutils).TrimEnd('\\');
+            int disqueWindows = NumeroDisque(systeme);
             foreach (var d in DriveInfo.GetDrives())
             {
                 try
@@ -116,18 +136,24 @@ namespace DigSpill
                     s.Libre = d.AvailableFreeSpace;
                     s.Total = d.TotalSize;
                     s.Amovible = d.DriveType == DriveType.Removable;
-                    s.Usb = usb.Contains(s.Lettre) || s.Amovible;
                     s.EstSysteme = string.Equals(s.Lettre, systeme, StringComparison.OrdinalIgnoreCase);
                     s.EstOutils = string.Equals(s.Lettre, outils, StringComparison.OrdinalIgnoreCase);
                     s.LectureSeule = LectureSeule(d.Name);
-                    if (s.EstSysteme) continue;
-                    if (Ajoutees.Contains(s.Lettre)) s.Usb = true;
-                    if (!s.Usb && !s.EstOutils) continue; // seuls les supports externes servent de destination
+                    string modele;
+                    int bus = BusDisque(s.Lettre, out modele);
+                    s.Bus = NomBus(bus);
+                    s.Modele = modele;
+                    s.Usb = usb.Contains(s.Lettre) || bus == 7;
+                    bool externe = s.Amovible || s.Usb || bus == 4 || bus == 12 || bus == 13;
+                    // une partition du disque de Windows n'est jamais un support separe
+                    if (s.EstSysteme || (disqueWindows >= 0 && NumeroDisque(s.Lettre) == disqueWindows)) externe = false;
+                    if (Ajoutees.Contains(s.Lettre)) { externe = true; s.Usb = true; s.Amovible = true; }
+                    s.Genre = !externe ? GenreSupport.DisquePoste : s.Amovible ? GenreSupport.Cle : GenreSupport.DisqueExterne;
                     res.Add(s);
                 }
                 catch { }
             }
-            return res.OrderBy(x => x.EstOutils).ThenBy(x => x.Lettre).ToList();
+            return res.OrderBy(x => !x.Externe).ThenBy(x => x.EstOutils).ThenBy(x => !x.EstSysteme).ThenBy(x => x.Lettre).ToList();
         }
 
         public static bool EssaiEcriture(string dossier, out string erreur)
@@ -157,13 +183,72 @@ namespace DigSpill
             return DeviceIoControl(h, code, entree, entree == null ? 0 : entree.Length, sortie, sortie == null ? 0 : sortie.Length, out r, IntPtr.Zero);
         }
 
+        /// <summary>Ouverture sans droit de lecture ni d'ecriture : suffit pour interroger le disque, sans etre administrateur.</summary>
+        static SafeFileHandle OuvrirPourInterroger(string chemin)
+        {
+            var h = CreateFile(chemin, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+            if (h.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+            return h;
+        }
+
         static int NumeroDisque(string lettre)
         {
-            using (var h = Ouvrir(@"\\.\" + lettre))
+            try
             {
-                var sortie = new byte[12];
-                if (!Ioctl(h, IOCTL_STORAGE_GET_DEVICE_NUMBER, null, sortie)) return -1;
-                return BitConverter.ToInt32(sortie, 4);
+                using (var h = OuvrirPourInterroger(@"\\.\" + lettre))
+                {
+                    var sortie = new byte[12];
+                    if (!Ioctl(h, IOCTL_STORAGE_GET_DEVICE_NUMBER, null, sortie)) return -1;
+                    return BitConverter.ToInt32(sortie, 4);
+                }
+            }
+            catch { return -1; }
+        }
+
+        /// <summary>Bus du disque (STORAGE_DEVICE_DESCRIPTOR) : 7 USB, 4 FireWire, 12 SD, 13 MMC, 11 SATA, 17 NVMe... -1 si illisible.
+        /// Les disques USB 3 en UASP se declarent SCSI dans Win32_DiskDrive mais bien USB ici.</summary>
+        static int BusDisque(string lettre, out string modele)
+        {
+            modele = "";
+            try
+            {
+                using (var h = OuvrirPourInterroger(@"\\.\" + lettre))
+                {
+                    var q = new byte[12];          // PropertyId 0 = StorageDeviceProperty, QueryType 0 = standard
+                    var d = new byte[1024];
+                    if (!Ioctl(h, IOCTL_STORAGE_QUERY_PROPERTY, q, d)) return -1;
+                    modele = (Chaine(d, BitConverter.ToInt32(d, 12)) + " " + Chaine(d, BitConverter.ToInt32(d, 16))).Trim();
+                    return BitConverter.ToInt32(d, 28);
+                }
+            }
+            catch { return -1; }
+        }
+
+        static string Chaine(byte[] d, int debut)
+        {
+            if (debut <= 0 || debut >= d.Length) return "";
+            int fin = debut;
+            while (fin < d.Length && d[fin] != 0) fin++;
+            return Encoding.ASCII.GetString(d, debut, fin - debut).Trim();
+        }
+
+        static string NomBus(int bus)
+        {
+            switch (bus)
+            {
+                case 1: return "SCSI";
+                case 3: return "ATA";
+                case 4: return "FireWire";
+                case 7: return "USB";
+                case 8: return "RAID";
+                case 10: return "SAS";
+                case 11: return "SATA";
+                case 12: return "SD";
+                case 13: return "MMC";
+                case 14: case 15: return "virtuel";
+                case 16: return "espaces de stockage";
+                case 17: return "NVMe";
+                default: return "";
             }
         }
 

@@ -30,7 +30,10 @@ namespace DigSpill
             var t = Corps.Ajouter(NouvelleCarte());
             t.Contenu.Ajouter(Intertitre("Dossier de travail"));
             t.Contenu.Ajouter(Paragraphe("Sur un disque de ce PC (chiffré de préférence). La copie, l'analyse et l'interface y sont écrites."));
-            travail = t.Contenu.Ajouter(Champ.Texte("Dossier", Ctx.DossierTravail ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "DigSpill"), true));
+            // pas dans Documents : l'acces controle aux dossiers de Defender y bloque PowerShell, 7-Zip et Python
+            travail = t.Contenu.Ajouter(Champ.Texte("Dossier", Ctx.DossierTravail ?? DossierParDefaut(), true));
+            if (!Ctx.Demo && AccesControleActif())
+                t.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Accès contrôlé aux dossiers actif (Defender)", "Évitez Documents, Bureau, Images, Vidéos et Musique : Defender y bloque les outils de l'analyse (PowerShell, 7-Zip, Python)."));
             var rt = t.Contenu.Ajouter(new Rangee());
             var parc = new BoutonPlat("Choisir…", BoutonPlat.Genre.Secondaire, Ic.Dossier) { Margin = new Padding(0) };
             parc.Click += delegate
@@ -81,6 +84,49 @@ namespace DigSpill
             Remplir();
         }
         public override void Quittee() { if (abonnement != null) F.SupportsChanges -= abonnement; }
+
+        static string DossierParDefaut() { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "DigSpill"); }
+
+        /// <summary>« Accès contrôlé aux dossiers » de Defender actif (reglage local ou strategie de groupe). Lecture au mieux.</summary>
+        static bool AccesControleActif()
+        {
+            foreach (var cle in new[] { @"SOFTWARE\Microsoft\Windows Defender\Windows Defender Exploit Guard\Controlled Folder Access",
+                                        @"SOFTWARE\Policies\Microsoft\Windows Defender\Windows Defender Exploit Guard\Controlled Folder Access" })
+            {
+                try
+                {
+                    using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(cle))
+                    {
+                        var v = k == null ? null : k.GetValue("EnableControlledFolderAccess");
+                        if (v is int && (int)v == 1) return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
+        /// <summary>Dossier protege par l'acces controle : dossiers personnels de Windows et dossiers ajoutes par l'administrateur.</summary>
+        static bool DossierProtege(string chemin)
+        {
+            var proteges = new List<string>();
+            foreach (var sf in new[] { Environment.SpecialFolder.MyDocuments, Environment.SpecialFolder.DesktopDirectory, Environment.SpecialFolder.MyPictures,
+                                       Environment.SpecialFolder.MyVideos, Environment.SpecialFolder.MyMusic, Environment.SpecialFolder.Favorites,
+                                       Environment.SpecialFolder.CommonDocuments, Environment.SpecialFolder.CommonDesktopDirectory, Environment.SpecialFolder.CommonPictures,
+                                       Environment.SpecialFolder.CommonVideos, Environment.SpecialFolder.CommonMusic })
+            {
+                try { var d = Environment.GetFolderPath(sf); if (d != "") proteges.Add(d); } catch { }
+            }
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows Defender\Windows Defender Exploit Guard\Controlled Folder Access\ProtectedFolders"))
+                    if (k != null) proteges.AddRange(k.GetValueNames().Select(Environment.ExpandEnvironmentVariables));
+            }
+            catch { }
+            string c;
+            try { c = Path.GetFullPath(chemin).TrimEnd('\\') + "\\"; } catch { return false; }
+            return proteges.Any(x => c.StartsWith(x.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase));
+        }
 
         List<string> Trouver()
         {
@@ -138,6 +184,14 @@ namespace DigSpill
             { MessageBox.Show(F, "La collecte est sur un support en lecture seule : l'analyse ne peut pas y écrire. Cochez la copie vérifiée.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
             if (!Ctx.Demo && string.Equals(Path.GetPathRoot(choisie), Path.GetPathRoot(travail.Valeur), StringComparison.OrdinalIgnoreCase) && copie.Checked
                 && MessageBox.Show(F, "Le dossier de travail est sur le même support que les preuves : la copie ne protège pas contre la perte du support.\r\n\r\nContinuer ?", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            if (!Ctx.Demo && AccesControleActif() && DossierProtege(travail.Valeur))
+            {
+                var rep = MessageBox.Show(F, "L'« Accès contrôlé aux dossiers » de Windows Defender protège " + travail.Valeur + ".\r\n\r\n" +
+                    "Defender y bloquera PowerShell, 7-Zip et Python, un par un : l'analyse échouerait.\r\n\r\nTravailler plutôt dans " + DossierParDefaut() + " ?",
+                    "DigSpill", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+                if (rep == DialogResult.Cancel) return;
+                if (rep == DialogResult.Yes) travail.Valeur = DossierParDefaut();
+            }
             string err;
             if (!Ctx.Demo && !Supports.EssaiEcriture(travail.Valeur, out err)) { MessageBox.Show(F, "Impossible d'écrire dans " + travail.Valeur + " : " + err, "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
             Ctx.SourceCollecte = choisie; Ctx.DossierTravail = travail.Valeur;
@@ -154,7 +208,7 @@ namespace DigSpill
         readonly LigneInfo eCopie, eAna, eInt;
         readonly Journal journal = new Journal { Hauteur = 260 };
         Executeur exec;
-        bool arret;
+        bool arret, termine;
 
         public PageAnalyse(Fenetre f) : base(f)
         {
@@ -174,15 +228,36 @@ namespace DigSpill
 
         public override IEnumerable<Control> Boutons()
         {
+            if (termine)
+            {
+                // analyse arretee ou en echec : revenir au choix de la collecte sans quitter DigSpill
+                var r = new BoutonPlat("Collecte à analyser", BoutonPlat.Genre.Secondaire, Ic.Retour);
+                r.Click += delegate { F.Aller(new PageSource(F)); };
+                var d = new BoutonPlat("Dossier", BoutonPlat.Genre.Secondaire, Ic.Dossier);
+                d.Click += delegate { Pages.OuvrirDossier(Ctx.DossierTravail); };
+                var l = new List<Control> { r, d };
+                string partiel = Path.Combine(Path.Combine(Ctx.DossierTravail, Path.GetFileName(Ctx.SourceCollecte ?? "")), Path.GetFileName(Path.GetDirectoryName(Ctx.SourceCollecte ?? "") ?? ""));
+                partiel = Path.Combine(Ctx.CopieVerifiee ? partiel : Path.GetDirectoryName(Ctx.SourceCollecte ?? ""), Path.GetFileName(Ctx.SourceCollecte ?? "") + "_INTERFACE.html");
+                if (!Ctx.Demo && File.Exists(partiel))
+                {
+                    var o = new BoutonPlat("Rapport partiel", BoutonPlat.Genre.Primaire, Ic.Lecture);
+                    o.Click += delegate { Ctx.Interface = partiel; F.Aller(new PageRapport(F)); };
+                    l.Add(o);
+                }
+                return l;
+            }
             var a = new BoutonPlat("Arrêter", BoutonPlat.Genre.Secondaire, Ic.Arret);
             a.Click += delegate { arret = true; if (exec != null) exec.Tuer(); };
             return new Control[] { a };
         }
 
+        public override Func<Page> EtapePrecedente(int etape) { if (etape != 0) return null; return () => new PageSource(F); }
+
         public override void Affichee() { Demarrer(); }
         public override void Quittee() { if (Occupee && exec != null) { arret = true; exec.Tuer(); } }
 
-        void Etat(string t, double v) { if (!IsDisposed) BeginInvoke(new Action(() => { etat.Text = t; if (v >= 0) barre.Valeur = v; else barre.Indeterminee = true; Ajuster(); })); }
+        void Ui(Action a) { if (IsDisposed) return; if (InvokeRequired) BeginInvoke(a); else a(); }
+        void Etat(string t, double v) { Ui(() => { if (etat.Text != t) { etat.Text = t; Ajuster(); } if (v >= 0) barre.Valeur = v; else barre.Indeterminee = true; }); }
 
         Task<int> Ps(string script, List<string> args, IDictionary<string, string> env, Action<string> suivi = null)
         {
@@ -196,7 +271,7 @@ namespace DigSpill
 
         async Task<int> Simuler(string script)
         {
-            var l = script.StartsWith("Copier") ? new[] { "Copie de 1 534 fichiers (3,4 Go)", "  verification 1000 / 1534", "Resultat : toutes les copies sont identiques aux originaux" }
+            var l = script.StartsWith("Copier") ? new[] { "Copie de 1 534 fichiers (3,4 Go)", "  copie de 3,4 Go en cours", "  verification 1000 / 1534", "  octets 4200 / 6900 Mo", "Resultat : toutes les copies sont identiques aux originaux" }
                 : script.StartsWith("Analyse") ? new[] { "[*] Sessions reconstituees", "[*] SRUM : volumes par application", "[*] Executions pendant les fenetres", "[*] Navigation", "[*] $MFT du conteneur", "[*] Memoire vive : processus et connexions" }
                 : new[] { "  [+] bases publiques a jour", "  [+] scelle cree : SCELLE_20261119_183512", "  [+] scelle horodate par un tiers : 2026-11-19 17:35:13 UTC", "  Interface : SECRETARIAT-01_20261119_102233_INTERFACE.html" };
             foreach (var x in l) { await Task.Delay(700); journal.Ajouter(x); }
@@ -218,18 +293,31 @@ namespace DigSpill
             string analysee = Ctx.SourceCollecte;
             string tech = Ctx.Inter.Technicien;
 
+            Ui(() => barre.Vivante = true);
             if (Ctx.CopieVerifiee)
             {
                 eCopie.Etat(Niveau.EnCours);
                 Etat("Copie vérifiée des preuves…", -1);
                 var a = new List<string> { "-Source", Executeur.Echapper(parent), "-Destination", Executeur.Echapper(dossier), "-Collecte", Executeur.Echapper(nom) };
                 if (tech != "") { a.Add("-Operateur"); a.Add(Executeur.Echapper(tech + " - " + Environment.UserDomainName + "\\" + Environment.UserName)); }
-                // "  verification 200 / 420" : avancement de la copie verifiee
+                // "  copie de 47,1 Go en cours" puis "  verification 200 / 420" et "  octets 12000 / 94000 Mo" (toutes les 2 s) :
+                // les gros fichiers (image RAM, conteneur Velociraptor) font avancer la barre pendant qu'ils sont re-haches
                 var rxV = new System.Text.RegularExpressions.Regex(@"verification (\d+) / (\d+)");
+                var rxO = new System.Text.RegularExpressions.Regex(@"octets (\d+) / (\d+) Mo");
+                var rxC = new System.Text.RegularExpressions.Regex(@"copie de (.+?) en cours");
+                string fichiersV = "";
                 int c = await Ps("Copier-Preuves.ps1", a, null, l =>
                 {
                     var m = rxV.Match(l);
-                    if (m.Success) Etat("Copie vérifiée : " + m.Groups[1].Value + " / " + m.Groups[2].Value + " fichiers re-hachés…", 0.3 * int.Parse(m.Groups[1].Value) / Math.Max(1, int.Parse(m.Groups[2].Value)));
+                    if (m.Success) fichiersV = " · " + m.Groups[1].Value + " / " + m.Groups[2].Value + " fichiers";
+                    var o = rxO.Match(l);
+                    if (o.Success)
+                    {
+                        double fait = double.Parse(o.Groups[1].Value), tout = Math.Max(1, double.Parse(o.Groups[2].Value));
+                        Etat(string.Format("Copie vérifiée : {0:0.0} / {1:0.0} Go re-hachés{2}…", fait / 1024, tout / 1024, fichiersV), 0.3 * fait / tout);
+                    }
+                    var cp = rxC.Match(l);
+                    if (cp.Success) Etat("Copie des preuves (" + cp.Groups[1].Value + ")…", -1);
                 });
                 if (arret) { Fin(false); return; }
                 analysee = Path.Combine(dossier, Path.GetFileName(parent), nom);
@@ -298,10 +386,13 @@ namespace DigSpill
         {
             Occupee = false;
             if (IsDisposed) return;
+            barre.Vivante = false;
             barre.Valeur = 1;
             if (ok) { F.Aller(new PageRapport(F)); return; }
+            termine = true;
             etat.Text = arret ? "Analyse arrêtée" : "Analyse incomplète : voir le journal";
             Titre = "Analyse interrompue";
+            SousTitre = "Revenez au choix de la collecte avec « Collecte à analyser » (bouton ou étape 1 à gauche).";
             F.MajEntete();
             Ajuster();
         }
@@ -309,10 +400,12 @@ namespace DigSpill
 
     class PageRapport : Page
     {
+        public override Func<Page> EtapePrecedente(int etape) { if (etape != 0) return null; return () => new PageSource(F); }
+
         public PageRapport(Fenetre f) : base(f)
         {
             Titre = Ctx.ProblemeAnalyse == null ? "Rapport prêt" : "Rapport partiel";
-            SousTitre = "Un seul fichier HTML : il s'ouvre sur n'importe quel PC, sans installation ni Internet.";
+            SousTitre = "« Ouvrir le rapport » l'affiche dans sa propre fenêtre, sans navigateur autour. Un seul fichier HTML : il s'ouvre sur n'importe quel PC, sans installation ni Internet.";
             Parcours = ParcoursAnalyse; Etape = 2;
             if (Ctx.ProblemeAnalyse != null) Corps.Ajouter(NouvelleCarte()).Contenu.Ajouter(new LigneInfo(Niveau.Danger, "Analyse en échec", Ctx.ProblemeAnalyse));
             var c = Corps.Ajouter(NouvelleCarte());
@@ -320,6 +413,13 @@ namespace DigSpill
             c.Contenu.Ajouter(Mise.Texte("INTERFACE", Theme.MonoMoyen(8.5f), Theme.Texte3));
             c.Contenu.Ajouter(Mise.Texte(Path.GetFileName(Ctx.Interface ?? ""), Theme.Police(14f, FontStyle.Bold), Theme.Texte));
             c.Contenu.Ajouter(Mise.Texte(Ctx.Interface ?? "", Theme.Mono(8.5f), Theme.Texte3));
+            // actions secondaires dans la carte : le pied n'a de place que pour deux boutons
+            var r = c.Contenu.Ajouter(new Rangee());
+            var w = new BoutonPlat("Dans le navigateur", BoutonPlat.Genre.Secondaire, Ic.Lecture) { Margin = new Padding(0, 0, 10, 0) };
+            w.Click += delegate { try { if (!Ctx.Demo) Pages.OuvrirRapport(Ctx.Interface, true); } catch (Exception e) { MessageBox.Show(F, e.Message, "DigSpill"); } };
+            var d = new BoutonPlat("Ouvrir le dossier", BoutonPlat.Genre.Secondaire, Ic.Dossier) { Margin = new Padding(0) };
+            d.Click += delegate { if (Ctx.Interface != null) Pages.OuvrirDossier(Path.GetDirectoryName(Ctx.Interface)); };
+            r.Controls.Add(w); r.Controls.Add(d);
             var a = Corps.Ajouter(NouvelleCarte());
             a.Contenu.Ajouter(Intertitre("Ensuite"));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "PV de collecte", "Dans l'interface : onglet Preuves › Rapports › « PV de collecte ». À imprimer et faire signer."));
@@ -329,13 +429,11 @@ namespace DigSpill
 
         public override IEnumerable<Control> Boutons()
         {
-            var d = new BoutonPlat("Ouvrir le dossier", BoutonPlat.Genre.Secondaire, Ic.Dossier);
-            d.Click += delegate { if (Ctx.Interface != null) Pages.OuvrirDossier(Path.GetDirectoryName(Ctx.Interface)); };
             var n = new BoutonPlat("Nouvelle analyse", BoutonPlat.Genre.Secondaire, Ic.Actualiser);
             n.Click += delegate { F.Aller(new PageSource(F)); };
-            var o = new BoutonPlat("Ouvrir l'interface", BoutonPlat.Genre.Primaire, Ic.Lecture);
-            o.Click += delegate { try { if (!Ctx.Demo) Process.Start(Ctx.Interface); } catch (Exception e) { MessageBox.Show(F, e.Message, "DigSpill"); } };
-            return new Control[] { d, n, o };
+            var o = new BoutonPlat("Ouvrir le rapport", BoutonPlat.Genre.Primaire, Ic.Lecture);
+            o.Click += delegate { try { if (!Ctx.Demo) Pages.OuvrirRapport(Ctx.Interface, false); } catch (Exception e) { MessageBox.Show(F, e.Message, "DigSpill"); } };
+            return new Control[] { n, o };
         }
     }
 }

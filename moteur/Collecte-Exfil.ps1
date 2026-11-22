@@ -12,6 +12,10 @@
       -SkipFullListing      Ne pas faire le listing complet des disques (mode Complet)
       -Destination E:\      Support de preuves (defaut : la cle des outils). La collecte va dans <Destination>\Collecte\.
                             Permet d'avoir une cle OUTILS en lecture seule et une cle PREUVES distincte (DigSpill.exe).
+      -DestinationSurLePoste
+                            La destination est un disque du poste examine (pas de cle ni de disque externe) :
+                            ce disque reste examine, seul le dossier <Destination>\Collecte\ est saute.
+                            Automatique si la destination est le disque de Windows.
       -Technicien, -Societe, -Client, -Present, -Ticket, -Motif, -Decouverte
                             Intervention (saisie dans DigSpill.exe) : ecrites dans infos_collecte.txt et reprises dans le PV.
 
@@ -31,6 +35,7 @@ param(
     [switch]$SkipFileSearch,
     [switch]$SkipFullListing,
     [string]$Destination,
+    [switch]$DestinationSurLePoste,
     [string]$Technicien,
     [string]$Societe,
     [string]$Client,
@@ -247,6 +252,19 @@ using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
+/// Chemin d'un processus protege (Defender, noyau) que WMI ne donne pas : acces "information limitee", permis meme sur ces processus.
+public static class CheminProcessus {
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(int acces, bool herite, int pid);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int options, System.Text.StringBuilder nom, ref int taille);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    public static string Lire(int pid) {
+        IntPtr h = OpenProcess(0x1000, false, pid);
+        if (h == IntPtr.Zero) return null;
+        try { var sb = new System.Text.StringBuilder(1024); int n = sb.Capacity; return QueryFullProcessImageName(h, 0, sb, ref n) ? sb.ToString(0, n) : null; }
+        finally { CloseHandle(h); }
+    }
+}
+
 public class ExtStat { public long Count; public long Bytes; public DateTime First = DateTime.MaxValue; public DateTime Last = DateTime.MinValue; public string Sample; }
 public class NoteStat { public int Count; public long Size; public bool Variee; public DateTime Last = DateTime.MinValue; public List<string> Samples = new List<string>(); }
 
@@ -255,6 +273,8 @@ public class FsWalker {
     public Dictionary<string, ExtStat> Ext = new Dictionary<string, ExtStat>(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ExtStat> RansomExt = new Dictionary<string, ExtStat>(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, NoteStat> Notes = new Dictionary<string, NoteStat>(StringComparer.OrdinalIgnoreCase);
+    public List<string> Skip = new List<string>();   // dossiers de DigSpill (preuves ou outils sur le disque du poste)
+    bool Skipped(string p) { foreach (string x in Skip) { if (String.Equals(p.TrimEnd('\\'), x, StringComparison.OrdinalIgnoreCase)) return true; } return false; }
     static readonly HashSet<string> NoteExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".txt", ".hta", ".html", ".htm", ".rtf", ".url" };
 
     static string Q(string s) { return "\"" + s.Replace("\"", "\"\"") + "\""; }
@@ -278,7 +298,7 @@ public class FsWalker {
                     try {
                         DirectoryInfo di = fsi as DirectoryInfo;
                         if (di != null) {
-                            if ((di.Attributes & FileAttributes.ReparsePoint) == 0) stack.Push(di);
+                            if ((di.Attributes & FileAttributes.ReparsePoint) == 0 && !Skipped(di.FullName)) stack.Push(di);
                             continue;
                         }
                         FileInfo f = (FileInfo)fsi;
@@ -346,9 +366,19 @@ try {
     $script:UsbLetters = @(Get-Disk -ErrorAction Stop | Where-Object { $_.BusType -eq 'USB' } | Get-Partition -ErrorAction SilentlyContinue |
         Where-Object { "$($_.DriveLetter)" -match '^[A-Za-z]$' } | ForEach-Object { "$($_.DriveLetter):".ToUpper() })
 } catch {}
-if ($script:UsbLetters -notcontains $UsbQ.ToUpper()) { $script:UsbLetters += $UsbQ.ToUpper() }
+# Disque du poste (preuves ou outils sur C:, D:...) : le disque reste examine, seuls nos dossiers sont sautes
+$SysQ = "$env:SystemDrive".ToUpper()
+$SurLePoste = $DestinationSurLePoste -or ($UsbQ.ToUpper() -eq $SysQ)
+$script:Exclus = @()
+if ($SurLePoste) { $script:Exclus += (Join-Path $DestRoot 'Collecte') }
+elseif ($script:UsbLetters -notcontains $UsbQ.ToUpper()) { $script:UsbLetters += $UsbQ.ToUpper() }
 $OutilsQ = Split-Path $Root -Qualifier
-if ($OutilsQ -and $script:UsbLetters -notcontains $OutilsQ.ToUpper()) { $script:UsbLetters += $OutilsQ.ToUpper() }
+if ($OutilsQ -and $OutilsQ.ToUpper() -eq $SysQ) { $script:Exclus += $Cle }
+elseif ($OutilsQ -and $script:UsbLetters -notcontains $OutilsQ.ToUpper()) { $script:UsbLetters += $OutilsQ.ToUpper() }
+function Test-Exclu([string]$Chemin) {
+    foreach ($x in $script:Exclus) { if ($Chemin.StartsWith($x.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { return $true } }
+    return $false
+}
 
 # ----------------------------------------------------------------- en-tete
 Log "=== Collecte de triage v$ScriptVersion ($Mode) sur $Computer ==="
@@ -369,6 +399,7 @@ Save-Text 'infos_collecte.txt' {
     if ($Motif)      { "Motif            : $Motif" }
     if ($Decouverte) { "Decouverte       : $Decouverte" }
     if ($Destination) { "Support preuves  : $DestRoot (outils : $Root)" }
+    if ($SurLePoste) { "                   disque du poste examine (pas de support externe) : dossiers sautes $($script:Exclus -join ', ')" }
     "Administrateur   : $IsAdmin"
     "Date locale      : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')"
     "Date UTC         : $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'))"
@@ -393,6 +424,13 @@ Step 'Processus (ligne de commande, parent, proprietaire)' {
     $script:Procs = @{}
     $all = Get-CimInstance Win32_Process
     foreach ($p in $all) { $script:Procs[[int]$p.ProcessId] = $p }
+    # chemins : WMI, ou lecture limitee pour les processus proteges (MsMpEng.exe de Defender n'avait pas de chemin)
+    $script:Chemins = @{}
+    foreach ($p in $all) {
+        $c = $p.ExecutablePath
+        if (-not $c -and [int]$p.ProcessId -gt 4) { try { $c = [CheminProcessus]::Lire([int]$p.ProcessId) } catch {} }
+        if ($c) { $script:Chemins[[int]$p.ProcessId] = $c }
+    }
     $owners = @{}
     if ($IsAdmin) { Get-Process -IncludeUserName -ErrorAction SilentlyContinue | ForEach-Object { $owners[[int]$_.Id] = $_.UserName } }
     Save-Csv 'volatile\processus.csv' {
@@ -410,7 +448,7 @@ Step 'Connexions reseau actives' {
         Get-NetTCPConnection | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, OwningProcess, CreationTime,
             @{n='TypeIP';e={ Get-IpType $_.RemoteAddress }},
             @{n='Process';e={ $script:Procs[[int]$_.OwningProcess].Name }},
-            @{n='Path';e={ $script:Procs[[int]$_.OwningProcess].ExecutablePath }},
+            @{n='Path';e={ $script:Chemins[[int]$_.OwningProcess] }},
             @{n='CommandLine';e={ $script:Procs[[int]$_.OwningProcess].CommandLine }}
     }
     Save-Csv 'volatile\udp_endpoints.csv' {
@@ -438,7 +476,7 @@ Step 'Sessions ouvertes, partages et fichiers ouverts' {
 
 Step 'Hash et signature des executables en cours' {
     Save-Csv 'volatile\processus_binaires.csv' {
-        $script:Procs.Values | Where-Object { $_.ExecutablePath } | Select-Object -ExpandProperty ExecutablePath -Unique | ForEach-Object {
+        $script:Chemins.Values | Sort-Object -Unique | ForEach-Object {
             $sig = $null; $h = $null
             try { $sig = Get-AuthenticodeSignature -LiteralPath $_ -ErrorAction Stop } catch {}
             try { $h   = Get-FileHash -LiteralPath $_ -Algorithm SHA256 -ErrorAction Stop } catch {}
@@ -1201,6 +1239,7 @@ if (-not $SkipFileSearch) {
         foreach ($r in $roots) {
             Get-ChildItem -LiteralPath $r -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
                 $f = $_
+                if ($script:Exclus.Count -and (Test-Exclu $f.FullName)) { return }
                 $ext = $f.Extension.ToLowerInvariant()
                 $recent = ($f.LastWriteTime -ge $Since) -or ($f.CreationTime -ge $Since)
                 if ($recent -and $archExt -contains $ext -and $archives.Count -lt 20000) {
@@ -1338,7 +1377,9 @@ Step 'Binaires suspects : hash + archive chiffree (mot de passe : infected) + qu
 if ($Full -and -not $SkipFullListing) {
     Step 'Listing complet des disques + fichiers chiffres, notes de rancon, bases metier (plusieurs minutes)' {
         if (-not $script:CsOk) { Log '    [!] Moteur C# indisponible : listing ignore'; return }
-        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.\[[^\]]{3,80}\]\.[^.]{2,15}$|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+        # nom typique d'un fichier chiffre : extension d'origine PUIS ajout du rancongiciel (identifiant entre crochets avec un chiffre,
+        # adresse e-mail, extension connue). Pas « icone@2x.png », « Film.[Groupe Release].torrent », « compte@exemple.fr_identity_provider ».
+        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
         $baseRx   = New-Object Text.RegularExpressions.Regex('(?i)(\.(fdp|fdb|gdb|mdf|ldf|ndf|accdb|mdb|4dd|4dindx|dbf)(\.|$)|axi_database)', 'Compiled')
         $enc = New-Object Text.UTF8Encoding($true)
         $hdr = 'Chemin,Taille,Creation,Modification,Acces,Attributs'
@@ -1347,6 +1388,7 @@ if ($Full -and -not $SkipFullListing) {
         $wBas = New-Object IO.StreamWriter((P 'rancon\bases_metier.csv'), $false, $enc, 65536)
         $wAll.WriteLine($hdr); $wRan.WriteLine($hdr); $wBas.WriteLine($hdr)
         $w = New-Object FsWalker
+        foreach ($x in $script:Exclus) { $w.Skip.Add($x.TrimEnd('\')) }
         try {
             $vols = Get-CimInstance Win32_Volume -Filter 'DriveType=3' | Where-Object { $_.DriveLetter -and $script:UsbLetters -notcontains $_.DriveLetter.ToUpper() }
             foreach ($v in $vols) { Log "    Listing $($v.DriveLetter)..."; $w.Walk($v.DriveLetter + '\', $Since, $ransomRx, $baseRx, $wAll, $wRan, $wBas) }
@@ -1472,7 +1514,8 @@ Step 'Synthese automatique (SYNTHESE.txt)' {
         if ($dur -le 720) { A "CHIFFREMENT : $m" } else { I "Noms suspects mais etales dans le temps (faux positif probable) : $m" }
     }
     foreach ($n in (Read-Out 'rancon\notes_rancon_candidates.csv' | Where-Object { [int]$_.NbDossiers -ge 10 } | Select-Object -First 5)) {
-        if ($n.NomEvocateur -eq 'True') { A "Note de rancon probable : $($n.Nom) dans $($n.NbDossiers) dossiers (copie dans rancon\notes)" }
+        # meme taille partout : une note deposee par un rancongiciel ; tailles differentes : aide de logiciels (help.html, README)
+        if ($n.NomEvocateur -eq 'True' -and $n.TailleIdentique -ne 'False') { A "Note de rancon probable : $($n.Nom) dans $($n.NbDossiers) dossiers (copie dans rancon\notes)" }
         else { I "Fichier texte repete : $($n.Nom) dans $($n.NbDossiers) dossiers" }
     }
     $vss = @(Get-CimInstance Win32_ShadowCopy -ErrorAction SilentlyContinue).Count

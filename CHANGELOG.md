@@ -1,5 +1,25 @@
 # Journal des versions
 
+## 2.9 (bêta)
+- **Support PREUVES au choix** : clé USB, **disque dur ou SSD externe** (USB, y compris USB 3 « UASP » qui se déclare SCSI à Windows et n'était pas reconnu, FireWire, carte SD), ou, à défaut, **un disque de ce poste** (celui de Windows compris). Le bus et le modèle du disque sont affichés.
+- **Disque du poste** : choix jamais automatique, avertissement avant de lancer (l'écriture peut effacer des fichiers supprimés récupérables, un rançongiciel actif peut chiffrer les preuves), ni fichiers pièges, ni coupure, ni éjection. Le disque reste examiné : seul le dossier `Collecte\` est sauté (`-DestinationSurLePoste`, automatique sur le disque de Windows). Noté dans `infos_collecte.txt`. Fin de collecte : « Copier la collecte hors du poste ».
+- **DigSpill lancé depuis le disque de Windows** (dossier Téléchargements, par exemple) : le disque `C:` n'est plus retiré des recherches ; seul le dossier de DigSpill est sauté.
+- **Releases** : une release publiée depuis GitHub reçoit `DigSpill.zip` automatiquement.
+- **Icône de DigSpill.exe** refaite au format attendu par Windows (images bitmap de 16 à 128 px, PNG seulement en 256 px) ; le kit vérifie l'icône telle que l'explorateur l'affiche.
+- **Fausses alertes sur un poste sain (essai réel) corrigées** :
+  - « 260 fichiers chiffrés » : icônes `icone@2x.png` (OneDrive, Steam), torrent `Film.[Groupe Release].torrent`, fichier `adresse@exemple.fr_identity_provider`. Un nom chiffré doit maintenant garder l'extension d'origine suivie de l'ajout du rançongiciel (identifiant avec un chiffre, adresse e-mail, extension connue), et il faut au moins 20 fichiers de la même extension modifiés en 24 h. Même règle dans la collecte, l'analyse et l'interface.
+  - « Isoler le poste » : Defender (`MsMpEng.exe`, dont Windows cache le chemin) parlait au cloud Microsoft, Battle.net (signé) tournait depuis `ProgramData`. Le chemin des processus protégés est lu ; un programme signé dans un dossier à risque n'est suspect que s'il s'agit d'un outil d'accès ou de transfert.
+  - Note de rançon : `help.html` de tailles différentes dans 26 dossiers (aide de logiciels) n'en est plus une, dans la synthèse de collecte comme dans l'interface.
+  - Defender 5007 : seuls les changements qui l'affaiblissent comptent (exclusion, protection coupée), pas ses changements internes ; la clé modifiée est nommée ; alertes anti-forensique regroupées (avant : trois fois la même ligne).
+- **Appli** :
+  - « Fichiers pièges » devient « fichiers-appâts », expliqués sous la case.
+  - Mise en veille et extinction de l'écran bloquées pendant une collecte ou une analyse.
+  - Scellé : chaque étape est affichée (ouverture, Go hachés, terminé, écriture, horodatage avec les secondes) ; l'horodateur a 45 s pour répondre.
+  - Copie vérifiée : avancement en Go pendant le re-hachage des gros fichiers (image RAM, conteneur Velociraptor) et barre animée tant que le travail continue.
+  - Analyse arrêtée ou en échec : bouton et étape 1 « Collecte à analyser » pour revenir, sans quitter DigSpill.
+  - Dossier de travail par défaut : `%USERPROFILE%\DigSpill` (et non `Documents`, protégé par l'« Accès contrôlé aux dossiers » de Defender qui bloquait PowerShell, 7-Zip et Python) ; avertissement si le dossier choisi est protégé.
+  - « Ouvrir le rapport » : le rapport s'ouvre dans sa propre fenêtre, sans onglets ni barre d'adresse (Edge en mode application) ; « Dans le navigateur » reste possible.
+
 ## 2.8 (bêta)
 Testé de A à Z sur un vrai Windows : l'appli pilotée comme par un technicien, sur des traces d'attaque réelles.
 

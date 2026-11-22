@@ -28,7 +28,7 @@ namespace DigSpill
                 case "collecte": return new PageCollecte(f);
                 case "fin": return new PageFin(f);
                 case "alerte":
-                    c.RaisonAlerte = "Fichier piège modifié : !!!_0_Dossiers_patients_2026.xlsx";
+                    c.RaisonAlerte = "Fichier-appât modifié : !!!_0_Dossiers_patients_2026.xlsx";
                     c.ActionsUrgence = new List<string> { "Collecte arrêtée (PowerShell et ses programmes)", "Écriture bloquée sur le disque (lecture seule)", "Volume démonté de force (un autre programme l'utilisait)", "Lettre F: retirée : le support n'est plus visible des programmes" };
                     return new PageAlerte(f);
                 case "analyser": return new PageSource(f);
@@ -58,6 +58,28 @@ namespace DigSpill
         public static void OuvrirDossier(string chemin)
         {
             try { Process.Start("explorer.exe", "\"" + chemin + "\""); } catch { }
+        }
+
+        /// <summary>Rapport dans sa propre fenetre, sans onglets ni barre d'adresse (Edge en mode application, present sur Windows 10 et 11).
+        /// Sans Edge : le navigateur par defaut.</summary>
+        public static void OuvrirRapport(string chemin, bool navigateur)
+        {
+            if (!navigateur)
+            {
+                foreach (var pf in new[] { Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) })
+                {
+                    if (string.IsNullOrEmpty(pf)) continue;
+                    var edge = Path.Combine(pf, @"Microsoft\Edge\Application\msedge.exe");
+                    if (!File.Exists(edge)) continue;
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo(edge, "--app=\"" + new Uri(chemin).AbsoluteUri + "\" --window-size=1440,900 --no-first-run") { UseShellExecute = false });
+                        return;
+                    }
+                    catch { }
+                }
+            }
+            Process.Start(chemin);
         }
     }
 
@@ -125,7 +147,7 @@ namespace DigSpill
             Titre = "Que voulez-vous faire ?";
             SousTitre = "DigSpill collecte les traces d'un poste Windows suspect sans les modifier, les scelle, puis produit le rapport sur un autre PC.";
             var g = Corps.Ajouter(new Grille { Colonnes = 2, Espace = 20 });
-            var col = new CarteChoix(Ic.Collecter, "Collecter sur ce poste", "Sur le poste suspect. Saisie de l'intervention, contrôle « feu vert », collecte sur la clé PREUVES gardée par des fichiers pièges, scellé de fin de collecte.", "Droits administrateur demandés");
+            var col = new CarteChoix(Ic.Collecter, "Collecter sur ce poste", "Sur le poste suspect. Saisie de l'intervention, contrôle « feu vert », collecte sur la clé PREUVES gardée par des fichiers-appâts, scellé de fin de collecte.", "Droits administrateur demandés");
             var ana = new CarteChoix(Ic.Analyser, "Analyser une collecte", "Sur votre PC, plus tard. Copie vérifiée des preuves, analyse complète, interface et rapports, PV de collecte à faire signer.", "Sans droits administrateur");
             g.Controls.Add(col); g.Controls.Add(ana);
             col.Click += delegate { Collecter(); };
@@ -135,7 +157,7 @@ namespace DigSpill
             c.Contenu.Ajouter(Intertitre("Deux clés, c'est plus sûr"));
             c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Clé OUTILS", "DigSpill et ses scripts. Clé à interrupteur, en position lecture seule : rien ne peut la modifier."));
             c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Clé PREUVES", "Chiffrée, branchée seulement après le feu vert, surveillée pendant la collecte, passée en lecture seule ensuite."));
-            c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Une seule clé ?", "Possible : DigSpill pose quand même ses fichiers pièges et coupe la clé au moindre signe de chiffrement."));
+            c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Une seule clé ?", "Possible : DigSpill pose quand même ses fichiers-appâts et coupe la clé au moindre signe de chiffrement."));
         }
 
         public override IEnumerable<Control> Boutons()
@@ -362,16 +384,22 @@ namespace DigSpill
         BoutonPlat lancer;
         Support choisi;
         Action abonnement;
+        bool piegesVoulus;
+        readonly Control explicationPieges;
 
         public PageSupport(Fenetre f) : base(f)
         {
-            Titre = "Branchez la clé PREUVES";
-            SousTitre = "Clé chiffrée, déverrouillée, en lecture-écriture. DigSpill la détecte dès qu'elle est branchée.";
+            Titre = "Où écrire les preuves ?";
+            SousTitre = "Clé ou disque externe chiffré, déverrouillé, en lecture-écriture : DigSpill le détecte dès qu'il est branché. Sans clé ni disque externe, un disque de ce poste.";
             Parcours = ParcoursCollecte; Etape = 2;
             liste = Corps.Ajouter(NouvelleCarte());
             remarque = Corps.Ajouter(new LigneInfo(Niveau.Info, "", ""));
             remarque.Visible = false;
-            pieges = Corps.Ajouter(new Case("Poser des fichiers pièges sur la clé et la couper aussitôt si un programme y touche (recommandé)", Ctx.AvecPieges));
+            pieges = Corps.Ajouter(new Case("Protéger les preuves d'un rançongiciel actif : poser des fichiers-appâts (recommandé)", Ctx.AvecPieges));
+            explicationPieges = Corps.Ajouter(Paragraphe("DigSpill dépose 4 faux fichiers (des leurres) sur le support. Un rançongiciel encore actif les chiffrerait comme le reste : " +
+                "au moindre changement, DigSpill déconnecte le support pour sauver les preuves déjà écrites. Les leurres sont retirés à la fin."));
+            piegesVoulus = Ctx.AvecPieges;
+            pieges.CheckedChanged += delegate { if (pieges.Enabled) piegesVoulus = pieges.Checked; };
         }
 
         public override IEnumerable<Control> Boutons()
@@ -399,33 +427,47 @@ namespace DigSpill
             if (Ctx.Demo)
                 return new List<Support> {
                     new Support { Lettre = "F:", Etiquette = "PREUVES", Systeme = "exFAT", Libre = 241L << 30, Total = 256L << 30, Usb = true, Amovible = true },
-                    new Support { Lettre = "E:", Etiquette = "OUTILS", Systeme = "NTFS", Libre = 21L << 30, Total = 32L << 30, Usb = true, Amovible = true, EstOutils = true, LectureSeule = true } };
+                    new Support { Lettre = "E:", Etiquette = "OUTILS", Systeme = "NTFS", Libre = 21L << 30, Total = 32L << 30, Usb = true, Amovible = true, EstOutils = true, LectureSeule = true },
+                    new Support { Lettre = "C:", Etiquette = "Windows", Systeme = "NTFS", Libre = 180L << 30, Total = 476L << 30, Bus = "NVMe", Modele = "Samsung SSD 980", EstSysteme = true, Genre = GenreSupport.DisquePoste } };
             return Supports.Lister(Ctx.RacineOutils);
         }
 
         void Remplir()
         {
             var l = Candidats();
+            var externes = l.Where(x => x.Externe).ToList();
+            var poste = l.Where(x => !x.Externe).ToList();
             liste.Contenu.Controls.Clear();
-            liste.Contenu.Ajouter(Intertitre("Supports détectés"));
-            if (l.Count == 0) liste.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "En attente d'une clé USB…", "Branchez la clé PREUVES et déverrouillez-la (code PIN) : elle apparaît ici."));
-            CarteSelection premiere = null;
-            foreach (var s in l)
+            liste.Contenu.Ajouter(Intertitre("Clés et disques externes"));
+            if (externes.Count == 0) liste.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "En attente d'une clé ou d'un disque externe…", "Branchez la clé ou le disque PREUVES et déverrouillez-le (code PIN) : il apparaît ici."));
+            CarteSelection premiere = null, precedente = null;
+            foreach (var s in externes) Ajouter(s, ref premiere, ref precedente);
+            if (poste.Count > 0)
             {
-                var b = new List<Tuple<string, Niveau>>();
-                if (s.EstOutils) b.Add(Tuple.Create("Clé OUTILS", Niveau.Info));
-                if (s.LectureSeule) b.Add(Tuple.Create("Protégée en écriture", s.EstOutils ? Niveau.Ok : Niveau.Danger));
-                if (s.Systeme.StartsWith("FAT", StringComparison.OrdinalIgnoreCase)) b.Add(Tuple.Create("FAT32 : fichiers limités à 4 Go", Niveau.Attention));
-                if (s.Libre < (16L << 30)) b.Add(Tuple.Create("Moins de 16 Go libres", Niveau.Attention));
-                var c = new CarteSelection(Ic.Usb, s.Nom, s.Description, b) { Valeur = s, Utilisable = !s.LectureSeule };
-                c.Choisie += (o, e) => Choisir((CarteSelection)o);
-                liste.Contenu.Ajouter(c);
-                if (premiere == null && c.Utilisable && !s.EstOutils) premiere = c;
-                if (choisi != null && choisi.Lettre == s.Lettre && c.Utilisable) premiere = c;
+                liste.Contenu.Ajouter(Intertitre("Disques de ce poste (sans clé ni disque externe)"));
+                foreach (var s in poste) Ajouter(s, ref premiere, ref precedente);
             }
             choisi = null;
-            if (premiere != null) Choisir(premiere); else MajRemarque();
+            if (precedente != null) Choisir(precedente);
+            else if (premiere != null) Choisir(premiere);
+            else MajRemarque();
             Ajuster();
+        }
+
+        void Ajouter(Support s, ref CarteSelection premiere, ref CarteSelection precedente)
+        {
+            var b = new List<Tuple<string, Niveau>>();
+            if (s.EstOutils) b.Add(Tuple.Create(s.Externe ? "Clé OUTILS" : "DigSpill est ici", Niveau.Info));
+            if (s.LectureSeule) b.Add(Tuple.Create("Protégée en écriture", s.EstOutils ? Niveau.Ok : Niveau.Danger));
+            if (!s.Externe) b.Add(Tuple.Create("Sur le poste examiné", Niveau.Attention));
+            if (s.Systeme.StartsWith("FAT", StringComparison.OrdinalIgnoreCase)) b.Add(Tuple.Create("FAT32 : fichiers limités à 4 Go", Niveau.Attention));
+            if (s.Libre < (16L << 30)) b.Add(Tuple.Create("Moins de 16 Go libres", Niveau.Attention));
+            var c = new CarteSelection(s.Externe ? Ic.Usb : Ic.Poste, s.Nom, s.Description, b) { Valeur = s, Utilisable = !s.LectureSeule };
+            c.Choisie += (o, e) => Choisir((CarteSelection)o);
+            liste.Contenu.Ajouter(c);
+            // choix automatique : jamais un disque du poste ni la cle des outils, il faut cliquer dessus
+            if (premiere == null && c.Utilisable && s.Externe && !s.EstOutils) premiere = c;
+            if (choisi != null && choisi.Lettre == s.Lettre && c.Utilisable) precedente = c;
         }
 
         void Choisir(CarteSelection c)
@@ -438,7 +480,19 @@ namespace DigSpill
         void MajRemarque()
         {
             if (lancer != null) lancer.Enabled = choisi != null;
-            if (choisi != null && choisi.EstOutils)
+            // pieges : seulement sur un support separe, que l'on peut couper sans toucher au poste
+            bool possibles = choisi == null || choisi.Externe;
+            pieges.Enabled = possibles;
+            pieges.Checked = possibles && piegesVoulus;
+            explicationPieges.Visible = possibles;
+            if (choisi != null && !choisi.Externe)
+            {
+                remarque.Definir(Niveau.Attention, "Preuves sur le disque du poste : à défaut seulement",
+                    "La collecte ira dans " + choisi.Lettre + "\\Collecte\\, sur le poste examiné. Écrire dessus peut effacer des fichiers supprimés encore récupérables, " +
+                    "et un rançongiciel actif peut chiffrer les preuves. Ni fichiers-appâts, ni coupure, ni éjection. Copiez la collecte sur un support externe dès que possible.");
+                remarque.Visible = true;
+            }
+            else if (choisi != null && choisi.EstOutils)
             {
                 remarque.Definir(Niveau.Attention, "Mode une seule clé", "La collecte ira sur la clé des outils. Possible, mais moins sûr : un rançongiciel pourrait atteindre les outils et les preuves à la fois.");
                 remarque.Visible = true;
@@ -446,7 +500,7 @@ namespace DigSpill
             else if (choisi == null) remarque.Visible = false;
             else
             {
-                remarque.Definir(Niveau.Ok, "La collecte ira dans " + choisi.Lettre + "\\Collecte\\", "Le dossier est créé s'il n'existe pas. Les fichiers pièges sont retirés à la fin, sauf en cas d'alerte.");
+                remarque.Definir(Niveau.Ok, "La collecte ira dans " + choisi.Lettre + "\\Collecte\\", "Le dossier est créé s'il n'existe pas. Les fichiers-appâts sont retirés à la fin, sauf en cas d'alerte.");
                 remarque.Visible = true;
             }
             Ajuster();
@@ -457,14 +511,17 @@ namespace DigSpill
             if (choisi == null) return;
             if (!Ctx.Demo)
             {
+                if (!choisi.Externe &&
+                    MessageBox.Show(F, "Écrire les preuves sur " + choisi.Appellation + " ?\r\n\r\nÀ faire seulement sans clé ni disque externe : l'écriture peut effacer des fichiers supprimés récupérables, " +
+                        "et un rançongiciel actif peut chiffrer les preuves. Pas de fichiers-appâts ni d'éjection.\r\n\r\nCe choix est noté dans infos_collecte.txt.", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
                 if (choisi.Systeme.StartsWith("FAT", StringComparison.OrdinalIgnoreCase) &&
-                    MessageBox.Show(F, "Clé en FAT32 : la capture de la mémoire et les conteneurs de plus de 4 Go ne pourront pas y être écrits.\r\n\r\nContinuer quand même ?", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+                    MessageBox.Show(F, "Support en FAT32 : la capture de la mémoire et les conteneurs de plus de 4 Go ne pourront pas y être écrits.\r\n\r\nContinuer quand même ?", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
                 string err;
                 if (!Supports.EssaiEcriture(Path.Combine(choisi.Racine, "Collecte"), out err))
-                { MessageBox.Show(F, "Impossible d'écrire sur " + choisi.Lettre + " : " + err + "\r\n\r\nVérifiez que la clé est déverrouillée et en lecture-écriture.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+                { MessageBox.Show(F, "Impossible d'écrire sur " + choisi.Lettre + " : " + err + "\r\n\r\nVérifiez que le support est déverrouillé et en lecture-écriture.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
             }
             Ctx.Destination = choisi;
-            Ctx.AvecPieges = pieges.Checked;
+            Ctx.AvecPieges = choisi.Externe && pieges.Checked;
             F.Aller(new PageCollecte(F));
         }
     }
@@ -485,7 +542,10 @@ namespace DigSpill
         public PageCollecte(Fenetre f) : base(f)
         {
             Titre = "Collecte en cours";
-            SousTitre = "Ne retirez pas les clés et ne fermez pas DigSpill. La clé PREUVES est surveillée en continu.";
+            SousTitre = Ctx.Destination != null && !Ctx.Destination.Externe ? "Ne fermez pas DigSpill. Les preuves sont écrites sur " + Ctx.Destination.Appellation + "."
+                : Ctx.AvecPieges ? "Ne retirez pas les clés et ne fermez pas DigSpill. " + (Ctx.Destination != null && Ctx.Destination.Genre == GenreSupport.DisqueExterne ? "Le disque PREUVES est surveillé en continu." : "La clé PREUVES est surveillée en continu.")
+                : "Ne retirez pas les clés et ne fermez pas DigSpill.";
+            SousTitre += " Mise en veille bloquée pendant la collecte (ne fermez pas le capot d'un portable).";
             Parcours = ParcoursCollecte; Etape = 3;
             var c = Corps.Ajouter(NouvelleCarte());
             etat = c.Contenu.Ajouter(Mise.Texte("Préparation…", Theme.Police(12f, FontStyle.Bold), Theme.Encre));
@@ -528,9 +588,11 @@ namespace DigSpill
         void MajGarde()
         {
             var p = Ctx.Pieges;
-            if (!Ctx.AvecPieges) garde.Definir(Niveau.Attention, "Surveillance désactivée", "Aucun fichier piège sur la clé PREUVES.");
-            else if (p == null) garde.Definir(Niveau.Attente, "Surveillance de la clé PREUVES", "Mise en place…");
-            else garde.Definir(Niveau.Ok, "Clé PREUVES surveillée", string.Format("{0} fichiers pièges intacts · dernier contrôle {1:HH:mm:ss} · coupure automatique au premier signe", Ctx.Demo ? 4 : p.Nombre, p.DernierControle == DateTime.MinValue ? DateTime.Now : p.DernierControle));
+            var d = Ctx.Destination;
+            if (d != null && !d.Externe) garde.Definir(Niveau.Attention, "Pas de surveillance", "Preuves sur le disque du poste (" + d.Lettre + ") : ni fichiers-appâts ni coupure possibles.");
+            else if (!Ctx.AvecPieges) garde.Definir(Niveau.Attention, "Surveillance désactivée", "Aucun fichier-appât sur " + (d != null ? d.Appellation : "la clé PREUVES") + ".");
+            else if (p == null) garde.Definir(Niveau.Attente, "Surveillance : " + (d != null ? d.Appellation : "la clé PREUVES"), "Mise en place…");
+            else garde.Definir(Niveau.Ok, d != null && d.Genre == GenreSupport.DisqueExterne ? "Disque PREUVES surveillé" : "Clé PREUVES surveillée", string.Format("{0} fichiers-appâts intacts · dernier contrôle {1:HH:mm:ss} · coupure automatique au premier signe", Ctx.Demo ? 4 : p.Nombre, p.DernierControle == DateTime.MinValue ? DateTime.Now : p.DernierControle));
         }
 
         void Progression(double v) { Ui(() => barre.Valeur = v); }
@@ -557,6 +619,7 @@ namespace DigSpill
                 Log("[!] " + ex);
                 Occupee = false; horloge.Stop();
                 if (IsDisposed) return;
+                barre.Vivante = false;
                 etat.Text = "Erreur : " + ex.Message;
                 Titre = "Collecte interrompue"; F.MajEntete(); Ajuster();
             }
@@ -565,6 +628,8 @@ namespace DigSpill
         async Task Derouler()
         {
             Occupee = true;
+            F.GarderEveille();
+            Ui(() => barre.Vivante = true);
             Ctx.Debut = DateTime.Now;
             horloge.Start();
             var d = Ctx.Destination;
@@ -580,9 +645,9 @@ namespace DigSpill
                 {
                     Ctx.Pieges = new Pieges(d.Racine);
                     if (!Ctx.Demo) { Ctx.Pieges.Poser(); Ctx.Pieges.Alerte += r => BeginInvoke(new Action(() => Urgence(r))); Ctx.Pieges.Surveiller(); }
-                    Log("Fichiers pièges posés et surveillés sur " + d.Racine);
+                    Log("Fichiers-appâts posés et surveillés sur " + d.Racine);
                 }
-                catch (Exception ex) { Log("[!] Fichiers pièges impossibles : " + ex.Message); Ctx.Pieges = null; Ctx.AvecPieges = false; }
+                catch (Exception ex) { Log("[!] Fichiers-appâts impossibles : " + ex.Message); Ctx.Pieges = null; Ctx.AvecPieges = false; }
             }
             MajGarde();
 
@@ -591,6 +656,7 @@ namespace DigSpill
             baseProgression = 0; partProgression = i.Legere ? 0.85 : 0.55;
             // powershell.exe -File perd les arguments vides : on ne passe que les champs remplis
             var ap = new List<string> { "-Mode", i.Legere ? "Leger" : "Complet", "-Destination", Executeur.Echapper(d.Racine) };
+            if (!d.Externe) ap.Add("-DestinationSurLePoste");   // le disque reste examine, seul le dossier Collecte est saute
             var champs = new[] { Tuple.Create("-Technicien", i.Technicien), Tuple.Create("-Societe", i.Societe), Tuple.Create("-Client", i.Cabinet), Tuple.Create("-Present", i.Present),
                 Tuple.Create("-Ticket", i.Ticket), Tuple.Create("-Motif", i.Motif), Tuple.Create("-Decouverte", i.Decouverte.HasValue ? i.Decouverte.Value.ToString("yyyy-MM-dd HH:mm") : "") };
             foreach (var t in champs) if (!string.IsNullOrWhiteSpace(t.Item2)) { ap.Add(t.Item1); ap.Add(Executeur.Echapper(t.Item2)); }
@@ -649,8 +715,15 @@ namespace DigSpill
                 Ctx.Scelle = await Task.Run(() => Scelle.Creer(Ctx.DossierCollecteRacine, Ctx.NomCollecte, par, Ctx.Debut, s => Etat("Scellé : " + s)));
                 if (Ctx.Scelle.Erreur == null && i.Horodater)
                 {
-                    Etat("Scellé : horodatage par " + Ctx.Horodateur + "…");
-                    await Task.Run(() => Scelle.Horodater(Ctx.Scelle, Ctx.Horodateur));
+                    // l'horodateur peut ne pas repondre (DNS, proxy, pare-feu) : 45 s au plus, secondes affichees
+                    var t = Task.Run(() => Scelle.Horodater(Ctx.Scelle, Ctx.Horodateur));
+                    var debutH = DateTime.Now;
+                    while (!t.IsCompleted && (DateTime.Now - debutH).TotalSeconds < 45)
+                    {
+                        Etat(string.Format("Scellé : horodatage par {0}… ({1:0} s)", Ctx.Horodateur, (DateTime.Now - debutH).TotalSeconds));
+                        await Task.WhenAny(t, Task.Delay(1000));
+                    }
+                    if (!t.IsCompleted) { Ctx.Scelle.ErreurHorodatage = "l'horodateur n'a pas répondu en 45 s"; Log("[!] Horodatage : pas de réponse en 45 s, à refaire au bureau"); }
                 }
                 else if (Ctx.Scelle.Erreur == null) Ctx.Scelle.ErreurHorodatage = "non demandé";
             }
@@ -662,6 +735,7 @@ namespace DigSpill
             Ctx.Fin = DateTime.Now;
             Ctx.CollecteOk = Ctx.NomCollecte != null;
             Progression(1);
+            Ui(() => barre.Vivante = false);
             horloge.Stop();
             Occupee = false;
             await Task.Delay(600);
@@ -707,7 +781,7 @@ namespace DigSpill
             var faits = new List<string>();
             if (exec != null) { exec.Tuer(); faits.Add("Collecte arrêtée (PowerShell, Velociraptor et leurs programmes)"); }
             if (Ctx.Pieges != null) Ctx.Pieges.Arreter();
-            if (!Ctx.Demo) faits.AddRange(Supports.VerrouillageUrgence(Ctx.Destination.Lettre));
+            if (!Ctx.Demo && Ctx.Destination.Externe) faits.AddRange(Supports.VerrouillageUrgence(Ctx.Destination.Lettre));
             else faits.Add("Volume démonté (démonstration)");
             Ctx.ActionsUrgence = faits;
             Occupee = false;
@@ -729,8 +803,12 @@ namespace DigSpill
             var sc = Ctx.Scelle;
             bool scelle = sc != null && sc.Erreur == null && sc.Empreinte != null;
             Titre = !Ctx.CollecteOk ? "Collecte incomplète" : scelle ? "Collecte terminée" : "Collecte terminée sans scellé";
-            SousTitre = scelle ? "Photographiez l'empreinte ci-dessous avec votre téléphone, puis éjectez la clé PREUVES avant de la débrancher."
-                : "Lisez le problème ci-dessous avant d'éjecter la clé PREUVES.";
+            var d = Ctx.Destination;
+            bool externe = d == null || d.Externe;
+            string nom = d != null ? d.Appellation : "la clé PREUVES";
+            SousTitre = !externe ? (scelle ? "Photographiez l'empreinte ci-dessous avec votre téléphone, puis copiez la collecte sur un support externe." : "Lisez le problème ci-dessous, puis copiez la collecte sur un support externe.")
+                : scelle ? "Photographiez l'empreinte ci-dessous avec votre téléphone, puis éjectez " + nom + " avant de le débrancher."
+                : "Lisez le problème ci-dessous avant d'éjecter " + nom + ".";
             Parcours = ParcoursCollecte; Etape = 4;
 
             if (!scelle)
@@ -752,9 +830,11 @@ namespace DigSpill
 
             var a = Corps.Ajouter(NouvelleCarte());
             a.Contenu.Ajouter(Intertitre("Avant de partir"));
-            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Photographier l'empreinte", "Avec la date et l'heure du téléphone : une trace indépendante de la clé, au cas où elle serait perdue ou abîmée."));
+            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Photographier l'empreinte", "Avec la date et l'heure du téléphone : une trace indépendante du support, au cas où il serait perdu ou abîmé."));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Identifiants enregistrés", "Ce compte (" + (Ctx.CompteSession ?? Identifiants.Compte) + ") : déjà listé. Autres comptes du poste : ouvrir leur session, lancer DigSpill.exe, « Identifiants de ce compte »."));
-            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Clé PREUVES en lecture seule", "Après l'éjection : passez la clé en mode lecture seule (clé à code : voir sa notice) et rangez-la à part."));
+            if (externe) a.Contenu.Ajouter(new LigneInfo(Niveau.Info, (d != null ? d.NomCourt : "Clé PREUVES") + " en lecture seule", "Après l'éjection : passez le support en mode lecture seule (clé ou disque à code : voir sa notice) et rangez-le à part."));
+            else a.Contenu.Ajouter(new LigneInfo(Niveau.Attention, "Copier la collecte hors du poste", "Elle est dans " + Ctx.DossierCollecteRacine + ", sur le poste examiné. Copiez ce dossier sur un support externe dès que possible, " +
+                "puis vérifiez la copie au bureau (DigSpill → Analyser une collecte → copie vérifiée). Le scellé prouve que la copie est identique."));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Au bureau", "DigSpill → Analyser une collecte : copie vérifiée, analyse complète, rapport, PV de collecte à faire signer."));
         }
 
@@ -790,7 +870,15 @@ namespace DigSpill
                 };
                 l.Add(horodater);
             }
-            ejecter = new BoutonPlat("Éjecter la clé PREUVES", BoutonPlat.Genre.Primaire, Ic.Verrou);
+            var d = Ctx.Destination;
+            if (d != null && !d.Externe)
+            {
+                var fermer = new BoutonPlat("Fermer DigSpill", BoutonPlat.Genre.Primaire, Ic.Ok);
+                fermer.Click += delegate { F.Close(); };
+                l.Add(fermer);
+                return l;
+            }
+            ejecter = new BoutonPlat(d != null && d.Genre == GenreSupport.DisqueExterne ? "Éjecter le disque PREUVES" : "Éjecter la clé PREUVES", BoutonPlat.Genre.Primaire, Ic.Verrou);
             ejecter.Click += delegate { if (ejectee) F.Close(); else Ejecter(); };
             l.Add(ejecter);
             return l;
@@ -818,11 +906,13 @@ namespace DigSpill
                 if (err != null) { MessageBox.Show(F, "Éjection impossible : " + err + "\r\nUtilisez « Retirer le périphérique en toute sécurité » de Windows.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
             }
             ejectee = true;
-            Titre = "Clé PREUVES éjectée";
-            SousTitre = "Vous pouvez la débrancher. Passez-la en lecture seule et rangez-la séparément de la clé OUTILS.";
+            bool disque = Ctx.Destination != null && Ctx.Destination.Genre == GenreSupport.DisqueExterne;
+            Titre = disque ? "Disque PREUVES éjecté" : "Clé PREUVES éjectée";
+            SousTitre = disque ? "Vous pouvez le débrancher. Passez-le en lecture seule si possible et rangez-le séparément de la clé OUTILS."
+                : "Vous pouvez la débrancher. Passez-la en lecture seule et rangez-la séparément de la clé OUTILS.";
             ejecter.Text = "Fermer DigSpill";
             ejecter.Icone = Ic.Ok;
-            pastilles.Controls.Add(new Pastille("Clé éjectée", Niveau.Ok));
+            pastilles.Controls.Add(new Pastille(disque ? "Disque éjecté" : "Clé éjectée", Niveau.Ok));
             F.MajEntete();
             Ajuster();
         }
@@ -833,8 +923,10 @@ namespace DigSpill
     {
         public PageAlerte(Fenetre f) : base(f)
         {
-            Titre = "Clé PREUVES coupée";
-            SousTitre = "DigSpill a détecté une activité suspecte sur la clé et l'a déconnectée aussitôt.";
+            bool disque = Ctx.Destination != null && Ctx.Destination.Genre == GenreSupport.DisqueExterne;
+            Titre = disque ? "Disque PREUVES coupé" : "Clé PREUVES coupée";
+            SousTitre = disque ? "DigSpill a détecté une activité suspecte sur le disque PREUVES et l'a déconnecté aussitôt."
+                : "DigSpill a détecté une activité suspecte sur la clé PREUVES et l'a déconnectée aussitôt.";
             Parcours = ParcoursCollecte; Etape = 3;
             var r = Corps.Ajouter(NouvelleCarte());
             r.Couleurs(Theme.RougeFond, Theme.Rouge);
@@ -850,7 +942,7 @@ namespace DigSpill
 
             var t = Corps.Ajouter(NouvelleCarte());
             t.Contenu.Ajouter(Intertitre("À faire maintenant"));
-            t.Contenu.Ajouter(new LigneInfo(Niveau.Danger, "Retirez la clé PREUVES maintenant", "Ne la rebranchez que sur un PC sain et isolé, pour voir ce qui a été touché. Les fichiers pièges restent : ce sont des preuves."));
+            t.Contenu.Ajouter(new LigneInfo(Niveau.Danger, disque ? "Retirez le disque PREUVES maintenant" : "Retirez la clé PREUVES maintenant", "Ne le rebranchez que sur un PC sain et isolé, pour voir ce qui a été touché. Les fichiers-appâts restent : ce sont des preuves."));
             t.Contenu.Ajouter(new LigneInfo(Niveau.Attention, "Isolez le poste du réseau, sans l'éteindre", "Câble et Wi-Fi. Un chiffrement est probablement actif : il peut atteindre les partages et les sauvegardes."));
             t.Contenu.Ajouter(new LigneInfo(Niveau.Attention, "Prévenez", "Le responsable, le client et l'assureur. Notez l'heure de cette alerte dans le ticket."));
         }
