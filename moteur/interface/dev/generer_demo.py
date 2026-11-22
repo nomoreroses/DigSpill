@@ -71,10 +71,10 @@ def ecrire(chemin: Path, lignes: list[dict], colonnes: list[str] | None = None, 
             w.writerow({k: ("" if v is None else v) for k, v in l.items()})
 
 
-FEN = [("F1", "2026-11-05 20:11:00", "2026-11-05 22:22:00", f"session dr.lilas depuis IP publique {PRAT}"),
-       ("F2", "2026-11-10 13:30:00", "2026-11-10 14:55:00", f"session technicien depuis {TECH} (plage VPN/CGNAT, NetBird ?)"),
-       ("F3", "2026-11-12 20:33:00", "2026-11-12 22:40:00", f"session dr.lilas depuis IP publique {PRAT}"),
-       ("F4", "2026-11-16 23:12:00", "2026-11-17 03:28:00", f"session secretariat depuis IP publique {ATT}")]
+FEN = [("F1", "2026-11-05 20:11:00", "2026-11-05 22:22:00", f"connexion de dr.lilas depuis Internet ({PRAT})"),
+       ("F2", "2026-11-10 13:30:00", "2026-11-10 14:55:00", f"connexion de technicien depuis {TECH} (adresse de VPN ou d'opérateur partagé, NetBird ?)"),
+       ("F3", "2026-11-12 20:33:00", "2026-11-12 22:40:00", f"connexion de dr.lilas depuis Internet ({PRAT})"),
+       ("F4", "2026-11-16 23:12:00", "2026-11-17 03:28:00", f"connexion de secretariat depuis Internet ({ATT})")]
 
 
 def fen_de(t: datetime) -> str:
@@ -396,19 +396,19 @@ def generer(force: bool = False) -> Path:
         {"Utilisateur": "secretariat", "Site": "pro.doctolib.example", "NbIdentifiants": "1", "Identifiants": "secretariat@cabinet-lilas.example", "Navigateurs": "chrome"}])
 
     # ------------------------------------------------------------ grille et textes
-    grille = [("Volumes reseau (SRUM)", "INDICE", "F4 : 1 751 Mo envoyes par rclone.exe entre 00:41 et 02:00 (max de reference : 39 Mo/h)", "srum_fenetres_vs_reference.csv"),
-              ("Executions pendant les fenetres", "INDICE", "F4 : netscan, mimi.exe (mimikatz), netpass, 7z, rclone, svhost.exe", "executions_fenetres.csv"),
-              ("Mimikatz (execution, perimetre des identifiants)", "INDICE", "Execution de mimikatz tracee (Prefetch MIMI.EXE 00:03) : identifiants de tous les comptes du poste a considerer comme compromis", "identifiants_exposition.txt"),
-              ("Archives creees pendant les fenetres", "INDICE", "b.7z cree a 00:27 dans C:\\Users\\Public\\Music (USN)", "usn_fenetres.csv"),
-              ("Consultation des donnees metier (Axilog / base) avant chiffrement", "INDICE", "3 trace(s) d'acces aux donnees metier, dont 2 datee(s) dans les fenetres de l'attaquant", "acces_donnees_metier.csv"),
-              ("Navigation web", "A LIRE", "F4 : Doctolib (agenda, patients), rclone.org, mega.nz", "navigation_fenetres.csv"),
-              ("Couverture des journaux", "A LIRE", "2 journal(aux) ne couvrent pas toutes les fenetres (rotation, journal recent) : absence d'evenement non probante", "journaux_couverture.csv"),
-              ("Gestionnaire d'identifiants (cibles hors serveur)", "A FAIRE", "1 compte(s) avec entrees ; netpass EXECUTE : identifiants reseau / RDP exposes. Cibles a lister avec cmdkey.", "identifiants_exposition.txt"),
-              ("Journal du pare-feu", "NON VERIFIABLE", "Journalisation du pare-feu desactivee sur les 3 profils", "parefeu_fenetres.csv"),
-              ("Partages SMB (5140 / 5145)", "NON VERIFIABLE", "Audit des partages non active", "partages_acces_5140_5145.csv"),
-              ("Requetes DNS", "NON VERIFIABLE", "Journal DNS-Client desactive", "dns_requetes_fenetres.csv"),
-              ("USB pendant les fenetres", "RAS", "Aucun peripherique USB branche pendant les fenetres (seule la cle de collecte, 14:58)", "usb_chronologie.csv"),
-              ("BITS", "RAS", "Aucun transfert BITS pendant les fenetres", "bits_evenements.csv")]
+    grille = [("Quantité de données envoyées sur Internet (SRUM)", "INDICE", "Pendant l'attaque, 2 heures ont dépassé le plus gros envoi habituel du poste : 1 751 Mo envoyés par rclone.exe entre 00:41 et 02:00 (habituellement 39 Mo par heure au plus).", "srum_fenetres_vs_reference.csv"),
+              ("Programmes lancés pendant l'attaque", "INDICE", "Pendant l'attaque (période F4) : netscan, mimi.exe (Mimikatz), netpass, 7z, rclone, svhost.exe.", "executions_fenetres.csv"),
+              ("Vol de mots de passe (Mimikatz)", "INDICE", "Mimikatz a été lancé (MIMI.EXE à 00:03) : considérez les mots de passe de tous les comptes de ce poste comme volés et changez-les.", "identifiants_exposition.txt"),
+              ("Fichiers compressés (.zip, .7z, .rar) créés pendant l'attaque", "INDICE", "1 archive créée pendant l'attaque : b.7z à 00:27, dans C:\\Users\\Public\\Music. Un attaquant regroupe souvent les fichiers dans une archive avant de les envoyer.", "usn_fenetres.csv"),
+              ("Données du cabinet ouvertes pendant l'attaque (logiciel métier, base patients)", "INDICE", "3 traces d'ouverture des données du cabinet, dont 2 pendant l'attaque.", "acces_donnees_metier.csv"),
+              ("Sites web visités pendant l'attaque (Doctolib, Ameli, messagerie, partage de fichiers)", "A LIRE", "Pendant l'attaque (période F4) : Doctolib (agenda, patients), rclone.org, mega.nz.", "navigation_fenetres.csv"),
+              ("Journaux de Windows assez anciens pour couvrir l'attaque ?", "A LIRE", "2 journaux ne remontent pas jusqu'au début de l'attaque (Windows efface les plus anciens événements). Pour ces journaux, ne rien trouver ne prouve rien.", "journaux_couverture.csv"),
+              ("Mots de passe enregistrés dans Windows", "A FAIRE", "1 compte a des mots de passe enregistrés dans Windows. L'outil netpass a été lancé : considérez les mots de passe réseau et bureau à distance de ce compte comme volés.", "identifiants_exposition.txt"),
+              ("Journal du pare-feu de Windows (connexions du poste)", "NON VERIFIABLE", "Le pare-feu ne notait aucune connexion (journal désactivé, réglage par défaut de Windows). Le poste ne garde donc aucune trace de ses connexions vers Internet : seule la box internet peut dire où des données ont été envoyées.", "parefeu_fenetres.csv"),
+              ("Accès aux dossiers partagés du poste (journal de sécurité)", "NON VERIFIABLE", "Aucun accès noté (Windows ne les notait probablement pas : audit inactif). Aucune adresse IP à vérifier.", "partages_acces_5140_5145.csv"),
+              ("Sites contactés par le poste (journal DNS)", "NON VERIFIABLE", "Journal vide ou désactivé (il l'est par défaut dans Windows).", "dns_requetes_fenetres.csv"),
+              ("Clés et disques USB branchés", "RAS", "Aucun support USB branché pendant l'attaque (seule la clé de collecte, à 14:58).", "usb_chronologie.csv"),
+              ("Transferts en arrière-plan de Windows (BITS)", "RAS", "Aucun transfert en arrière-plan pendant l'attaque.", "bits_evenements.csv")]
     ecrire(A("grille_verification.csv"), [{"Canal": a, "Statut": b, "Constat": c, "Fichier": f} for a, b, c, f in grille])
     (col / "SYNTHESE.txt").write_text(
         "SYNTHESE DE LA COLLECTE - SECRETARIAT-01 (DONNEES FICTIVES DE DEMONSTRATION)\n\n"

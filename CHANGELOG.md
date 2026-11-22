@@ -1,5 +1,25 @@
 # Journal des versions
 
+## 2.9.2 (bêta)
+- **Textes du rapport réécrits en clair**, page par page, sans jargon :
+  - Rubriques renommées : *Points vérifiés* (ex-grille par canal), *Périodes suspectes* (ex-fenêtres d'analyse), *Adresses IP et pays*, *Données sorties du poste* (ex-exfiltration), *Angles morts* (ex-visibilité), *Mots de passe et fuites*, *Traces à chercher ailleurs* (ex-IOC et chasse), *Résumé de la collecte* (ex-SYNTHESE.txt).
+  - Statuts lisibles : *Indice trouvé*, *À vérifier vous-même*, *À lire*, *Impossible à vérifier*, *Rien de suspect*, chacun expliqué en une ligne.
+  - Chaque point vérifié dit ce qu'il cherche et ce qu'on en conclut (« Fichiers compressés créés pendant l'attaque », « Copier-coller vers le PC de l'attaquant »…), avec les nombres accordés (« 1 journal », « 3 journaux »).
+  - Chronologie : titres en mots (« Connexion réussie de … (bureau à distance) », « Compte créé : … », « Journal Sécurité effacé ») ; le numéro d'événement Windows reste en fin de titre. Catégories : *Programmes lancés*, *Connexions ratées*, *Sites web*…
+  - Réglage de Defender modifié : la fonction coupée est nommée (« surveillance réseau des programmes ») à côté de la clé.
+- **Mémoire vive** : quand elle n'est pas lue, la page dit pourquoi en une phrase et donne les trois conditions pour la lire (copie en collecte complète, analyse sur un autre PC que le poste examiné, « Analyse complète » et « Utiliser Internet » cochées). Le détail technique est replié. Les anciens messages (« Image RAM présente mais non lue… ») sont redits en clair.
+- **Appli** : options d'analyse reformulées (« Analyse complète : lit aussi l'index du disque ($MFT) et la mémoire vive »).
+- **Poste sain : rapports adaptés**. Si l'examen ne trouve ni intrusion, ni envoi de données, ni chiffrement, ni outil de pirate :
+  - le rapport s'appelle « Examen de sécurité » (et non « Incident ») ;
+  - le **rapport client** (ex-rapport praticien) dit ce qui a été trouvé, ses limites et quoi faire, sans « données potentiellement concernées », ni plainte, ni « ne pas rallumer » ;
+  - bloc CNIL : « aucune violation de données constatée sur ce poste, rien à notifier sur cette base » ;
+  - Résumé : une seule action, « Rien d'urgent sur ce poste », au lieu de CNIL, assureur et chasse sur le parc.
+- **Rapport technique** : conclusion en tête ; adresses IP limitées à celles qui comptent (connexion réussie ou ratée, liste malveillante, connexion suspecte), les connexions habituelles de programmes signés sont seulement comptées ; plus de tableaux vides ; « Angles morts » distingue les sources désactivées et les sources absentes.
+- **Fichiers de DigSpill lui-même** (kit, copie du dépôt dans Téléchargements) retirés des empreintes suspectes et des processus non signés.
+- **« Fichier ouvert - Avertissement de sécurité » à chaque lancement de Velociraptor** : un kit extrait d'un zip téléchargé garde la « marque du Web ». DigSpill la retire de ses propres fichiers au démarrage, et l'analyse pour ses outils.
+- **Defender bloquait `Analyse-Exfil.ps1`** (`Trojan:PowerShell/PSAttackTool.A`) : les noms d'outils d'attaque que l'analyse cherche (Mimikatz et ses commandes, outils de vol de mots de passe, outils d'envoi) sont sortis du script vers `moteur\indicateurs.json`. L'analyse s'arrête avec un message clair si ce fichier manque.
+- **Analyse, étape IOC** : erreur « op_Subtraction » quand Defender avait des détections ; la quarantaine Defender n'était pas reprise. Même cause corrigée dans l'étape Mimikatz.
+
 ## 2.9.1 (bêta)
 - **Mise à jour depuis l'appli** : accueil › *Mises à jour*. Dernière release GitHub, empreinte SHA256 vérifiée, remplacement après fermeture avec retour à l'ancienne version si une étape échoue ; `digspill.ini` et les bases téléchargées sont gardés. Jamais de connexion au démarrage (poste examiné). La version du kit (`moteur\VERSION.txt`) s'affiche dans la barre latérale.
 - **Releases automatiques** : chaque nouvelle version de ce journal fusionnée dans main est publiée avec `DigSpill.zip`.

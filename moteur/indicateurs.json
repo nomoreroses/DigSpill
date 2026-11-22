@@ -1,0 +1,11 @@
+{
+ "_lisez_moi": "Noms d'outils d'attaque cherchés par Analyse-Exfil.ps1 (expressions régulières .NET). Gardés hors du script : écrits en clair dans un .ps1, ils le font prendre pour un outil d'attaque par Defender (Trojan:PowerShell/PSAttackTool.A).",
+ "outils_lancement_4688": "(?i)\\\\(rclone|megasync|megacmd|mimikatz|lazagne|procdump|winscp|filezilla|pscp|ngrok|chisel)[^\\\\\\s]*\\.exe",
+ "outils": "(?i)mimikatz|chromepass|bulletspass|webbrowserpass|netpass|mailpass|passwordfox|operapass|routerpass|sniffpass|dialupass|wirelesskey|lazagne|procdump|rclone|winscp|filezilla|pscp|psftp|megasync|megacmd|anydesk|rustdesk|ngrok|cloudflared|chisel|7z|winrar|rar\\.exe|advanced_(ip|port)_scanner|netscan|nmap|stub\\.exe|\\\\s\\.exe$|^s\\.exe$|netbird|splashtop|tsplus|teamviewer|screenconnect|psexec|wmic|vssadmin|bcdedit|wbadmin|cipher",
+ "sites_outils": "(?i)port-scanner|ip-scanner|nirsoft|mimikatz|github\\.com|raw\\.githubusercontent|anydesk|rustdesk|teamviewer|ngrok|rclone|netbird|splashtop|tsplus|screenconnect|7-zip|winrar|filezilla|winscp|putty",
+ "mimikatz": "(?i)mimikatz|mimilib|mimidrv|sekurlsa|lsadump|kiwi|Invoke-Mimikatz|privilege::debug",
+ "menaces_mimikatz": "(?i)mimikatz|lsadump|HackTool",
+ "detections_mimikatz": "(?i)mimikatz|lsadump",
+ "outils_mots_de_passe": "(?i)pass|dialupass|wirelesskey|sniffpass|lazagne|credential",
+ "outils_envoi": "rclone|megasync|megacmd|winscp|filezilla|pscp|restic|mimikatz|lazagne|procdump|netpass|webbrowserpass|mailpass|chromepass"
+}

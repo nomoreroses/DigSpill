@@ -101,7 +101,7 @@ REGLES STRICTES :
 - Francais simple, phrases courtes, une idee par phrase.
 
 FORMAT (Markdown) :
-## Resume pour le praticien
+## Resume pour le client
 (5 lignes maximum, sans jargon)
 ## Deroule de l'attaque
 (liste chronologique, une ligne par etape)

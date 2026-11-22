@@ -108,7 +108,7 @@ T.ECRANS.integrite = c => {
   const sc = T.scelleActuel(), ch = T.chaine(), R = T.reglages(), id = T.identite();
   c.append(h('h1', {}, 'Intégrité et preuve'), h('p', { class: 'sous-titre' }, "Prouver que les preuves n'ont pas bougé depuis la collecte, et dire qui les a eues entre les mains."));
   if (!sc) {
-    c.append(h('div', { class: 'alerte n2' }, h('div', { class: 'ic' }, ''), h('div', {}, "Aucun scellé dans ce fichier : régénérer avec DigSpill.exe > Analyser une collecte pour créer le scellé et le faire horodater.")));
+    c.append(h('div', { class: 'alerte n2' }, h('div', { class: 'ic' }, ''), h('div', {}, "Aucun scellé dans ce rapport : DigSpill → « Analyser une collecte » crée le scellé et le fait horodater.")));
   } else {
     const j = sc.jeton, qr = T.qrSvg(`DIGSPILL SCELLE ${sc.nom} SHA256 ${sc.sha256}`, 5);
     const etatJeton = !j ? h('span', { class: 'pill orange' }, 'pas encore horodaté') : j.erreur ? h('span', { class: 'pill rouge' }, '' + j.erreur)
@@ -137,7 +137,7 @@ T.ECRANS.integrite = c => {
   // chaine de possession
   c.append(T.carte('Chaîne de possession', 'reconstituée depuis les journaux, manifestes, PV et scellés', ch.length ? h('ol', { class: 'chaine' }, ch.map(e => h('li', {},
     h('span', { class: 'chaine-ic' }, e.icone), h('div', {}, h('div', { class: 'gras' }, e.action), h('div', { class: 'petit doux' }, `${T.flong(e.date)} · ${e.acteur || '?'}`), h('div', { class: 'petit' }, e.detail)),
-    h('div', { class: 'droite' }, e.preuve ? T.bp(e.preuve) : '')))) : T.vide('Journaux absents : chaîne non reconstituable.')));
+    h('div', { class: 'droite' }, e.preuve ? T.bp(e.preuve) : '')))) : T.vide('Journaux de DigSpill absents : impossible de retracer qui a eu les preuves.')));
   // verification des fichiers
   const etat = h('div', { class: 'petit doux', style: 'margin-top:8px' }), resultat = h('div');
   const choix = h('input', { type: 'file', webkitdirectory: true, multiple: true, style: 'display:none', onchange: async e => {
@@ -152,15 +152,15 @@ T.ECRANS.integrite = c => {
     if (r.tropGros.length) resultat.append(h('pre', { class: 'apercu', style: 'margin-top:8px' }, r.tropGros.map(x => `(Get-FileHash -Algorithm SHA256 -LiteralPath '${x.chemin}').Hash -eq '${x.sha256}'`).join('\n')));
   } });
   c.append(T.carte('Vérifier les fichiers de preuve', 'dans ce navigateur, rien n\'est envoyé', h('ul', { class: 'lignes' },
-    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Brancher le support de preuves (clé de collecte ou seconde copie).')),
-    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, `Choisir le dossier Collecte (qui contient ${T.D.collecte.nom}).`)),
-    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Chaque fichier est haché ici et comparé aux manifestes et au scellé.'))),
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Branchez le support des preuves (clé de collecte ou seconde copie).')),
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, `Choisissez le dossier Collecte (celui qui contient ${T.D.collecte.nom}).`)),
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, "DigSpill calcule ici l'empreinte de chaque fichier et la compare aux listes d'empreintes de la collecte et au scellé."))),
     h('button', { class: 'btn primaire', style: 'margin-top:8px', onclick: () => choix.click() }, 'Choisir le dossier et vérifier'), choix, etat, resultat));
   // valeur probante
   c.append(T.carte('Ce que vaut ce dossier', 'à valider avec un avocat ou l\'assureur', h('ul', { class: 'lignes' },
     h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Manifestes SHA256 + scellé : on peut démontrer qu\'aucun fichier n\'a changé depuis sa collecte.')),
     h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, "Horodatage par un tiers : date opposable. Délivré par un prestataire qualifié eIDAS, il est présumé exact (art. 41 du règlement eIDAS).")),
-    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'PV de collecte signé (technicien, représentant du cabinet) : qui a fait quoi, quand, avec quels outils.')),
+    h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'PV de collecte signé (technicien, représentant du client) : qui a fait quoi, quand, avec quels outils.')),
     h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, "Pour aller plus loin : constat d'un commissaire de justice, ou prestataire de réponse à incident qualifié PRIS par l'ANSSI."))),
     h('div', { class: 'filtres', style: 'margin-top:10px' }, h('button', { class: 'btn primaire', onclick: () => T.imprimer('pv') }, 'PV de collecte et certificat d\'intégrité'))));
 };
@@ -192,7 +192,7 @@ T.pvHtml = () => {
   <div class="note">Collecte ${esc(id.nom)} · document établi le ${esc(T.flong(new Date()))}</div></div><div class="pv-qr">${qr}</div></div>
   <h2>1. Identification</h2><table>
   ${ligne('Client (responsable de traitement)', esc(champ('Cabinet') || R.client || '……………………………………………'))}
-  ${champ('Present') ? ligne('Présent pour le cabinet', esc(champ('Present'))) : ''}
+  ${champ('Present') ? ligne('Présent pour le client', esc(champ('Present'))) : ''}
   ${champ('Ticket') ? ligne('N° de ticket', esc(champ('Ticket'))) : ''}
   ${champ('Motif') ? ligne('Motif de l\'intervention', esc(champ('Motif'))) : ''}
   ${ligne('Poste examiné', esc(champ('Poste') || id.poste))}
@@ -216,6 +216,6 @@ T.pvHtml = () => {
   <h2>5. Vérification par un tiers</h2><div class="bloc note">Chaque fichier : <b>Get-FileHash -Algorithm SHA256</b> doit redonner l'empreinte du manifeste. Le scellé : son empreinte SHA-256 doit être celle ci-dessus. Le jeton : <b>openssl ts -verify -data ${esc(sc ? sc.nom : 'SCELLE')}.txt -in ${esc(sc ? sc.nom : 'SCELLE')}.tsr -CAfile &lt;chaîne de l'autorité&gt;</b>. Le fichier d'interface permet aussi de recalculer toutes les empreintes (écran « Intégrité et preuve »).</div>
   <h2>6. Observations</h2><div class="pv-lignes"></div>
   <h2>7. Signatures</h2><div class="pv-signatures">
-  ${[['Le technicien', champ('Technicien') || R.technicien], ['Le représentant du cabinet', champ('Present')], ['Témoin (facultatif)', '']].map(([x, n]) => `<div class="pv-sig"><b>${x}</b><div>Nom, qualité : ${esc(n || '')}</div><div>Date :</div><div class="pv-zone">Signature</div></div>`).join('')}</div>
+  ${[['Le technicien', champ('Technicien') || R.technicien], ['Le représentant du client', champ('Present')], ['Témoin (facultatif)', '']].map(([x, n]) => `<div class="pv-sig"><b>${x}</b><div>Nom, qualité : ${esc(n || '')}</div><div>Date :</div><div class="pv-zone">Signature</div></div>`).join('')}</div>
   <p class="note" style="margin-top:14px">Document établi par un prestataire informatique. Il ne constitue pas un constat de commissaire de justice ; sa force probante est appréciée par le juge. Lorsque l'horodatage est délivré par un prestataire qualifié, le règlement (UE) n° 910/2014 « eIDAS » (art. 41) lui attache une présomption d'exactitude de la date et de l'heure et d'intégrité des données concernées.</p></div>`;
 };

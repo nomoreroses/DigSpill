@@ -14,7 +14,7 @@ Clé USB de collecte à lancer sur un poste Windows suspecté d'intrusion, d'exf
 ## Installer la clé (une fois)
 
 1. Télécharger **`DigSpill.zip`** : onglet *Releases* du dépôt, ou *Actions › Kit DigSpill › DigSpill-cle*.
-2. Clic droit sur le zip › *Propriétés* › cocher **Débloquer** (sinon Windows traite chaque fichier comme « venu d'Internet »).
+2. Clic droit sur le zip › *Propriétés* › cocher **Débloquer** (sinon Windows traite chaque fichier comme « venu d'Internet » et demande confirmation à chaque lancement de Velociraptor). Oubli : DigSpill débloque ses propres fichiers au démarrage.
 3. Le dézipper **à la racine de la clé OUTILS**.
 4. Double-clic sur **`DigSpill.exe`**. C'est tout. Signer l'exe pour afficher le nom de l'éditeur : [docs/SIGNATURE.md](docs/SIGNATURE.md).
 
@@ -105,9 +105,9 @@ Quatre onglets, trois niveaux de lecture : la phrase en haut (5 secondes), les a
 | Onglet | Ce qu'il montre |
 |---|---|
 | 🎯 Résumé | Une phrase de faits (d'où venait la connexion, combien est parti sur Internet, combien de fichiers sont chiffrés), les **actions à faire maintenant** (cases à cocher, compte à rebours CNIL, procédure « Isoler le poste »), ce que la collecte ne peut pas voir |
-| 🕒 Chronologie | La fenêtre de l'attaquant **racontée en 4 chapitres** : il entre, il s'installe, il emporte les données, il détruit. Chaque étape s'ouvre sur ses preuves : ce que dit la ligne, fichier, n° de ligne, SHA256 du manifeste |
-| 🔎 Détails | Grille par canal, fenêtres, chiffres clés et alertes, IP et pays, exfiltration, **mémoire vive**, visibilité, santé et RGPD, identifiants et fuites, IOC et chasse, analyse IA, tous les événements (frise), SYNTHESE.txt |
-| 🔏 Preuves | Intégrité (scellé horodaté, chaîne de possession, vérification des fichiers) et rapports à imprimer (praticien, technique, PV de collecte) |
+| 🕒 Chronologie | La période de l'attaque **racontée en 4 chapitres** : il entre, il s'installe, il emporte les données, il détruit. Chaque étape s'ouvre sur ses preuves : ce que dit la ligne, fichier, n° de ligne, SHA256 du manifeste |
+| 🔎 Détails | Points vérifiés, périodes suspectes, chiffres clés et alertes, adresses IP et pays, données sorties du poste, **mémoire vive**, angles morts, santé et RGPD, mots de passe et fuites, traces à chercher ailleurs (IOC), analyse par IA, tous les événements (frise), résumé de la collecte |
+| 🔏 Preuves | Intégrité des preuves (scellé horodaté, chaîne de possession, vérification des fichiers) et rapports à imprimer (praticien, technique, PV de collecte) |
 
 - **Ctrl K** : recherche dans les IP, empreintes, comptes, étapes du récit, rubriques, et identifiants de preuve (`executions_fenetres#14`).
 - Thème sombre par défaut, **thème clair** dans Réglages (engrenage en haut à droite). Le rapport imprimé reste clair.
@@ -116,19 +116,19 @@ Quatre onglets, trois niveaux de lecture : la phrase en haut (5 secondes), les a
 
 Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable qui affiche la ligne du CSV d'origine et le SHA256 du fichier dans le manifeste.
 
-![Chronologie racontée : la fenêtre de l'attaque du test (compte administrateur, Defender, rclone, journaux effacés)](docs/captures/chrono.png)
+![Chronologie racontée : la période de l'attaque du test (compte administrateur, Defender, rclone, journaux effacés)](docs/captures/chrono.png)
 
 <details>
 <summary>Autres captures (vrai Windows, parcours de test complet)</summary>
 
-![Grille par canal](docs/captures/grille.png)
+![Points vérifiés](docs/captures/grille.png)
 ![Mémoire vive](docs/captures/memoire.png)
-![Exfiltration : compte MEGA de rclone, bases métier](docs/captures/exfil.png)
-![IP et pays](docs/captures/ip.png)
-![Visibilité](docs/captures/visibilite.png)
+![Données sorties du poste : compte MEGA de rclone, bases de données du cabinet](docs/captures/exfil.png)
+![Adresses IP et pays](docs/captures/ip.png)
+![Angles morts](docs/captures/visibilite.png)
 ![Santé et RGPD](docs/captures/sante.png)
-![Identifiants et fuites](docs/captures/fuites.png)
-![IOC et chasse](docs/captures/ioc.png)
+![Mots de passe et fuites](docs/captures/fuites.png)
+![Traces à chercher ailleurs (IOC)](docs/captures/ioc.png)
 ![Tous les événements](docs/captures/evenements.png)
 <img src="docs/captures/mobile.png" alt="Téléphone (390 px)" width="300">
 

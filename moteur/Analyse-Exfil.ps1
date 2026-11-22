@@ -64,11 +64,26 @@ New-Item -ItemType Directory -Force -Path $Work | Out-Null
 $LogFile = Join-Path $Sortie 'analyse.log'
 $EvtxDir = Join-Path $Collecte 'evenements\evtx'
 
+# noms d'outils d'attaque : dans moteur\indicateurs.json, pas dans ce script (sinon Defender le prend pour un outil
+# d'attaque : Trojan:PowerShell/PSAttackTool.A)
+$Ind = $null
+try { $Ind = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'indicateurs.json') -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+$manque = @('outils', 'outils_lancement_4688', 'sites_outils', 'mimikatz', 'menaces_mimikatz', 'detections_mimikatz', 'outils_mots_de_passe', 'outils_envoi') | Where-Object { -not $Ind -or -not $Ind.$_ }
+if ($manque) {
+    $m = "[!] Fichier moteur\indicateurs.json absent ou incomplet ($($manque -join ', ')) : refaites la clé avec le kit complet."
+    Add-Content -LiteralPath $LogFile -Value $m -Encoding UTF8; Write-Output $m; exit 2
+}
+
 if (-not $Velo) {
     $racineCollecte = Split-Path (Split-Path $Collecte -Parent) -Parent
     foreach ($cand in @((Join-Path $PSScriptRoot 'outils\Collecteur-Velociraptor.exe'), (Join-Path $PSScriptRoot 'Collecteur-Velociraptor.exe'), (Join-Path $racineCollecte 'moteur\outils\Collecteur-Velociraptor.exe'), (Join-Path $racineCollecte 'Collecteur-Velociraptor.exe'))) {
         if (Test-Path -LiteralPath $cand) { $Velo = $cand; break }
     }
+}
+# kit extrait d'un zip telecharge : sans la « marque du Web », Windows ne demande plus confirmation a chaque lancement
+# de Velociraptor, 7zr ou Python (seuls les outils du kit sont touches, jamais la collecte)
+foreach ($d in @((Join-Path $PSScriptRoot 'outils'), $(if ($Velo) { Split-Path $Velo -Parent }))) {
+    if ($d -and (Test-Path -LiteralPath $d)) { Get-ChildItem -LiteralPath $d -Recurse -File -Include *.exe, *.dll, *.pyd -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue }
 }
 
 # ----------------------------------------------------------------- helpers
@@ -274,6 +289,8 @@ function SidToName([string]$s) { if ($SidName[$s]) { $SidName[$s] } else { $s } 
 
 # Grille de verification (alimente SYNTHESE_EXFILTRATION.txt)
 $Grid = New-Object System.Collections.Generic.List[object]
+# « 1 fichier », « 3 fichiers » : les constats de la grille sont lus tels quels dans l'interface
+function Nb([int64]$n, [string]$un, [string]$plusieurs) { if ($n -le 1) { "$n $un" } else { "$n $plusieurs" } }
 function G([string]$canal, [string]$statut, [string]$constat, [string]$fichier) {
     $Grid.Add([pscustomobject]@{ Canal = $canal; Statut = $statut; Constat = $constat; Fichier = $fichier })
 }
@@ -290,7 +307,7 @@ $script:Win = New-Object System.Collections.Generic.List[object]
 Step 'Reconstitution des sessions (4624/4634/4647, LSM 21-25, RCM 1149, RdpCoreTS 131)' {
     $sys = '^(DWM-|UMFD-|ANONYMOUS|.*\$$)'
     $lt = "*[EventData[Data[@Name='LogonType']='2' or Data[@Name='LogonType']='10' or Data[@Name='LogonType']='11']]"
-    if (-not (Find-Evtx 'Security')) { Log '    [!] Security.evtx absent : sessions non reconstituees'; G 'Sessions (Security)' 'NON VERIFIABLE' 'Security.evtx absent de la collecte' ''; return }
+    if (-not (Find-Evtx 'Security')) { Log '    [!] Security.evtx absent : sessions non reconstituees'; G 'Connexions au poste (journal de sécurité de Windows)' 'NON VERIFIABLE' 'Le journal de sécurité de Windows (Security.evtx) manque dans la collecte : impossible de savoir qui s''est connecté et quand.' ''; return }
     $on = Get-Evtx 'Security' @(4624) $Since " and $lt"
     $ends = @{}
     foreach ($e in @(Get-Evtx 'Security' @(4634) $Since " and $lt") + @(Get-Evtx 'Security' @(4647) $Since)) {
@@ -367,46 +384,46 @@ Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, indi
     $cand = New-Object System.Collections.Generic.List[object]
     foreach ($s in $script:Sessions) {
         $why = $null
-        if ($s.TypeIP -eq 'PUBLIQUE') { $why = "session $($s.Compte) depuis IP publique $($s.IP)" }
-        elseif ($s.TypeIP -eq 'VPN/CGNAT') { $why = "session $($s.Compte) depuis $($s.IP) (plage VPN/CGNAT, NetBird ?)" }
-        elseif ($s.Compte -match '^(Invit|Guest)') { $why = "session du compte $($s.Compte) depuis $($s.IP)" }
+        if ($s.TypeIP -eq 'PUBLIQUE') { $why = "connexion de $($s.Compte) depuis Internet ($($s.IP))" }
+        elseif ($s.TypeIP -eq 'VPN/CGNAT') { $why = "connexion de $($s.Compte) depuis $($s.IP) (adresse de VPN ou d'opérateur partagé, NetBird ?)" }
+        elseif ($s.Compte -match '^(Invit|Guest)') { $why = "connexion du compte invité $($s.Compte) depuis $($s.IP)" }
         if (-not $why) { continue }
         $fin = if ($s.Fin) { $s.Fin } else { $s.Debut.AddHours(2) }
-        $cand.Add([pscustomobject]@{ Debut = $s.Debut.AddMinutes(-$MargeMinutes); Fin = $fin.AddMinutes($MargeMinutes); Motif = $why + $(if (-not $s.Fin) { ' (fin inconnue : +2 h)' } else { '' }) })
+        $cand.Add([pscustomobject]@{ Debut = $s.Debut.AddMinutes(-$MargeMinutes); Fin = $fin.AddMinutes($MargeMinutes); Motif = $why + $(if (-not $s.Fin) { ' (heure de fin inconnue : 2 h comptées)' } else { '' }) })
     }
     # Indices forts horodates : une attaque menee sur place ou par un outil d'acces distant n'ouvre pas de session
     # RDP depuis Internet ; sans eux il n'y aurait pas de fenetre, donc rien a raconter.
     $ind = New-Object System.Collections.Generic.List[object]
     function Indice($date, [string]$quoi) { $d = Parse-Date $date; if ($d) { $ind.Add([pscustomobject]@{ T = $d; Quoi = $quoi }) } }
     foreach ($r in (Read-Csv (C 'comptes\evenements_comptes.csv'))) {
-        if ($r.EventID -eq '4720') { Indice $r.Date "compte $($r.CibleOuGroupe) cree" }
-        elseif ($r.EventID -match '^(4728|4732|4756)$' -and "$($r.CibleOuGroupe)" -match '(?i)admin') { Indice $r.Date "$($r.Membre) ajoute a $($r.CibleOuGroupe)" }
+        if ($r.EventID -eq '4720') { Indice $r.Date "compte $($r.CibleOuGroupe) créé" }
+        elseif ($r.EventID -match '^(4728|4732|4756)$' -and "$($r.CibleOuGroupe)" -match '(?i)admin') { Indice $r.Date "$($r.Membre) ajouté au groupe $($r.CibleOuGroupe)" }
     }
     foreach ($r in (Read-Csv (C 'evenements\resume_evenements_cles.csv'))) {
         $m = "$($r.Message)"
         switch ("$($r.EventID)") {
-            '1102' { Indice $r.Date 'journal Securite efface' }
-            '104'  { Indice $r.Date ('journal efface' + $(if ($m -match '(?i)the (\S+) log file') { " ($($Matches[1]))" })) }
-            '5001' { Indice $r.Date 'protection temps reel Defender desactivee' }
-            '4688' { if ($m -match '(?i)\\(rclone|megasync|megacmd|mimikatz|lazagne|procdump|winscp|filezilla|pscp|ngrok|chisel)[^\\\s]*\.exe') { Indice $r.Date "$($Matches[1]) lance" } }
+            '1102' { Indice $r.Date 'journal Sécurité effacé' }
+            '104'  { Indice $r.Date ('journal effacé' + $(if ($m -match '(?i)the (\S+) log file') { " ($($Matches[1]))" })) }
+            '5001' { Indice $r.Date 'protection en temps réel de Defender coupée' }
+            '4688' { if ($m -match $Ind.outils_lancement_4688) { Indice $r.Date "$($Matches[1]) lancé" } }
         }
     }
     foreach ($r in (Read-Csv (C 'rancon\commandes_destructrices_4688.csv'))) { $l = "$($r.LigneDeCommande)"; Indice $r.Date ('commande ' + $l.Substring(0, [Math]::Min(70, $l.Length))) }
-    foreach ($r in (Get-Chiffrement)) { Indice $r.Premier "debut du chiffrement ($($r.NbFichiers) fichiers $($r.Extension))"; Indice $r.Dernier "fin du chiffrement $($r.Extension)" }
+    foreach ($r in (Get-Chiffrement)) { Indice $r.Premier "début du chiffrement ($($r.NbFichiers) fichiers $($r.Extension))"; Indice $r.Dernier "fin du chiffrement $($r.Extension)" }
     $grp = $null
     foreach ($x in ($ind | Sort-Object T)) {
         if ($grp -and ($x.T - $grp.Fin).TotalMinutes -le 60) { $grp.Fin = $x.T; $grp.Quoi.Add($x.Quoi) }
         else {
-            if ($grp) { $cand.Add([pscustomobject]@{ Debut = $grp.Debut.AddMinutes(-$MargeMinutes); Fin = $grp.Fin.AddMinutes($MargeMinutes); Motif = "activite suspecte : $(@($grp.Quoi | Select-Object -Unique | Select-Object -First 3) -join ', ')$(if ($grp.Quoi.Count -gt 3) { " ($($grp.Quoi.Count) indices)" })" }) }
+            if ($grp) { $cand.Add([pscustomobject]@{ Debut = $grp.Debut.AddMinutes(-$MargeMinutes); Fin = $grp.Fin.AddMinutes($MargeMinutes); Motif = "activité suspecte : $(@($grp.Quoi | Select-Object -Unique | Select-Object -First 3) -join ', ')$(if ($grp.Quoi.Count -gt 3) { " ($($grp.Quoi.Count) indices)" })" }) }
             $grp = [pscustomobject]@{ Debut = $x.T; Fin = $x.T; Quoi = (New-Object System.Collections.Generic.List[string]) }; $grp.Quoi.Add($x.Quoi)
         }
     }
-    if ($grp) { $cand.Add([pscustomobject]@{ Debut = $grp.Debut.AddMinutes(-$MargeMinutes); Fin = $grp.Fin.AddMinutes($MargeMinutes); Motif = "activite suspecte : $(@($grp.Quoi | Select-Object -Unique | Select-Object -First 3) -join ', ')$(if ($grp.Quoi.Count -gt 3) { " ($($grp.Quoi.Count) indices)" })" }) }
+    if ($grp) { $cand.Add([pscustomobject]@{ Debut = $grp.Debut.AddMinutes(-$MargeMinutes); Fin = $grp.Fin.AddMinutes($MargeMinutes); Motif = "activité suspecte : $(@($grp.Quoi | Select-Object -Unique | Select-Object -First 3) -join ', ')$(if ($grp.Quoi.Count -gt 3) { " ($($grp.Quoi.Count) indices)" })" }) }
     if ($ind.Count) { Log "    $($ind.Count) indice(s) fort(s) horodate(s) : comptes, journaux effaces, Defender, outils, commandes, chiffrement" }
     foreach ($f in $Fenetres) {
         $parts = $f -split '[;|]'
         $d1 = Parse-Date $parts[0]; $d2 = Parse-Date $parts[-1]
-        if ($d1 -and $d2 -and $d2 -gt $d1) { $cand.Add([pscustomobject]@{ Debut = $d1; Fin = $d2; Motif = 'fenetre manuelle' }) }
+        if ($d1 -and $d2 -and $d2 -gt $d1) { $cand.Add([pscustomobject]@{ Debut = $d1; Fin = $d2; Motif = 'période ajoutée à la main' }) }
         else { Log "    [!] Fenetre ignoree (format attendu 'aaaa-mm-jj hh:mm;aaaa-mm-jj hh:mm') : $f" }
     }
     # Fusion des fenetres qui se chevauchent
@@ -432,21 +449,21 @@ Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, indi
     }
     Out-Csv $cov 'journaux_couverture.csv'
     $nc = @($cov | Where-Object { $p = $_; @($script:Win | Where-Object { $p.($_.Id) -ne 'couvert' }).Count })
-    if ($script:Win.Count -and $nc.Count) { G 'Couverture des journaux' 'A LIRE' "$($nc.Count) journal(aux) ne couvrent pas toutes les fenetres (rotation, journal recent) : absence d'evenement non probante" 'journaux_couverture.csv' }
-    if (-not $script:Win.Count) { G 'Fenetres d analyse' 'A FAIRE' 'Aucune session suspecte ni indice fort horodate : preciser les fenetres avec -Fenetres' 'fenetres_analyse.csv' }
+    if ($script:Win.Count -and $nc.Count) { G 'Journaux de Windows assez anciens pour couvrir l''attaque ?' 'A LIRE' "$(Nb $nc.Count 'journal ne remonte' 'journaux ne remontent') pas jusqu'au début de l'attaque (Windows efface les plus anciens événements). Pour ces journaux, ne rien trouver ne prouve rien." 'journaux_couverture.csv' }
+    if (-not $script:Win.Count) { G 'Périodes de l''attaque (fenêtres d''analyse)' 'A FAIRE' 'DigSpill n''a trouvé ni connexion suspecte ni indice daté : il ne sait pas quand chercher. Si vous connaissez la date de l''attaque, relancez l''analyse en la donnant (-Fenetres).' 'fenetres_analyse.csv' }
 }
 function WinOf($d) {
     if (-not ($d -is [datetime])) { return '' }
     (@($script:Win | Where-Object { $d -ge $_.Debut -and $d -le $_.Fin } | ForEach-Object { $_.Id }) -join ',')
 }
 
-$ToolRx = '(?i)mimikatz|chromepass|bulletspass|webbrowserpass|netpass|mailpass|passwordfox|operapass|routerpass|sniffpass|dialupass|wirelesskey|lazagne|procdump|rclone|winscp|filezilla|pscp|psftp|megasync|megacmd|anydesk|rustdesk|ngrok|cloudflared|chisel|7z|winrar|rar\.exe|advanced_(ip|port)_scanner|netscan|nmap|stub\.exe|\\s\.exe$|^s\.exe$|netbird|splashtop|tsplus|teamviewer|screenconnect|psexec|wmic|vssadmin|bcdedit|wbadmin|cipher'
+$ToolRx = $Ind.outils
 
 # =================================================================== 2. SRUM : VOLUMES PAR APPLICATION ET PAR HEURE
 Step 'SRUM : volumes reseau et disque par application, fenetres vs base de reference' {
     $db = C 'artefacts\srum\SRUDB.dat'
     if (-not (Test-Path -LiteralPath $db)) { $db = @(Get-FromZip '\\System32\\sru\\SRUDB\.dat$' 1) | Select-Object -First 1 }
-    if (-not $db -or -not $Velo) { G 'Volumes reseau (SRUM)' 'NON VERIFIABLE' 'SRUDB.dat ou moteur Velociraptor absent' ''; return }
+    if (-not $db -or -not $Velo) { G 'Quantité de données envoyées sur Internet (SRUM)' 'NON VERIFIABLE' 'Le relevé de Windows qui compte les données envoyées par chaque programme (SRUM) n''a pas pu être lu : fichier SRUDB.dat ou outil de lecture (Velociraptor) absent.' ''; return }
     $tmp = Join-Path $Work 'SRUDB.dat'
     Copy-Item -LiteralPath $db -Destination $tmp -Force
     $net = Invoke-Vql "SELECT TimeStamp, srum_lookup_id(file='''$tmp''', id=AppId) AS App, UserId, InterfaceLuid, BytesSent, BytesRecvd FROM parse_ese(file='''$tmp''', table='{973F5D5C-1D90-4944-BE8E-24B94231A174}')"
@@ -456,7 +473,7 @@ Step 'SRUM : volumes reseau et disque par application, fenetres vs base de refer
         [pscustomobject]@{ Releve = $d; App = $(if ($r.App) { $r.App } else { "(AppId inconnu)" }); UserId = $r.UserId; Interface = $r.InterfaceLuid; Envoye = [double]$r.BytesSent; Recu = [double]$r.BytesRecvd }
     }
     $rows = @($rows)
-    if (-not $rows.Count) { G 'Volumes reseau (SRUM)' 'NON VERIFIABLE' 'Table reseau SRUM illisible ou vide' ''; return }
+    if (-not $rows.Count) { G 'Quantité de données envoyées sur Internet (SRUM)' 'NON VERIFIABLE' 'Le relevé de Windows qui compte les données envoyées par chaque programme (SRUM) est vide ou illisible. C''est fréquent sur Windows Server, où il n''est pas actif.' ''; return }
     $userMap = @{}
     foreach ($u in (Invoke-Vql "SELECT UserId, srum_lookup_id(file='''$tmp''', id=UserId) AS Sid FROM parse_ese(file='''$tmp''', table='{973F5D5C-1D90-4944-BE8E-24B94231A174}') GROUP BY UserId")) { $userMap["$($u.UserId)"] = SidToName $u.Sid }
     $first = ($rows | Measure-Object -Property Releve -Minimum).Minimum
@@ -547,9 +564,9 @@ Step 'SRUM : volumes reseau et disque par application, fenetres vs base de refer
 
     $hotAll = @($cmp | Where-Object { $_.Ecart -eq 'AU-DESSUS DU MAX DE REFERENCE' })
     $newApp = @($cmp | Where-Object { $_.Ecart -eq 'APPLI ABSENTE DE LA REFERENCE' -and $_.EnvoyeMo -ge 1 })
-    if (-not $script:Win.Count) { G 'Volumes reseau (SRUM)' 'A FAIRE' "SRUM lu ($(Fmt $first) -> $(Fmt $last)) mais aucune fenetre a comparer" 'srum_total_par_releve.csv' }
-    elseif ($hotAll.Count -or $newApp.Count) { G 'Volumes reseau (SRUM)' 'INDICE' "$($hotAll.Count) depassement(s) du max de reference, $($newApp.Count) appli(s) inconnue(s) ayant envoye >= 1 Mo dans les fenetres" 'srum_fenetres_vs_reference.csv, srum_METHODE.txt' }
-    else { G 'Volumes reseau (SRUM)' 'RAS' "Aucun releve des fenetres au-dessus du max de reference ($ReferenceJours j). Detail chiffre par appli et par heure." 'srum_fenetres_vs_reference.csv, srum_METHODE.txt' }
+    if (-not $script:Win.Count) { G 'Quantité de données envoyées sur Internet (SRUM)' 'A FAIRE' "Relevé lu (du $(Fmt $first) au $(Fmt $last)), mais aucune période d'attaque n'est connue : rien à comparer. Donnez la date de l'attaque pour mesurer ce qui est parti." 'srum_total_par_releve.csv' }
+    elseif ($hotAll.Count -or $newApp.Count) { G 'Quantité de données envoyées sur Internet (SRUM)' 'INDICE' "Pendant l'attaque, $(Nb $hotAll.Count 'heure a dépassé' 'heures ont dépassé') le plus gros envoi habituel du poste, et $(Nb $newApp.Count 'programme inhabituel a envoyé' 'programmes inhabituels ont envoyé') au moins 1 Mo. Détail par programme et par heure dans Détails › Données sorties du poste." 'srum_fenetres_vs_reference.csv, srum_METHODE.txt' }
+    else { G 'Quantité de données envoyées sur Internet (SRUM)' 'RAS' "Pendant l'attaque, le poste n'a pas envoyé plus que d'habitude (comparaison avec ses $ReferenceJours jours précédents). Détail par programme et par heure dans Détails › Données sorties du poste." 'srum_fenetres_vs_reference.csv, srum_METHODE.txt' }
 
     # Disque : octets lus / ecrits par application dans les fenetres (lecture massive avant archivage ?)
     $disk = Invoke-Vql "SELECT TimeStamp, srum_lookup_id(file='''$tmp''', id=AppId) AS App, ForegroundBytesRead + BackgroundBytesRead AS Lu, ForegroundBytesWritten + BackgroundBytesWritten AS Ecrit FROM parse_ese(file='''$tmp''', table='{D10CA2FE-6FCF-4F6D-848E-B2E99266FA89}')"
@@ -569,7 +586,7 @@ Step 'SRUM : volumes reseau et disque par application, fenetres vs base de refer
 $script:Exec = New-Object System.Collections.Generic.List[object]
 # $ToolRx defini avant la section SRUM
 Step 'Executions : Prefetch, Amcache, BAM, 4688 / Sysmon' {
-    if (-not $Velo) { G 'Executions (Prefetch / Amcache / BAM)' 'NON VERIFIABLE' 'Moteur Velociraptor absent' ''; return }
+    if (-not $Velo) { G 'Programmes lancés pendant l''attaque' 'NON VERIFIABLE' 'L''outil de lecture des traces de lancement (Velociraptor) manque dans le kit : refaites la clé avec le kit complet.' ''; return }
     $pfDir = C 'artefacts\prefetch'
     if (-not (Get-ChildItem -LiteralPath $pfDir -Filter '*.pf' -ErrorAction SilentlyContinue | Select-Object -First 1)) {
         $z = @(Get-FromZip '\\Windows\\Prefetch\\[^\\]+\.pf$' 5000); if ($z.Count) { $pfDir = Split-Path $z[0] -Parent }
@@ -614,7 +631,7 @@ Step 'Executions : Prefetch, Amcache, BAM, 4688 / Sysmon' {
     $n4688 = @($p4688).Count
     Log "    $($script:Exec.Count) traces d'execution ($n4688 evenements 4688 ; audit des processus $(if ($n4688) { 'actif' } else { 'INACTIF ou journal absent' }))"
     $inW = @($all | Where-Object { $_.Fenetre })
-    G 'Processus lances pendant les fenetres' $(if ($inW.Count) { 'A LIRE' } else { 'RAS' }) "$($inW.Count) trace(s) d'execution dans les fenetres (Prefetch, Amcache, BAM$(if ($n4688) { ', 4688' }))$(if (-not $n4688) { ' ; audit 4688 inactif : liste non exhaustive' })" 'executions_fenetres.csv'
+    G 'Programmes lancés pendant l''attaque' $(if ($inW.Count) { 'A LIRE' } else { 'RAS' }) "$(Nb $inW.Count 'lancement de programme trouvé' 'lancements de programmes trouvés') pendant l'attaque : à parcourir dans Détails › Tous les événements.$(if (-not $n4688) { ' Windows ne notait pas chaque lancement (audit 4688 inactif) : la liste peut être incomplète.' })" 'executions_fenetres.csv'
 }
 
 # =================================================================== 4. NAVIGATION WEB COMPLETE
@@ -622,11 +639,11 @@ $CatRx = [ordered]@{
     'SANTE / METIER'      = '(?i)doctolib|ameli|amelipro|espacepro\.ameli|apicrypt|mssante|monespacesante|dmp\.fr|sesam-vitale|vidal|cgm|axisante|maiia|weda|medistory|hellodoc|lifen|pharmagest|leo2|winpharma|ordoclic'
     'MESSAGERIE'          = '(?i)webmail|outlook\.(live|office)|mail\.google|gmail|mail\.yahoo|laposte\.net|mail\.ovh|ovhcloud.*mail|zimbra|roundcube|protonmail|messagerie|orange\.fr/.*mail|sfr\.fr/.*mail|free\.fr/.*(mail|imp)'
     'PARTAGE / TRANSFERT' = '(?i)mega\.(nz|io)|wetransfer|swisstransfer|smash|dropbox|drive\.google|docs\.google|onedrive|1drv\.ms|sharepoint|box\.com|pcloud|gofile|file\.io|anonfiles|transfer\.sh|temp\.sh|bashupload|sendspace|mediafire|pastebin|ghostbin|catbox|filemail|uploadfiles|limewire|rapidgator|krakenfiles|send\.vis\.ee|wormhole|tmpfiles|qu\.ax|0x0\.st'
-    'OUTILS / ACCES DISTANT' = '(?i)port-scanner|ip-scanner|nirsoft|mimikatz|github\.com|raw\.githubusercontent|anydesk|rustdesk|teamviewer|ngrok|rclone|netbird|splashtop|tsplus|screenconnect|7-zip|winrar|filezilla|winscp|putty'
+    'OUTILS / ACCES DISTANT' = $Ind.sites_outils
 }
 function Cat-Url([string]$u) { foreach ($k in $CatRx.Keys) { if ($u -match $CatRx[$k]) { return $k } }; '' }
 Step 'Navigation web complete (Chrome, Edge, Brave, Opera, Firefox) et telechargements' {
-    if (-not $Velo) { G 'Navigation web' 'NON VERIFIABLE' 'Moteur Velociraptor absent' ''; return }
+    if (-not $Velo) { G 'Sites web visités pendant l''attaque' 'NON VERIFIABLE' 'L''outil de lecture des historiques (Velociraptor) manque dans le kit : refaites la clé avec le kit complet.' ''; return }
     $hist = New-Object System.Collections.Generic.List[object]; $dl = New-Object System.Collections.Generic.List[object]
     $files = @(Get-ChildItem -LiteralPath (C 'utilisateurs') -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -in 'History', 'places.sqlite' -and $_.FullName -match '\\navigateurs\\' })
     foreach ($f in $files) {
@@ -658,7 +675,7 @@ Step 'Navigation web complete (Chrome, Edge, Brave, Opera, Firefox) et telecharg
     $inW = @($rows | Where-Object { $_.Fenetre }); $inWs = @($inW | Where-Object { $_.Categorie -in 'SANTE / METIER', 'MESSAGERIE', 'PARTAGE / TRANSFERT' })
     Log "    $($hist.Count) visites ($($files.Count) historiques), $($inW.Count) dans les fenetres dont $($inWs.Count) sur des sites sante / messagerie / partage"
     $prof = ($files | ForEach-Object { $_.FullName.Substring((C 'utilisateurs').Length + 1).Split('\')[0] } | Select-Object -Unique) -join ', '
-    G 'Navigation web (sessions ouvertes : Doctolib, Ameli, Apicrypt, webmail, partage)' $(if ($inWs.Count) { 'INDICE' } elseif ($inW.Count) { 'A LIRE' } else { 'RAS' }) "$($inW.Count) visite(s) dans les fenetres, dont $($inWs.Count) sur des sites sante / messagerie / partage. Historiques lus : $prof" 'navigation_fenetres.csv, navigation_sites_sensibles.csv'
+    G 'Sites web visités pendant l''attaque (Doctolib, Ameli, messagerie, partage de fichiers)' $(if ($inWs.Count) { 'INDICE' } elseif ($inW.Count) { 'A LIRE' } else { 'RAS' }) "$(Nb $inW.Count 'page visitée' 'pages visitées') pendant l'attaque, dont $($inWs.Count) sur un site de santé, de messagerie ou de partage de fichiers (où un attaquant peut consulter ou envoyer des données). Historiques lus : $prof." 'navigation_fenetres.csv, navigation_sites_sensibles.csv'
 }
 
 # =================================================================== 5. ACCES AUX FICHIERS : LNK, JUMP LISTS, RECENTDOCS, SHELLBAGS, \\tsclient
@@ -666,7 +683,7 @@ $script:Acc = New-Object System.Collections.Generic.List[object]
 $DataRx = '(?i)Axilog|AXI_DATABASE|AxiSoftware\\Database|\.fdb\b|\.fdp\b|\.gdb\b|\\HNDB\\|Donn[e\u00e9]es? patients?'
 $TsRx   = '(?i)tsclient'
 Step 'Acces aux fichiers : LNK, Jump Lists, RecentDocs, ShellBags (redirection \\tsclient, donnees metier)' {
-    if (-not $Velo) { G 'Acces aux donnees / \\tsclient' 'NON VERIFIABLE' 'Moteur Velociraptor absent' ''; return }
+    if (-not $Velo) { G 'Fichiers copiés vers le PC de l''attaquant (bureau à distance)' 'NON VERIFIABLE' 'L''outil de lecture des fichiers ouverts (Velociraptor) manque dans le kit : refaites la clé avec le kit complet.' ''; return }
     $users = @(Get-ChildItem -LiteralPath (C 'utilisateurs') -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
     function Add-Acc($u, $src, $path, $d1, $lbl1, $d2, $lbl2) {
         $p = "$path"
@@ -734,8 +751,8 @@ Step 'Acces aux fichiers : LNK, Jump Lists, RecentDocs, ShellBags (redirection \
     Log "    $($rows.Count) traces d'acces, $($ts.Count) + $($tsRaw.Count) (brut) \\tsclient, $($dm.Count) donnees metier dont $($dmW.Count) dans les fenetres"
     if ($missingHives.Count) { Log "    [!] Ruche NTUSER absente pour : $($missingHives -join ', ') (RecentDocs / ShellBags non analyses pour ces comptes)" }
     $lim = if ($missingHives.Count) { " ; ruche absente pour $($missingHives -join ', ')" } else { '' }
-    G 'Redirection de lecteurs RDP (\\tsclient)' $(if ($ts.Count -or $tsRaw.Count) { 'INDICE' } else { 'RAS' }) "$($ts.Count) trace(s) structuree(s) et $($tsRaw.Count) occurrence(s) brute(s) de \\tsclient (LNK, Jump Lists, RecentDocs, ShellBags, ruches)$lim" 'acces_fichiers_lnk_jumplists_shellbags.csv, recherche_brute_tsclient_axilog.csv'
-    G 'Consultation des donnees metier (Axilog / base) avant chiffrement' $(if ($dmW.Count) { 'INDICE' } elseif ($dm.Count) { 'A LIRE' } else { 'RAS' }) "$($dm.Count) trace(s) d'acces aux donnees metier, dont $($dmW.Count) datee(s) dans les fenetres de l'attaquant$lim" 'acces_donnees_metier.csv'
+    G 'Fichiers copiés vers le PC de l''attaquant (bureau à distance)' $(if ($ts.Count -or $tsRaw.Count) { 'INDICE' } else { 'RAS' }) "$(if ($ts.Count -or $tsRaw.Count) { "$(Nb ($ts.Count + $tsRaw.Count) 'trace' 'traces') d'accès aux disques de l'ordinateur distant (\\tsclient) : en bureau à distance, c'est par là qu'on copie des fichiers vers son propre PC." } else { "Aucune trace d'accès aux disques de l'ordinateur distant (\\tsclient), le chemin habituel pour copier des fichiers en bureau à distance." })$lim" 'acces_fichiers_lnk_jumplists_shellbags.csv, recherche_brute_tsclient_axilog.csv'
+    G 'Données du cabinet ouvertes pendant l''attaque (logiciel métier, base patients)' $(if ($dmW.Count) { 'INDICE' } elseif ($dm.Count) { 'A LIRE' } else { 'RAS' }) "$(Nb $dm.Count 'trace d''ouverture' 'traces d''ouverture') des données du cabinet, dont $($dmW.Count) pendant l'attaque.$lim" 'acces_donnees_metier.csv'
 }
 
 Step 'Parametres de redirection RDP (lecteurs, presse-papier) et usage de rdpclip' {
@@ -766,10 +783,10 @@ Step 'Parametres de redirection RDP (lecteurs, presse-papier) et usage de rdpcli
     $pnp = Get-Evtx 'Microsoft-Windows-TerminalServices-PnPDevices/Admin' @(20001, 20002, 20003, 36, 37) $Since
     $lines.Add("Journal TerminalServices-PnPDevices : $(if (-not (Find-Evtx 'Microsoft-Windows-TerminalServices-PnPDevices/Admin')) { 'absent de la collecte' } else { "$(@($pnp).Count) evenement(s)" })")
     $lines | Out-File (P 'rdp_redirections.txt') -Encoding utf8
-    if (-not $vals.Count) { G 'Presse-papier / redirections RDP' 'NON VERIFIABLE' 'Ruches SYSTEM / SOFTWARE absentes' '' }
+    if (-not $vals.Count) { G 'Copier-coller vers le PC de l''attaquant (bureau à distance)' 'NON VERIFIABLE' 'La configuration de Windows (ruches SYSTEM et SOFTWARE) manque dans la collecte.' '' }
     else {
-        G 'Presse-papier RDP' $(if ($clipW.Count) { 'A LIRE' } else { 'RAS' }) "Presse-papier $(if ($clipOk) { 'AUTORISE' } else { 'interdit' }) ; rdpclip.exe execute $($clipW.Count) fois dans les fenetres (copier-coller de texte ou de fichiers possible, sans trace de contenu)" 'rdp_redirections.txt'
-        if (-not $driveOk) { G 'Redirection de lecteurs RDP (\\tsclient)' 'RAS' 'Redirection des lecteurs interdite par la configuration' 'rdp_redirections.txt' }
+        G 'Copier-coller vers le PC de l''attaquant (bureau à distance)' $(if ($clipW.Count) { 'A LIRE' } else { 'RAS' }) "Le copier-coller en bureau à distance était $(if ($clipOk) { 'autorisé' } else { 'interdit' }). Le programme qui le permet (rdpclip.exe) a tourné $($clipW.Count) fois pendant l'attaque. Windows ne garde pas ce qui a été copié." 'rdp_redirections.txt'
+        if (-not $driveOk) { G 'Fichiers copiés vers le PC de l''attaquant (bureau à distance)' 'RAS' 'Windows interdisait l''accès aux disques de l''ordinateur distant pendant le bureau à distance.' 'rdp_redirections.txt' }
     }
 }
 
@@ -838,8 +855,8 @@ Step 'Journal USN et $MFT : fichiers crees ou modifies pendant les fenetres (arc
     foreach ($c in $cov) { if ($c -match 'du (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)' -and $winStart -and ([datetime]$matches[1]) -le $winStart) { $covers = $true } }
     if ($mftRows.Count) { $covers = $true }
     $msg = ($cov -join ' | ')
-    if (-not $covers) { G 'Creation d archives / fichiers pendant les fenetres (USN, $MFT)' 'NON VERIFIABLE' "Le journal USN collecte ne couvre pas les fenetres ($msg). Fournir le conteneur Velociraptor ($MFT) ou retirer -SansMFT." 'usn_mft_couverture.txt' }
-    else { G 'Creation d archives / fichiers pendant les fenetres (USN, $MFT)' $(if ($arcs.Count) { 'INDICE' } else { 'A LIRE' }) "$($arcs.Count) archive(s) / export(s) cree(s) ou modifie(s) dans les fenetres. $msg" 'mft_fenetres.csv, usn_fenetres.csv' }
+    if (-not $covers) { G 'Fichiers compressés (.zip, .7z, .rar) créés pendant l''attaque' 'NON VERIFIABLE' "Le journal des fichiers du disque ne remonte pas jusqu'à l'attaque ($msg). Relancez l'analyse avec « Analyse complète » pour lire l'index du disque (`$MFT)." 'usn_mft_couverture.txt' }
+    else { G 'Fichiers compressés (.zip, .7z, .rar) créés pendant l''attaque' $(if ($arcs.Count) { 'INDICE' } else { 'A LIRE' }) "$(Nb $arcs.Count 'archive ou export créé ou modifié' 'archives ou exports créés ou modifiés') pendant l'attaque. Un attaquant regroupe souvent les fichiers dans une archive avant de les envoyer. $msg" 'mft_fenetres.csv, usn_fenetres.csv' }
 }
 
 # =================================================================== 7. OUTILS D'ACCES DISTANT
@@ -889,9 +906,9 @@ Step "Outils d'acces distant (NetBird, Splashtop, TSplus, Datto RMM, AnyDesk...)
     $nbLog = @($logs | Where-Object { $_ -match '(?i)netbird' -and $_ -match '\.log$' })
     $tools = ($rows | ForEach-Object { ([regex]::Match("$($_.Outil) $($_.Detail)", $rx)).Value.ToLower() } | Where-Object { $_ } | Select-Object -Unique) -join ', '
     Log "    Outils detectes : $tools ; $($logs.Count) journal(aux) d'outils, $($hits.Count) ligne(s) aux dates des fenetres"
-    G "Outils d'acces distant (journaux propres)" $(if ($hits.Count -or @($sp | Where-Object { $_.Fenetre }).Count) { 'A LIRE' } elseif ($logs.Count) { 'RAS' } else { 'NON VERIFIABLE' }) "Detectes : $tools. $($logs.Count) journal(aux) lu(s), $($hits.Count) ligne(s) aux dates des fenetres, $(@($sp | Where-Object { $_.Fenetre }).Count) evenement(s) Splashtop dans les fenetres." 'outils_distants_inventaire.csv, outils_distants_lignes_fenetres.txt'
+    G 'Logiciels de prise en main à distance (AnyDesk, TeamViewer, Splashtop…)' $(if ($hits.Count -or @($sp | Where-Object { $_.Fenetre }).Count) { 'A LIRE' } elseif ($logs.Count) { 'RAS' } else { 'NON VERIFIABLE' }) "Installés : $tools. $(Nb $logs.Count 'journal lu' 'journaux lus'), $(Nb $hits.Count 'ligne datée' 'lignes datées') pendant l'attaque, $(Nb (@($sp | Where-Object { $_.Fenetre }).Count) 'événement Splashtop' 'événements Splashtop') pendant l'attaque." 'outils_distants_inventaire.csv, outils_distants_lignes_fenetres.txt'
     if ($tools -match 'netbird') {
-        G 'NetBird : pairs du tunnel' $(if ($nb.Count) { 'A LIRE' } else { 'A FAIRE' }) $(if ($nb.Count) { "Liste des pairs : $($nb[0].Name) (verifier chaque pair et son proprietaire)" } else { "Pairs inconnus : journaux NetBird $(if ($nbLog.Count) { 'presents' } else { 'NON collectes' }). Relancer la collecte v2.2 (netbird status -d) ou consulter la console d'administration NetBird du compte qui l'a installe." }) 'outils_distants\'
+        G 'Réseau privé NetBird : machines reliées au poste' $(if ($nb.Count) { 'A LIRE' } else { 'A FAIRE' }) $(if ($nb.Count) { "Liste des machines reliées : $($nb[0].Name). Vérifiez chacune et à qui elle appartient." } else { "Machines reliées inconnues (journaux NetBird $(if ($nbLog.Count) { 'présents' } else { 'non collectés' })). Regardez la console d'administration NetBird du compte qui l'a installé." }) 'outils_distants\'
     }
 }
 
@@ -917,10 +934,10 @@ Step 'Sources collectees : journal du pare-feu, BITS, USB, SMBServer, DNS-Client
         }
     }
     Out-Csv ($fwRows | Where-Object { $_.Fenetre }) 'parefeu_fenetres.csv'
-    $fwState = if (-not $prof) { 'configuration non collectee' } elseif ($aOn -eq 0 -and $dOn -eq 0) { 'JOURNALISATION DESACTIVEE (connexions autorisees et bloquees, 3 profils)' } else { "journalisation active : autorisees $aOn/3 profils, bloquees $dOn/3" }
-    V 'Journal du pare-feu Windows (pfirewall.log)' $fwState $(if ($fwRows.Count) { "$($fwRows[0].Date) -> $($fwRows[-1].Date)" } else { 'aucun fichier ou fichier vide' }) @($fwRows | Where-Object { $_.Fenetre }).Count $(if ($aOn -eq 0) { 'Pas de trace des connexions sortantes cote poste : seule la box peut renseigner les flux.' } else { 'Lire parefeu_fenetres.csv (flux SEND vers IP publiques).' }) 'parefeu_fenetres.csv'
+    $fwState = if (-not $prof) { 'réglages du pare-feu non collectés' } elseif ($aOn -eq 0 -and $dOn -eq 0) { 'Le pare-feu ne notait aucune connexion (journal désactivé, réglage par défaut de Windows)' } else { "Le pare-feu notait les connexions autorisées sur $aOn profils sur 3 et les connexions bloquées sur $dOn sur 3" }
+    V 'Journal du pare-feu de Windows (connexions du poste)' $fwState $(if ($fwRows.Count) { "du $($fwRows[0].Date) au $($fwRows[-1].Date)" } else { 'journal absent ou vide' }) @($fwRows | Where-Object { $_.Fenetre }).Count $(if ($aOn -eq 0) { 'Le poste ne garde donc aucune trace de ses connexions vers Internet : seule la box internet peut dire où des données ont été envoyées.' } else { 'Les envois vers Internet pendant l''attaque sont listés dans parefeu_fenetres.csv.' }) 'parefeu_fenetres.csv'
     $fwEv = Get-Evtx 'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall' @(2004, 2005, 2006, 2033, 2052, 2097, 2099) $Since
-    V 'Journal Firewall (modifications de regles 2004/2005/2006/2097)' $(if (-not (Find-Evtx 'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall')) { 'absent' } else { 'present' }) '' @($fwEv | Where-Object { WinOf $_.TimeCreated }).Count "$(@($fwEv).Count) modification(s) de regles sur la periode" 'evenements_fenetres.csv'
+    V 'Règles du pare-feu modifiées' $(if (-not (Find-Evtx 'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall')) { 'journal absent' } else { 'journal présent' }) '' @($fwEv | Where-Object { WinOf $_.TimeCreated }).Count "$(Nb (@($fwEv).Count) 'modification des règles' 'modifications des règles') du pare-feu sur la période (un attaquant peut ouvrir un accès)." 'evenements_fenetres.csv'
 
     # BITS
     $bitsTxt = if (Test-Path -LiteralPath (C 'persistance\bits_jobs.txt')) { Get-Content -LiteralPath (C 'persistance\bits_jobs.txt') -Raw -Encoding UTF8 } else { '' }
@@ -936,7 +953,7 @@ Step 'Sources collectees : journal du pare-feu, BITS, USB, SMBServer, DNS-Client
     Out-Csv $brow 'bits_evenements.csv'
     $up = @($jobs | Where-Object { $_.Type -match 'Upload' })
     $bnonms = @($brow | Where-Object { $_.Url -and $_.Url -notmatch '(?i)microsoft\.com|windowsupdate|msedge|office|bing\.com|live\.com|skype|xbox|msn\.com|google(apis)?\.com|gvt1\.com' })
-    V 'Transferts BITS' $(if ($bitsTxt) { "$($jobs.Count) tache(s) en cours, $($up.Count) en envoi (Upload)" } else { 'non collecte' }) $(if (-not (Find-Evtx 'Microsoft-Windows-Bits-Client/Operational')) { 'journal Bits-Client absent' } else { "$(@($bev).Count) evenement(s)" }) @($brow | Where-Object { $_.Fenetre }).Count "$($bnonms.Count) transfert(s) vers des URL non Microsoft / Google" 'bits_taches.csv, bits_evenements.csv'
+    V 'Transferts en arrière-plan de Windows (BITS)' $(if ($bitsTxt) { "$(Nb $jobs.Count 'transfert en cours' 'transferts en cours'), dont $($up.Count) en envoi" } else { 'non collecté' }) $(if (-not (Find-Evtx 'Microsoft-Windows-Bits-Client/Operational')) { 'journal absent' } else { Nb (@($bev).Count) 'événement' 'événements' }) @($brow | Where-Object { $_.Fenetre }).Count "$(Nb $bnonms.Count 'transfert' 'transferts') vers un autre site que Microsoft ou Google (un attaquant peut s'en servir pour envoyer des fichiers discrètement)." 'bits_taches.csv, bits_evenements.csv'
 
     # USB
     $usb = Read-Csv (C 'artefacts\usb_stockage.csv'); $usbDet = Read-Csv (C 'artefacts\usb_peripheriques_dates.csv')
@@ -962,7 +979,7 @@ Step 'Sources collectees : journal du pare-feu, BITS, USB, SMBServer, DNS-Client
     }
     Out-Csv ($usbRows | Sort-Object Date) 'usb_chronologie.csv'
     $usbW = @($usbRows | Where-Object { $_.Fenetre })
-    V 'Peripheriques USB (USBSTOR, setupapi, Partition 1006, Kernel-PnP)' "$($usb.Count) stockage(s) USB connu(s) dans USBSTOR$(if ($usbDet.Count) { ", dates detaillees collectees" })" "$($usbRows.Count) evenement(s) date(s)" $usbW.Count $(if ($usbW.Count) { 'Branchement USB pendant une fenetre : verifier qui (technicien ou attaquant).' } else { 'Aucun branchement USB date dans les fenetres (acces a distance : peu attendu).' }) 'usb_chronologie.csv'
+    V 'Clés et disques USB branchés' "$(Nb $usb.Count 'clé ou disque USB connu' 'clés ou disques USB connus') de Windows$(if ($usbDet.Count) { ', avec les dates de branchement' })" (Nb $usbRows.Count 'branchement daté' 'branchements datés') $usbW.Count $(if ($usbW.Count) { 'Un support USB a été branché pendant l''attaque : vérifiez qui (technicien ou attaquant).' } else { 'Aucun support USB branché pendant l''attaque (normal pour une attaque à distance).' }) 'usb_chronologie.csv'
 
     # SMBServer/Security et partages (5140/5145)
     $smb = Get-Evtx 'Microsoft-Windows-SMBServer/Security' @(551, 1006, 1007, 1009, 1015, 1016, 1020, 1021, 1022, 3000) $Since
@@ -970,15 +987,15 @@ Step 'Sources collectees : journal du pare-feu, BITS, USB, SMBServer, DNS-Client
     $sh = Get-Evtx 'Security' @(5140, 5145) $Since
     $shRows = @(foreach ($e in @($sh)) { $f = Get-EvFields $e; [pscustomobject]@{ Date = Fmt $e.TimeCreated; EventID = $e.Id; Compte = $f['SubjectUserName']; IP = $f['IpAddress']; Partage = $f['ShareName']; Fichier = $f['RelativeTargetName']; Fenetre = WinOf $e.TimeCreated } })
     Out-Csv $shRows 'partages_acces_5140_5145.csv'
-    V 'SMBServer/Security' $(if (-not (Find-Evtx 'Microsoft-Windows-SMBServer/Security')) { 'absent' } else { "$(@($smb).Count) evenement(s)" }) $(if ($smbR) { "$(Fmt $smbR.Debut) -> $(Fmt $smbR.Fin)" }) @($smb | Where-Object { WinOf $_.TimeCreated }).Count 'Erreurs / refus d''acces SMB du serveur de fichiers' 'evenements_fenetres.csv'
-    V 'Acces aux partages (Security 5140 / 5145)' $(if (@($sh).Count) { "$(@($sh).Count) evenement(s)" } else { 'aucun (audit du partage de fichiers inactif ?)' }) '' @($shRows | Where-Object { $_.Fenetre }).Count "IP distinctes : $((($shRows | Select-Object -ExpandProperty IP -Unique) -join ', '))" 'partages_acces_5140_5145.csv'
+    V 'Dossiers partagés du poste : accès refusés (SMB)' $(if (-not (Find-Evtx 'Microsoft-Windows-SMBServer/Security')) { 'journal absent' } else { Nb (@($smb).Count) 'événement' 'événements' }) $(if ($smbR) { "du $(Fmt $smbR.Debut) au $(Fmt $smbR.Fin)" }) @($smb | Where-Object { WinOf $_.TimeCreated }).Count 'Erreurs et refus d''accès aux dossiers que ce poste partage sur le réseau.' 'evenements_fenetres.csv'
+    V 'Accès aux dossiers partagés du poste (journal de sécurité)' $(if (@($sh).Count) { Nb (@($sh).Count) 'accès noté' 'accès notés' } else { 'aucun accès noté (Windows ne les notait probablement pas : audit inactif)' }) '' @($shRows | Where-Object { $_.Fenetre }).Count $(if (@($shRows).Count) { "Adresses IP qui y ont accédé : $((($shRows | Select-Object -ExpandProperty IP -Unique) -join ', '))." } else { 'Aucune adresse IP à vérifier.' }) 'partages_acces_5140_5145.csv'
 
     # DNS-Client/Operational
     $dns = Get-Evtx 'Microsoft-Windows-DNS-Client/Operational' @(3006, 3008, 3020) $Since
     $dnsRows = @(foreach ($e in @($dns)) { $f = Get-EvFields $e; $d = WinOf $e.TimeCreated; if ($d) { [pscustomobject]@{ Date = Fmt $e.TimeCreated; EventID = $e.Id; Domaine = $f['QueryName']; Resultat = $f['QueryResults']; Fenetre = $d } } })
     Out-Csv $dnsRows 'dns_requetes_fenetres.csv'
     $etat = Read-Csv (C 'evenements\etat_journaux.csv') | Where-Object { $_.Journal -match 'DNS-Client' } | Select-Object -First 1
-    V 'DNS-Client/Operational' $(if ($etat) { "Active=$($etat.Active), $($etat.NbEvenements) evenement(s)" } elseif (-not (Find-Evtx 'Microsoft-Windows-DNS-Client/Operational') -or -not @($dns).Count) { 'journal vide ou desactive (desactive par defaut sous Windows)' } else { "$(@($dns).Count) requete(s)" }) '' $dnsRows.Count $(if ($dnsRows.Count) { "Domaines : $((($dnsRows | Select-Object -ExpandProperty Domaine -Unique | Select-Object -First 40) -join ', '))" } else { 'Pas de resolution DNS exploitable : se reporter au cache DNS (volatile) et a la box.' }) 'dns_requetes_fenetres.csv'
+    V 'Sites contactés par le poste (journal DNS)' $(if ($etat) { "journal $(if ("$($etat.Active)" -eq 'True') { 'actif' } else { 'désactivé' }), $(Nb ([int64]("0$($etat.NbEvenements)" -replace '\D', '')) 'événement' 'événements')" } elseif (-not (Find-Evtx 'Microsoft-Windows-DNS-Client/Operational') -or -not @($dns).Count) { 'journal vide ou désactivé (il l''est par défaut dans Windows)' } else { Nb (@($dns).Count) 'demande' 'demandes' }) '' $dnsRows.Count $(if ($dnsRows.Count) { "Sites contactés pendant l'attaque : $((($dnsRows | Select-Object -ExpandProperty Domaine -Unique | Select-Object -First 40) -join ', '))." } else { 'Aucun nom de site enregistré pendant l''attaque : voir les sites relevés en direct pendant la collecte (cache DNS) et la box internet.' }) 'dns_requetes_fenetres.csv'
 
     # Evenements de tous les journaux exportes, dans les fenetres (lecture directe)
     $evw = New-Object System.Collections.Generic.List[object]
@@ -995,7 +1012,7 @@ Step 'Sources collectees : journal du pare-feu, BITS, USB, SMBServer, DNS-Client
     }
     Out-Csv ($evw | Sort-Object Date) 'evenements_fenetres.csv'
     Out-Csv $ver 'verifications_sources.csv'
-    foreach ($v in $ver) { G "Source : $($v.Source)" $(if ($v.EvenementsFenetres -gt 0) { 'A LIRE' } elseif ($v.Etat -match '(?i)absent|desactiv|non collecte|aucun') { 'NON VERIFIABLE' } else { 'RAS' }) "$($v.Etat). $($v.Constat)" $v.Fichier }
+    foreach ($v in $ver) { G $v.Source $(if ($v.EvenementsFenetres -gt 0) { 'A LIRE' } elseif ($v.Etat -match '(?i)absent|d[eé]sactiv|ne notait|non collect|aucun') { 'NON VERIFIABLE' } else { 'RAS' }) "$($v.Etat). $($v.Constat)" $v.Fichier }
     Log "    $($evw.Count) evenements (tous journaux) dans les fenetres"
 }
 
@@ -1003,7 +1020,7 @@ Step 'Sources collectees : journal du pare-feu, BITS, USB, SMBServer, DNS-Client
 Step 'Note de rancon : contacts, revendication de vol de donnees, pistes de veille' {
     $notes = @(Get-ChildItem -LiteralPath (C 'rancon\notes') -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)recover|readme|decrypt|restore|how.?to|ransom|instruction|unlock|lisez' -and $_.Length -lt 200KB })
     if (-not $notes.Count) { $notes = @(Get-ChildItem -LiteralPath (C 'utilisateurs') -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)recover|decrypt|how.?to' -and $_.Extension -match '\.(txt|html?|hta)$' } | Select-Object -First 1) }
-    if (-not $notes.Count) { G 'Note de rancon' 'NON VERIFIABLE' 'Aucune note collectee' ''; return }
+    if (-not $notes.Count) { G 'Demande de rançon : vol de données revendiqué ?' 'NON VERIFIABLE' 'Aucune note de rançon dans la collecte.' ''; return }
     $byHash = $notes | Group-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
     $out = New-Object System.Collections.Generic.List[string]
     $theftRx = '(?i)(stole|stolen|steal|exfiltrat|download(ed)?\s+(all\s+)?(your|the)\s+data|we\s+have\s+(copied|downloaded|your)|copied|leak|publish|publicly|blog|dark\s?web|tor\s+site|sell\s+(your|the)\s+data|confidential|sensitive\s+data|data\s+will\s+be|personal\s+data|vol[e\u00e9]|t[e\u00e9]l[e\u00e9]charg[e\u00e9]|publi[e\u00e9]|divulg|fuite|donn[e\u00e9]es\s+(personnelles|sensibles|vol))'
@@ -1048,25 +1065,25 @@ Step 'Note de rancon : contacts, revendication de vol de donnees, pistes de veil
     $out.Add('      tardives), noter date et resultat dans le dossier. Alerte possible via les flux RSS de ransomware.live.')
     $out.Add('  [ ] Signalement : cybermalveillance.gouv.fr ; plainte (le contact de l''attaquant est un element utile).')
     $out | Out-File (P 'note_rancon_analyse.txt') -Encoding utf8
-    G 'Note de rancon (double extorsion revendiquee ?)' $(if ($claim) { 'INDICE' } else { 'RAS' }) $(if ($claim) { 'La note REVENDIQUE un vol / une publication de donnees : voir extraits' } else { 'La note ne revendique ni vol ni publication de donnees (absence de mention : n''exclut pas un vol). Veille a faire.' }) 'note_rancon_analyse.txt'
+    G 'Demande de rançon : vol de données revendiqué ?' $(if ($claim) { 'INDICE' } else { 'RAS' }) $(if ($claim) { 'La note de rançon affirme que des données ont été volées ou seront publiées : voir les extraits.' } else { 'La note de rançon ne parle ni de vol ni de publication de données. Cela n''exclut pas un vol : surveillez les sites où les attaquants publient.' }) 'note_rancon_analyse.txt'
 }
 
 # =================================================================== 10. IDENTIFIANTS : MIMIKATZ, OUTILS NIRSOFT, GESTIONNAIRE D'IDENTIFIANTS
 Step "Exposition des identifiants : mimikatz execute ?, outils NirSoft, gestionnaire d'identifiants" {
     $o = New-Object System.Collections.Generic.List[string]
-    $mk = '(?i)mimikatz|mimilib|mimidrv|sekurlsa|lsadump|kiwi|Invoke-Mimikatz|privilege::debug'
+    $mk = $Ind.mimikatz
     $o.Add('MIMIKATZ : PRESENCE ET EXECUTION')
     $o.Add('-----------------------------------------------------------------')
     $pf  = @($script:Exec | Where-Object { $_.Source -like 'Prefetch*' -and "$($_.Programme)" -match $mk })
     $am  = @($script:Exec | Where-Object { $_.Source -like 'Amcache*' -and "$($_.Chemin)" -match $mk })
     $bam = @($script:Exec | Where-Object { $_.Source -like 'BAM*' -and "$($_.Chemin)" -match $mk })
     $p48 = @($script:Exec | Where-Object { $_.Source -match '4688|Sysmon' -and "$($_.Chemin) $($_.Detail)" -match $mk })
-    $ps  = @(Get-Evtx 'Microsoft-Windows-PowerShell/Operational' @(4104) $Since | Where-Object { $_.Message -match $mk -or (Get-EvFields $_)['ScriptBlockText'] -match $mk })
+    $ps  = @((Get-Evtx 'Microsoft-Windows-PowerShell/Operational' @(4104) $Since) | Where-Object { $_.Message -match $mk -or (Get-EvFields $_)['ScriptBlockText'] -match $mk })
     $det = Read-Csv (C 'systeme\defender_detections.csv') | Where-Object { $_.Resources -match $mk }
-    $thr = Read-Csv (C 'systeme\defender_menaces.csv') | Where-Object { $_.ThreatName -match '(?i)mimikatz|lsadump|HackTool' }
-    $dev = @(Get-Evtx 'Microsoft-Windows-Windows Defender/Operational' @(1116, 1117) $Since | ForEach-Object { $f = Get-EvFields $_; [pscustomobject]@{ Date = $_.TimeCreated; Id = $_.Id; Nom = $f['Threat Name']; Chemin = $f['Path']; Action = $f['Action Name']; Processus = $f['Process Name']; Utilisateur = $f['Detection User'] } })
-    $devMk = @($dev | Where-Object { "$($_.Nom) $($_.Chemin)" -match '(?i)mimikatz|lsadump' })
-    $lsass = @(Get-Evtx 'Microsoft-Windows-Sysmon/Operational' @(10) $Since | Where-Object { (Get-EvFields $_)['TargetImage'] -match '(?i)lsass\.exe' })
+    $thr = Read-Csv (C 'systeme\defender_menaces.csv') | Where-Object { $_.ThreatName -match $Ind.menaces_mimikatz }
+    $dev = @((Get-Evtx 'Microsoft-Windows-Windows Defender/Operational' @(1116, 1117) $Since) | ForEach-Object { $f = Get-EvFields $_; [pscustomobject]@{ Date = $_.TimeCreated; Id = $_.Id; Nom = $f['Threat Name']; Chemin = $f['Path']; Action = $f['Action Name']; Processus = $f['Process Name']; Utilisateur = $f['Detection User'] } })
+    $devMk = @($dev | Where-Object { "$($_.Nom) $($_.Chemin)" -match $Ind.detections_mimikatz })
+    $lsass = @((Get-Evtx 'Microsoft-Windows-Sysmon/Operational' @(10) $Since) | Where-Object { (Get-EvFields $_)['TargetImage'] -match '(?i)lsass\.exe' })
     $dmp = @(Select-String -LiteralPath (C 'fichiers\listing_complet.csv') -Pattern '(?i)lsass[^"\\]*\.dmp"|\.dmp",\d+,' -ErrorAction SilentlyContinue | Select-Object -First 30 | ForEach-Object { $_.Line })
     $o.Add("Fichiers presents sur le disque                : $(@(Read-Csv (C 'fichiers\outils_suspects.csv') | Where-Object { $_.Chemin -match $mk }).Count) (fichiers\outils_suspects.csv)")
     $o.Add("Detections Defender (fichier)                  : $(@($det).Count) ; menaces : $((@($thr) | ForEach-Object { "$($_.ThreatName) execute=$($_.DidThreatExecute)" }) -join ' ; ')")
@@ -1075,7 +1092,7 @@ Step "Exposition des identifiants : mimikatz execute ?, outils NirSoft, gestionn
     $o.Add("Amcache (fichier inventorie)                   : $(if ($am.Count) { ($am | ForEach-Object { "$($_.Chemin) $(Fmt $_.Date) SHA1 $($_.SHA1)" }) -join ' ; ' } else { 'aucune entree' })")
     $o.Add("BAM (execution par utilisateur)                : $(if ($bam.Count) { ($bam | ForEach-Object { "$($_.Chemin) $(Fmt $_.Date) $($_.Compte)" }) -join ' ; ' } else { 'aucune' })")
     $o.Add("4688 / Sysmon 1                                : $(if ($p48.Count) { "$($p48.Count) evenement(s)" } else { 'aucun' })")
-    $o.Add("PowerShell 4104 (Invoke-Mimikatz, sekurlsa...) : $($ps.Count) bloc(s)")
+    $o.Add("PowerShell 4104 (commandes de Mimikatz) : $($ps.Count) bloc(s)")
     $o.Add("Acces a LSASS (Sysmon 10)                      : $(if ($null -eq (Find-Evtx 'Microsoft-Windows-Sysmon/Operational')) { 'Sysmon absent : non verifiable' } else { $lsass.Count })")
     $o.Add("Fichiers .dmp (vidage LSASS ?)                 : $($dmp.Count) $(if ($dmp.Count) { '(voir listing)' })")
     $exec = ($pf.Count + $bam.Count + $p48.Count + $ps.Count) -gt 0
@@ -1087,7 +1104,7 @@ Step "Exposition des identifiants : mimikatz execute ?, outils NirSoft, gestionn
     $o.Add('')
     $o.Add('OUTILS DE RECUPERATION DE MOTS DE PASSE EXECUTES')
     $o.Add('-----------------------------------------------------------------')
-    $nir = @($script:Exec | Where-Object { "$($_.Programme) $($_.Chemin)" -match '(?i)pass|dialupass|wirelesskey|sniffpass|lazagne|credential' -and "$($_.Chemin)" -notmatch '(?i)\\windows\\(winsxs|system32)|passkey|passwordonwake|genpass|umpass' } | Sort-Object Date)
+    $nir = @($script:Exec | Where-Object { "$($_.Programme) $($_.Chemin)" -match $Ind.outils_mots_de_passe -and "$($_.Chemin)" -notmatch '(?i)\\windows\\(winsxs|system32)|passkey|passwordonwake|genpass|umpass' } | Sort-Object Date)
     foreach ($n in $nir) { $o.Add("  $(Fmt $n.Date)  $($n.Source)  $($n.Programme)  $($n.Compte)  $($n.SHA1)") }
     if (-not $nir.Count) { $o.Add('  aucun') }
     $o.Add('')
@@ -1117,9 +1134,9 @@ Step "Exposition des identifiants : mimikatz execute ?, outils NirSoft, gestionn
     $o.Add('  les cibles (NAS, serveur Lina, sites web). Si elles donnent acces a des donnees hors du serveur, l''exfiltration a pu')
     $o.Add('  se faire depuis ces systemes : verifier leurs journaux d''acces sur la periode, puis changer les mots de passe.')
     $o | Out-File (P 'identifiants_exposition.txt') -Encoding utf8
-    G 'Mimikatz (execution, perimetre des identifiants)' $(if ($exec) { 'INDICE' } else { 'RAS' }) $(if ($exec) { 'Execution de mimikatz tracee : identifiants de tous les comptes du poste a considerer comme compromis' } else { "Present sur le disque, detecte par Defender ; aucune trace d'execution (Prefetch, BAM, PowerShell)" }) 'identifiants_exposition.txt'
+    G 'Vol de mots de passe (Mimikatz)' $(if ($exec) { 'INDICE' } else { 'RAS' }) $(if ($exec) { 'Mimikatz a été lancé : considérez les mots de passe de tous les comptes de ce poste comme volés et changez-les.' } else { "Mimikatz était sur le disque (repéré par Defender), mais rien ne montre qu'il a été lancé." }) 'identifiants_exposition.txt'
     $netp = @($nir | Where-Object { $_.Programme -match '(?i)netpass' })
-    G "Gestionnaire d'identifiants (cibles hors serveur)" 'A FAIRE' "$(@($cm | Group-Object Utilisateur).Count) compte(s) avec entrees ; $(if ($netp.Count) { 'netpass EXECUTE : les identifiants reseau / RDP du compte qui l''a lance sont a considerer comme exposes. ' })Cibles a lister avec cmdkey dans chaque session." 'identifiants_exposition.txt'
+    G 'Mots de passe enregistrés dans Windows' 'A FAIRE' "$(Nb (@($cm | Group-Object Utilisateur).Count) 'compte a' 'comptes ont') des mots de passe enregistrés dans Windows. $(if ($netp.Count) { 'L''outil netpass a été lancé : considérez les mots de passe réseau et bureau à distance de ce compte comme volés. ' })Pour la liste complète, ouvrez chaque session et cliquez sur « Identifiants de ce compte » dans DigSpill." 'identifiants_exposition.txt'
 }
 
 # =================================================================== 10 bis. COMPTES DE STOCKAGE / TRANSFERT CONFIGURES
@@ -1162,8 +1179,8 @@ Step 'Comptes de stockage et de transfert configures (rclone, FileZilla, WinSCP)
         }
     }
     Out-Csv $rows 'comptes_transfert.csv'
-    $txt = if ($rows.Count) { "$($rows.Count) compte(s) configure(s) : " + (($rows | Select-Object -First 4 | ForEach-Object { "$($_.Outil) $($_.Type) $($_.Compte)".Trim() }) -join ' | ') + '. Identifiants seulement : mots de passe jamais lus.' } else { 'Aucune configuration rclone, FileZilla ou WinSCP dans les profils collectes.' }
-    G 'Comptes de stockage / transfert configures (rclone, FileZilla, WinSCP)' $(if ($rows.Count) { 'INDICE' } else { 'RAS' }) $txt 'comptes_transfert.csv'
+    $txt = if ($rows.Count) { "$(Nb $rows.Count 'compte configuré' 'comptes configurés') pour envoyer des fichiers vers un stockage en ligne ou un serveur : " + (($rows | Select-Object -First 4 | ForEach-Object { "$($_.Outil) $($_.Type) $($_.Compte)".Trim() }) -join ' | ') + '. Seul le nom du compte est relevé, jamais le mot de passe.' } else { 'Aucun compte rclone, FileZilla ou WinSCP configuré sur le poste.' }
+    G 'Comptes de stockage en ligne configurés (rclone, FileZilla, WinSCP)' $(if ($rows.Count) { 'INDICE' } else { 'RAS' }) $txt 'comptes_transfert.csv'
     Log "    $txt"
 }
 
@@ -1177,7 +1194,7 @@ Step 'IOC : hachages SHA256 / SHA1 (fichiers presents, Amcache, quarantaine Defe
     }
     # Quarantaine Defender : le nom de chaque fichier ResourceData est le SHA1 du fichier d'origine
     $q = C 'rancon\defender_quarantaine\ResourceData'
-    $dev = @(Get-Evtx 'Microsoft-Windows-Windows Defender/Operational' @(1116, 1117) $Since | ForEach-Object { $f = Get-EvFields $_; [pscustomobject]@{ Date = $_.TimeCreated; Nom = $f['Threat Name']; Chemin = $f['Path'] } })
+    $dev = @((Get-Evtx 'Microsoft-Windows-Windows Defender/Operational' @(1116, 1117) $Since) | ForEach-Object { $f = Get-EvFields $_; [pscustomobject]@{ Date = $_.TimeCreated; Nom = $f['Threat Name']; Chemin = $f['Path'] } })
     foreach ($f in (Get-ChildItem -LiteralPath $q -Recurse -File -ErrorAction SilentlyContinue)) {
         $near = @($dev | Where-Object { [math]::Abs(($_.Date - $f.LastWriteTime).TotalSeconds) -le 120 })
         $ioc.Add([pscustomobject]@{ Nom = $(if ($near.Count) { (($near | ForEach-Object { $_.Nom } | Select-Object -Unique) -join ' / ') } else { '(menace non rapprochee)' }); Chemin = (($near | ForEach-Object { $_.Chemin -replace '^file:_', '' } | Select-Object -Unique) -join ' | ')
@@ -1190,7 +1207,7 @@ Step 'IOC : hachages SHA256 / SHA1 (fichiers presents, Amcache, quarantaine Defe
     $miss = @($script:Exec | Where-Object { $_.Source -match 'Prefetch|BAM' -and "$($_.Programme) $($_.Chemin)" -match $ToolRx } | ForEach-Object { "$($_.Programme)" } | Select-Object -Unique | Where-Object { $hashed -notcontains $_.ToLower() })
     $miss | Out-File (P 'ioc_executes_sans_hachage.txt') -Encoding utf8
     Log "    $($rows.Count) IOC ; executes sans hachage rapproche : $($miss.Count)"
-    G 'IOC (hachages)' $(if ($miss.Count) { 'A FAIRE' } else { 'RAS' }) "$($rows.Count) hachages (SHA256 fichiers, SHA1 Amcache et quarantaine). Executes sans hachage rapproche : $(($miss | Select-Object -First 15) -join ', ')" 'ioc_hachages.csv, ioc_executes_sans_hachage.txt'
+    G 'Empreintes des fichiers suspects (à transmettre à un expert ou à VirusTotal)' $(if ($miss.Count) { 'A FAIRE' } else { 'RAS' }) "$(Nb $rows.Count 'empreinte relevée' 'empreintes relevées').$(if ($miss.Count) { " Programmes lancés dont l'empreinte manque : $(($miss | Select-Object -First 15) -join ', ')." })" 'ioc_hachages.csv, ioc_executes_sans_hachage.txt'
 }
 
 # =================================================================== 12. CONTENEURS VELOCIRAPTOR : HACHAGE COMPLET ET INTEGRITE
@@ -1220,7 +1237,7 @@ Step 'Conteneurs Velociraptor : SHA256 complet et controle de la fin d''archive 
     }
     Out-Csv $rows 'conteneurs_velociraptor.csv'
     $bad = @($rows | Where-Object { $_.FinArchive -eq 'ABSENTE' })
-    if ($rows) { G 'Conteneurs Velociraptor (hachage complet, integrite)' $(if ($bad.Count) { 'A FAIRE' } else { 'RAS' }) "$(@($rows).Count) conteneur(s) hache(s) en entier ; $($bad.Count) tronque(s) : $(($bad | ForEach-Object { $_.Conteneur }) -join ', ')" 'conteneurs_velociraptor.csv' }
+    if ($rows) { G 'Archive de collecte Velociraptor complète et intacte ?' $(if ($bad.Count) { 'A FAIRE' } else { 'RAS' }) $(if ($bad.Count) { "$(Nb $bad.Count 'archive est coupée' 'archives sont coupées') (support FAT32 limité à 4 Go) : $(($bad | ForEach-Object { $_.Conteneur }) -join ', '). Refaites la collecte sur un support NTFS ou exFAT." } else { "$(Nb (@($rows).Count) 'archive vérifiée' 'archives vérifiées') en entier : complète et intacte." }) 'conteneurs_velociraptor.csv' }
 }
 
 # =================================================================== 12 bis. MEMOIRE VIVE (Volatility 3, au bureau seulement)
@@ -1276,16 +1293,16 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
     foreach ($dl in [IO.DriveInfo]::GetDrives()) { if ($dl.IsReady) { $cands += @(Get-ChildItem -LiteralPath (Join-Path $dl.RootDirectory.FullName "MEMOIRE\$nomCol") -Filter '*.raw' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) } }
     $img = $cands | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     $etat = $null
-    if ($SansRam) { $etat = 'Lecture de la RAM non demandee (-SansRam).' }
-    elseif (-not $img) { $etat = 'Pas d''image RAM pour cette collecte (collecte legere, support FAT32 ou trop petit, ou copie en echec : voir memoire_info.txt).' }
-    elseif ($Computer -ieq $env:COMPUTERNAME -and $env:DIGSPILL_RAM_MEME_POSTE -ne '1') { $etat = "Image RAM presente mais non lue : l'analyse tourne sur le poste collecte ($env:COMPUTERNAME). La lire au bureau, sur la copie des preuves." }
+    if ($SansRam) { $etat = 'Mémoire vive non lue : la lecture n''a pas été demandée. Relancez l''analyse en cochant « Analyse complète ».' }
+    elseif (-not $img) { $etat = 'Pas de copie de la mémoire vive dans cette collecte. Elle n''est faite qu''en collecte complète, sur un support NTFS ou exFAT assez grand (détail : memoire_info.txt).' }
+    elseif ($Computer -ieq $env:COMPUTERNAME -and $env:DIGSPILL_RAM_MEME_POSTE -ne '1') { $etat = "Mémoire vive copiée, mais pas lue : cette analyse tourne sur le poste examiné lui-même ($env:COMPUTERNAME). Par sécurité, DigSpill ne lit la mémoire que sur un autre PC, sain : elle peut contenir le programme malveillant. Relancez l'analyse sur votre PC, à partir de la copie des preuves." }
     $py = Join-Path $PSScriptRoot 'outils\python\python.exe'
-    if (-not $etat -and -not (Test-Path -LiteralPath $py)) { $etat = "Python et Volatility 3 absents du kit ($py) : refaire la cle avec le kit complet." }
+    if (-not $etat -and -not (Test-Path -LiteralPath $py)) { $etat = "Mémoire vive non lue : les outils de lecture (Python et Volatility 3) manquent dans le kit. Téléchargez le kit complet (onglet Releases du dépôt) et relancez l'analyse." }
     if ($etat) {
         Log "    [i] $etat"
         $lect.Add(''); $lect.Add($etat)
         $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8
-        G 'Memoire vive (processus et connexions lus dans la RAM)' $(if ($img -and -not $SansRam) { 'A FAIRE' } else { 'NON VERIFIABLE' }) $etat 'ram\ram_lecture.txt'
+        G 'Mémoire vive : programmes en cours au moment de la collecte' $(if ($img -and -not $SansRam) { 'A FAIRE' } else { 'NON VERIFIABLE' }) $etat 'ram\ram_lecture.txt'
         return
     }
     if ($Computer -ieq $env:COMPUTERNAME) { Log '    [i] DIGSPILL_RAM_MEME_POSTE=1 : lecture de la RAM sur le poste collecte (recette uniquement)' }
@@ -1322,9 +1339,9 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
         }
     } else { $lect.Add('noyau.json absent (collecte anterieure a DigSpill 2.8) : Volatility cherche lui-meme les symboles en ligne.') }
     if (-not $horsLigne -and $SansInternet) {
-        $etat = 'Symboles du noyau absents et analyse sans Internet : RAM non lue. Relancer l''analyse avec Internet une fois (les symboles sont ensuite gardes dans outils\symboles).'
+        $etat = 'Mémoire vive non lue : il faut la description du noyau de Windows (les « symboles »), téléchargée chez Microsoft, et l''analyse a été lancée sans Internet. Relancez-la une fois avec Internet : les symboles sont ensuite gardés dans le kit.'
         Log "    [!] $etat"; $lect.Add($etat); $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8
-        G 'Memoire vive (processus et connexions lus dans la RAM)' 'A FAIRE' $etat 'ram\ram_lecture.txt'
+        G 'Mémoire vive : programmes en cours au moment de la collecte' 'A FAIRE' $etat 'ram\ram_lecture.txt'
         return
     }
 
@@ -1368,10 +1385,10 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
     if ($infoV.Count) { $infoV | Select-Object Variable, Value | Export-Csv (Join-Path $ramDir 'ram_info.csv') -NoTypeInformation -Encoding UTF8 }
     $ps = $res['windows.pslist']
     if (-not $ps.Count) {
-        $etat = if ($noyauIntrouvable) { 'Volatility n''a pas retrouvé le noyau de Windows dans cette image (cela arrive avec une copie faite pendant que Windows tourne). Les processus et connexions relevés en direct pendant la collecte restent dans volatile\processus.csv et volatile\tcp_connexions.csv.' }
-                 else { 'Volatility n''a pas pu lire la liste des processus (symboles ou format de l''image) : voir ram_lecture.txt.' }
+        $etat = if ($noyauIntrouvable) { 'Mémoire vive non lue : le cœur de Windows (le noyau) n''a pas été retrouvé dans la copie, ce qui arrive quand elle est faite pendant que Windows tourne. Les programmes et connexions relevés en direct pendant la collecte restent visibles (Détails › Adresses IP et pays, et Tous les événements).' }
+                 else { 'Mémoire vive non lue : la liste des programmes n''a pas pu être extraite de la copie (format de la copie ou symboles). Détail technique : ram_lecture.txt.' }
         Log "    [!] $etat"; $lect.Add(''); $lect.Add($etat); $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8
-        G 'Memoire vive (processus et connexions lus dans la RAM)' 'A FAIRE' $etat 'ram\ram_lecture.txt'
+        G 'Mémoire vive : programmes en cours au moment de la collecte' 'A FAIRE' $etat 'ram\ram_lecture.txt'
         return
     }
 
@@ -1385,7 +1402,7 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
     $rejetes = $ps.Count - $valides.Count
     $noms = @{}; foreach ($r in $valides) { $noms["$($r.PID)"] = "$($r.ImageFileName)" }
     $systeme = 'svchost.exe', 'lsass.exe', 'csrss.exe', 'services.exe', 'winlogon.exe', 'wininit.exe', 'smss.exe', 'explorer.exe', 'spoolsv.exe', 'taskhostw.exe', 'dllhost.exe', 'conhost.exe', 'rundll32.exe', 'sihost.exe', 'dashost.exe', 'runtimebroker.exe', 'searchindexer.exe', 'msmpeng.exe', 'ctfmon.exe', 'dwm.exe', 'userinit.exe', 'fontdrvhost.exe', 'lsaiso.exe', 'regsvr32.exe', 'taskmgr.exe', 'audiodg.exe', 'wmiprvse.exe'
-    $rxEnvoi = 'rclone|megasync|megacmd|winscp|filezilla|pscp|restic|mimikatz|lazagne|procdump|netpass|webbrowserpass|mailpass|chromepass'
+    $rxEnvoi = $Ind.outils_envoi
     $rxAcces = 'anydesk|rustdesk|ngrok|cloudflared|chisel|teamviewer|screenconnect|plink|psexe'
     $rxNav = '^(chrome|msedge|firefox|brave|opera|iexplore|msedgewebview2|onedrive|teams|ms-teams)\.exe$'
     $procs = foreach ($r in $valides) {
@@ -1402,23 +1419,23 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
         $ind = New-Object System.Collections.Generic.List[string]
         if ($systeme -notcontains $bas -and -not ($bas.Length -ge 14 -and @($systeme | Where-Object { $_.StartsWith($bas) }).Count)) {
             $proche = $systeme | Where-Object { $_.Length -ge 7 -and [Math]::Abs($_.Length - $bas.Length) -le 1 -and (Get-Osa $bas $_) -eq 1 } | Select-Object -First 1
-            if ($proche) { $ind.Add("nom presque identique à $proche (processus de Windows)"); $niv = [Math]::Max($niv, 3) }
+            if ($proche) { $ind.Add("nom qui imite $proche, un programme de Windows (une lettre de différence)"); $niv = [Math]::Max($niv, 3) }
         }
         # l'outil se reconnait a son nom ou a son chemin, pas a une adresse (curl vers rclone.org n'est pas rclone)
         $exeCmd = if ($ligneCmd -match '^\s*"?([^"]+?\.(exe|com|scr))\b') { $Matches[1] } else { '' }
-        if ("$bas $chemin $exeCmd" -match $rxEnvoi) { $ind.Add("outil d'envoi ou de vol d'identifiants ($($Matches[0]))"); $niv = [Math]::Max($niv, 3) }
-        elseif ("$bas $chemin $exeCmd" -match $rxAcces) { $ind.Add("outil d'accès à distance ($($Matches[0]))"); $niv = [Math]::Max($niv, 2) }
+        if ("$bas $chemin $exeCmd" -match $rxEnvoi) { $ind.Add("outil pour envoyer des fichiers ou voler des mots de passe ($($Matches[0]))"); $niv = [Math]::Max($niv, 3) }
+        elseif ("$bas $chemin $exeCmd" -match $rxAcces) { $ind.Add("logiciel de prise en main à distance ($($Matches[0]))"); $niv = [Math]::Max($niv, 2) }
         if ("$chemin $ligneCmd" -match '(?i)\\Users\\Public\\|\\Windows\\Temp\\|\\AppData\\Local\\Temp\\|\\PerfLogs\\|\\\$Recycle') { $ind.Add('lancé depuis un dossier où tout le monde peut écrire'); $niv = [Math]::Max($niv, 2) }
-        if ($ligneCmd -match '(?i)\s-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{20,}') { $ind.Add('PowerShell avec une commande encodée'); $niv = [Math]::Max($niv, 2) }
-        if ($ligneCmd -match '(?i)https?://([^/\s"]+)' -and $bas -notmatch $rxNav) { $ind.Add("adresse Internet dans la ligne de commande ($($Matches[1]))"); $niv = [Math]::Max($niv, 1) }
+        if ($ligneCmd -match '(?i)\s-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{20,}') { $ind.Add('PowerShell avec une commande cachée (encodée)'); $niv = [Math]::Max($niv, 2) }
+        if ($ligneCmd -match '(?i)https?://([^/\s"]+)' -and $bas -notmatch $rxNav) { $ind.Add("adresse Internet dans la commande lancée ($($Matches[1]))"); $niv = [Math]::Max($niv, 1) }
         $par = $noms["$($r.PPID)"]
-        if ($bas -eq 'svchost.exe' -and $par -and $par -ne 'services.exe') { $ind.Add("svchost.exe lancé par $par (attendu : services.exe)"); $niv = [Math]::Max($niv, 2) }
-        if ($bas -eq 'lsass.exe' -and $par -and $par -ne 'wininit.exe') { $ind.Add("lsass.exe lancé par $par (attendu : wininit.exe)"); $niv = [Math]::Max($niv, 3) }
+        if ($bas -eq 'svchost.exe' -and $par -and $par -ne 'services.exe') { $ind.Add("svchost.exe lancé par $par (normalement : services.exe)"); $niv = [Math]::Max($niv, 2) }
+        if ($bas -eq 'lsass.exe' -and $par -and $par -ne 'wininit.exe') { $ind.Add("lsass.exe lancé par $par (normalement : wininit.exe)"); $niv = [Math]::Max($niv, 3) }
         [pscustomobject]@{ PID = $r.PID; PPID = $r.PPID; Parent = $par; Processus = $nom; Debut = (From-VolDate $r.CreateTime); Fin = (From-VolDate $r.ExitTime)
             Threads = $r.Threads; Chemin = $chemin; LigneDeCommande = $ligneCmd; Niveau = $niv; Indices = ($ind -join ' ; ') }
     }
     $nLsass = @($procs | Where-Object { $_.Processus -ieq 'lsass.exe' -and -not $_.Fin }).Count
-    if ($nLsass -gt 1) { foreach ($x in ($procs | Where-Object { $_.Processus -ieq 'lsass.exe' })) { $x.Niveau = 3; $x.Indices = (@($x.Indices, "$nLsass processus lsass.exe actifs (un seul attendu)") | Where-Object { $_ }) -join ' ; ' } }
+    if ($nLsass -gt 1) { foreach ($x in ($procs | Where-Object { $_.Processus -ieq 'lsass.exe' })) { $x.Niveau = 3; $x.Indices = (@($x.Indices, "$nLsass programmes lsass.exe ouverts (normalement un seul)") | Where-Object { $_ }) -join ' ; ' } }
     Out-Csv ($procs | Sort-Object Debut) 'ram\ram_processus.csv'
 
     # ------- reseau
@@ -1436,15 +1453,15 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
 
     $susp = @($procs | Where-Object { $_.Niveau -ge 2 })
     $lect.Add('')
-    $lect.Add(('Processus lus : {0} ({1} lignes illisibles ecartees : image copiee pendant que Windows tournait)' -f @($procs).Count, $rejetes))
-    $lect.Add(('Lignes de commande lues : {0}' -f $cmd.Count))
-    $lect.Add(('Connexions lues ({0}) : {1}, dont {2} etablie(s) vers l''exterieur' -f $src, $reseau.Count, $etablies.Count))
-    if (-not $etablies.Count) { $lect.Add('  Aucune connexion établie lue dans la RAM : sur Windows 11 24H2 / Server 2025 (build 26100), Volatility 3 ne lit pas encore la table des connexions. Voir les connexions relevées en direct pendant la collecte (tcp_connexions.csv).') }
-    $lect.Add(('Processus avec indice fort : {0}' -f $susp.Count))
+    $lect.Add(('Programmes lus : {0} ({1} lignes illisibles écartées : normal, la copie est faite pendant que Windows tourne)' -f @($procs).Count, $rejetes))
+    $lect.Add(('Commandes lancées lues : {0}' -f $cmd.Count))
+    $lect.Add(('Connexions lues ({0}) : {1}, dont {2} active(s) vers une autre machine' -f $src, $reseau.Count, $etablies.Count))
+    if (-not $etablies.Count) { $lect.Add('  Aucune connexion active lue dans la mémoire : sur Windows 11 24H2 et Windows Server 2025 (build 26100), Volatility 3 ne sait pas encore lire la liste des connexions. Voir les connexions relevées en direct pendant la collecte (Détails › Adresses IP et pays).') }
+    $lect.Add(('Programmes suspects : {0}' -f $susp.Count))
     foreach ($x in $susp) { $lect.Add("  PID $($x.PID) $($x.Processus) : $($x.Indices)") }
     $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8
-    $txt = "$(@($procs).Count) processus et $($reseau.Count) connexions lus dans la RAM ; $($susp.Count) processus avec indice fort$(if ($susp.Count) { ' : ' + (($susp | Select-Object -First 4 | ForEach-Object { "$($_.Processus) (PID $($_.PID))" }) -join ', ') })"
-    G 'Memoire vive (processus et connexions lus dans la RAM)' $(if ($susp.Count) { 'INDICE' } else { 'RAS' }) $txt 'ram\ram_processus.csv'
+    $txt = "$(Nb (@($procs).Count) 'programme lu' 'programmes lus') dans la mémoire vive, $(if ($susp.Count) { "dont $(Nb $susp.Count 'suspect' 'suspects') : " + (($susp | Select-Object -First 4 | ForEach-Object { "$($_.Processus) (n° $($_.PID))" }) -join ', ') } else { 'aucun suspect' }). $(Nb $reseau.Count 'connexion lue' 'connexions lues')."
+    G 'Mémoire vive : programmes en cours au moment de la collecte' $(if ($susp.Count) { 'INDICE' } else { 'RAS' }) $txt 'ram\ram_processus.csv'
     Log "    $txt"
 }
 
