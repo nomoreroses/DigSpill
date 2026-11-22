@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     DigSpill - lit une copie de la memoire vive (RAM) avec Volatility 3, AU BUREAU, jamais sur le poste suspect.
 

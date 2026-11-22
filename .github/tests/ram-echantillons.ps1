@@ -12,6 +12,13 @@ Write-Host "===== $(Get-Date -Format 'HH:mm:ss') Kit (Python + Volatility 3)"
 $lire = "$T\kit\DigSpill\moteur\Lire-Ram.ps1"
 if (-not (Test-Path $lire)) { Write-Host '[!] kit incomplet'; exit 1 }
 
+# Pack de symboles de la Volatility Foundation : les noyaux de Windows XP n'ont pas de symboles complets
+# sur le serveur de Microsoft ("_ETHREAD" absent). Inutile pour les vrais postes (Windows 10/11 : noyau.json).
+$pack = "$T\kit\DigSpill\moteur\outils\symboles\windows.zip"
+New-Item -ItemType Directory -Force -Path (Split-Path $pack) | Out-Null
+try { Invoke-WebRequest -UseBasicParsing 'https://downloads.volatilityfoundation.org/volatility3/symbols/windows.zip' -OutFile $pack -TimeoutSec 900; Write-Host ("pack de symboles : {0:N0} Mo" -f ((Get-Item $pack).Length / 1MB)) }
+catch { Write-Host "[!] pack de symboles : $($_.Exception.Message)" }
+
 $cas = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'ram-attendus.json') -Raw | ConvertFrom-Json
 $bilan = New-Object System.Collections.Generic.List[object]
 foreach ($c in $cas) {
@@ -24,6 +31,14 @@ foreach ($c in $cas) {
         try { Invoke-WebRequest -UseBasicParsing -Uri $u -OutFile $zip -TimeoutSec 600; $ok = (Get-Item $zip).Length -gt 1MB; Write-Host ("telecharge : {0} ({1:N0} Mo)" -f $u, ((Get-Item $zip).Length / 1MB)) }
         catch { Write-Host "[!] $u : $($_.Exception.Message)" }
         if ($ok) { break }
+    }
+    if (-not $ok -and $c.Parts) {
+        # archive coupee en morceaux dans un depot GitHub : on les met bout a bout
+        try {
+            $fs = [IO.File]::Create($zip)
+            foreach ($u in $c.Parts) { $part = "$zip.part"; Invoke-WebRequest -UseBasicParsing -Uri $u -OutFile $part -TimeoutSec 600; $b = [IO.File]::ReadAllBytes($part); $fs.Write($b, 0, $b.Length); Write-Host "morceau : $u" }
+            $fs.Close(); $ok = (Get-Item $zip).Length -gt 1MB
+        } catch { try { $fs.Close() } catch {}; Write-Host "[!] morceaux : $($_.Exception.Message)" }
     }
     if (-not $ok) { $bilan.Add([pscustomobject]@{ Cas = $c.Nom; Resultat = 'NON TELECHARGE'; Attendus = ($c.Attendus -join ','); Signales = ''; Manquants = ''; EnPlus = '' }); continue }
     try { Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $dir 'x') -Force } catch { Write-Host "[!] decompression : $($_.Exception.Message)" }
