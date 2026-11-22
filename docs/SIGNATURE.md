@@ -1,7 +1,7 @@
 # Signer DigSpill.exe
 
 Sans signature, Windows affiche **« Éditeur : Inconnu »** quand on lance l'appli en administrateur.
-Avec une signature d'un certificat reconnu par Windows, il affiche **le nom de l'éditeur** (ex. Sémaphors).
+Avec une signature d'un certificat reconnu par Windows, il affiche **le nom de l'éditeur** (ex. le nom de votre société).
 
 > ⚠️ Le code ne peut pas régler ça tout seul : il faut **un certificat de signature de code** à votre nom.
 
@@ -25,7 +25,7 @@ Avec une signature d'un certificat reconnu par Windows, il affiche **le nom de l
    Ou partir du kit : `app\SIGNER.bat E:\DigSpill.exe` signe directement l'exe de la clé (ou du zip dézippé).
 2. Brancher le jeton du certificat (ou configurer le service de signature).
 3. `app\SIGNER.bat` → signe avec le meilleur certificat trouvé.
-   `app\SIGNER.bat "Sémaphors"` → impose le certificat dont le nom contient « Sémaphors ».
+   `app\SIGNER.bat "MaSociete"` → impose le certificat dont le nom contient « MaSociete ».
 4. Vérifier : clic droit sur `DigSpill.exe` → Propriétés → **Signatures numériques**.
 5. Copier `DigSpill.exe` à la racine de la clé OUTILS (à côté de `moteur\`), **puis** la passer en lecture seule.
 
