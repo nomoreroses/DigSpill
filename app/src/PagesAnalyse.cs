@@ -233,14 +233,14 @@ namespace DigSpill
                 // analyse arretee ou en echec : revenir au choix de la collecte sans quitter DigSpill
                 var r = new BoutonPlat("Collecte à analyser", BoutonPlat.Genre.Secondaire, Ic.Retour);
                 r.Click += delegate { F.Aller(new PageSource(F)); };
-                var d = new BoutonPlat("Ouvrir le dossier", BoutonPlat.Genre.Secondaire, Ic.Dossier);
+                var d = new BoutonPlat("Dossier", BoutonPlat.Genre.Secondaire, Ic.Dossier);
                 d.Click += delegate { Pages.OuvrirDossier(Ctx.DossierTravail); };
                 var l = new List<Control> { r, d };
                 string partiel = Path.Combine(Path.Combine(Ctx.DossierTravail, Path.GetFileName(Ctx.SourceCollecte ?? "")), Path.GetFileName(Path.GetDirectoryName(Ctx.SourceCollecte ?? "") ?? ""));
                 partiel = Path.Combine(Ctx.CopieVerifiee ? partiel : Path.GetDirectoryName(Ctx.SourceCollecte ?? ""), Path.GetFileName(Ctx.SourceCollecte ?? "") + "_INTERFACE.html");
                 if (!Ctx.Demo && File.Exists(partiel))
                 {
-                    var o = new BoutonPlat("Voir le rapport partiel", BoutonPlat.Genre.Primaire, Ic.Lecture);
+                    var o = new BoutonPlat("Rapport partiel", BoutonPlat.Genre.Primaire, Ic.Lecture);
                     o.Click += delegate { Ctx.Interface = partiel; F.Aller(new PageRapport(F)); };
                     l.Add(o);
                 }
@@ -413,6 +413,13 @@ namespace DigSpill
             c.Contenu.Ajouter(Mise.Texte("INTERFACE", Theme.MonoMoyen(8.5f), Theme.Texte3));
             c.Contenu.Ajouter(Mise.Texte(Path.GetFileName(Ctx.Interface ?? ""), Theme.Police(14f, FontStyle.Bold), Theme.Texte));
             c.Contenu.Ajouter(Mise.Texte(Ctx.Interface ?? "", Theme.Mono(8.5f), Theme.Texte3));
+            // actions secondaires dans la carte : le pied n'a de place que pour deux boutons
+            var r = c.Contenu.Ajouter(new Rangee());
+            var w = new BoutonPlat("Dans le navigateur", BoutonPlat.Genre.Secondaire, Ic.Lecture) { Margin = new Padding(0, 0, 10, 0) };
+            w.Click += delegate { try { if (!Ctx.Demo) Pages.OuvrirRapport(Ctx.Interface, true); } catch (Exception e) { MessageBox.Show(F, e.Message, "DigSpill"); } };
+            var d = new BoutonPlat("Ouvrir le dossier", BoutonPlat.Genre.Secondaire, Ic.Dossier) { Margin = new Padding(0) };
+            d.Click += delegate { if (Ctx.Interface != null) Pages.OuvrirDossier(Path.GetDirectoryName(Ctx.Interface)); };
+            r.Controls.Add(w); r.Controls.Add(d);
             var a = Corps.Ajouter(NouvelleCarte());
             a.Contenu.Ajouter(Intertitre("Ensuite"));
             a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "PV de collecte", "Dans l'interface : onglet Preuves › Rapports › « PV de collecte ». À imprimer et faire signer."));
@@ -422,15 +429,11 @@ namespace DigSpill
 
         public override IEnumerable<Control> Boutons()
         {
-            var d = new BoutonPlat("Ouvrir le dossier", BoutonPlat.Genre.Secondaire, Ic.Dossier);
-            d.Click += delegate { if (Ctx.Interface != null) Pages.OuvrirDossier(Path.GetDirectoryName(Ctx.Interface)); };
             var n = new BoutonPlat("Nouvelle analyse", BoutonPlat.Genre.Secondaire, Ic.Actualiser);
             n.Click += delegate { F.Aller(new PageSource(F)); };
-            var w = new BoutonPlat("Dans le navigateur", BoutonPlat.Genre.Discret, Ic.Lecture);
-            w.Click += delegate { try { if (!Ctx.Demo) Pages.OuvrirRapport(Ctx.Interface, true); } catch (Exception e) { MessageBox.Show(F, e.Message, "DigSpill"); } };
             var o = new BoutonPlat("Ouvrir le rapport", BoutonPlat.Genre.Primaire, Ic.Lecture);
             o.Click += delegate { try { if (!Ctx.Demo) Pages.OuvrirRapport(Ctx.Interface, false); } catch (Exception e) { MessageBox.Show(F, e.Message, "DigSpill"); } };
-            return new Control[] { d, n, w, o };
+            return new Control[] { n, o };
         }
     }
 }
