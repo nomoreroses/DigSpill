@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace DigSpill
@@ -18,6 +19,8 @@ namespace DigSpill
         public string[] Parcours;
         public int Etape = -1;
         public bool Occupee;
+        /// <summary>Fabrique de la page vers laquelle revenir en cliquant sur une etape precedente du parcours (null : etape non cliquable).</summary>
+        public virtual Func<Page> EtapePrecedente(int etape) { return null; }
 
         public static readonly string[] ParcoursCollecte = { "Intervention", "Feu vert", "Support PREUVES", "Collecte", "Scellé et éjection" };
         public static readonly string[] ParcoursAnalyse = { "Collecte à analyser", "Analyse", "Rapport" };
@@ -62,6 +65,11 @@ namespace DigSpill
         readonly FlowLayoutPanel boutons;
         Page courante;
         readonly Timer rebond = new Timer { Interval = 900 };
+        // pendant une collecte ou une analyse : ni veille ni ecran eteint (rappel toutes les 30 s, rien a defaire ensuite)
+        readonly Timer eveil = new Timer { Interval = 30000 };
+        [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint etat);
+        const uint ES_SYSTEM_REQUIRED = 0x1, ES_DISPLAY_REQUIRED = 0x2;
+        public void GarderEveille() { if (courante != null && courante.Occupee) SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED); }
         public event Action SupportsChanges;
 
         public Fenetre(Contexte ctx, string depart, string capture)
@@ -111,6 +119,14 @@ namespace DigSpill
             Controls.Add(zone); Controls.Add(laterale);
 
             rebond.Tick += delegate { rebond.Stop(); MajInfoCle(); var a = SupportsChanges; if (a != null) a(); };
+            eveil.Tick += delegate { GarderEveille(); };
+            eveil.Start();
+            etapes.EtapeCliquee += i =>
+            {
+                if (courante == null || courante.Occupee || i >= courante.Etape) return;
+                var fabrique = courante.EtapePrecedente(i);
+                if (fabrique != null) Aller(fabrique());
+            };
             MajInfoCle();
             FormClosing += (s, e) =>
             {
@@ -160,6 +176,7 @@ namespace DigSpill
             MajEntete();
             p.Affichee();
             p.Ajuster();
+            GarderEveille();
         }
 
         public void MajEntete()
@@ -171,6 +188,9 @@ namespace DigSpill
             boutons.Controls.Clear();
             foreach (var b in courante.Boutons().Reverse()) boutons.Controls.Add(b);
             etapes.Definir(courante.Parcours, courante.Etape);
+            var cliquables = new HashSet<int>();
+            for (int i = 0; i < courante.Etape; i++) if (!courante.Occupee && courante.EtapePrecedente(i) != null) cliquables.Add(i);
+            etapes.Cliquables = cliquables;
         }
 
         protected override void WndProc(ref Message m)

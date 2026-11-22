@@ -96,6 +96,35 @@ function Out-Csv($rows, [string]$rel) {
     if ($a.Count) { $a | Export-Csv -Path (P $rel) -NoTypeInformation -Encoding UTF8 }
     else { 'Aucune ligne' | Out-File (P $rel) -Encoding utf8 }
 }
+# Nom typique d'un fichier chiffre (meme regle que la collecte 2.9 et l'interface)
+$script:RxRanconNom = New-Object Text.RegularExpressions.Regex('(?i)(\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+# Chiffrement retenu : au moins 20 fichiers au nom typique, meme extension, modifies en 24 h.
+# Une installation de jeu (icones @2x) ou des fichiers etales sur des mois ne sont pas un chiffrement.
+function Get-Chiffrement {
+    if ($null -ne $script:Chiffrement) { return $script:Chiffrement }
+    $g = @{}
+    foreach ($r in (Read-Csv (C 'rancon\fichiers_chiffres_suspects.csv'))) {
+        $nom = "$($r.Chemin)" -replace '^.*\\', ''
+        if (-not $script:RxRanconNom.IsMatch($nom)) { continue }
+        $ext = [IO.Path]::GetExtension($nom).ToLowerInvariant()
+        if (-not $g.ContainsKey($ext)) { $g[$ext] = [pscustomobject]@{ N = 0; Dates = (New-Object System.Collections.Generic.List[datetime]) } }
+        $g[$ext].N++
+        $d = Parse-Date "$($r.Modification)"; if (-not $d) { $d = Parse-Date "$($r.Creation)" }
+        if ($d) { $g[$ext].Dates.Add($d) }
+    }
+    $res = New-Object System.Collections.Generic.List[object]
+    foreach ($k in $g.Keys) {
+        $t = @($g[$k].Dates | Sort-Object); $pic = 0; $deb = $null; $fin = $null; $i = 0
+        for ($j = 0; $j -lt $t.Count; $j++) {
+            while (($t[$j] - $t[$i]).TotalHours -gt 24) { $i++ }
+            if ($j - $i + 1 -gt $pic) { $pic = $j - $i + 1; $deb = $t[$i]; $fin = $t[$j] }
+        }
+        if ($pic -ge 20) { $res.Add([pscustomobject]@{ Extension = $k; NbFichiers = $g[$k].N; Pic = $pic; Premier = $deb.ToString('yyyy-MM-dd HH:mm:ss'); Dernier = $fin.ToString('yyyy-MM-dd HH:mm:ss') }) }
+    }
+    $script:Chiffrement = @($res | Sort-Object NbFichiers -Descending)
+    return $script:Chiffrement
+}
+
 function Read-Csv([string]$path) {
     if ($path -and (Test-Path -LiteralPath $path)) {
         $first = Get-Content -LiteralPath $path -TotalCount 1 -Encoding UTF8
@@ -361,9 +390,7 @@ Step "Fenetres d'analyse (sessions depuis IP publique / VPN, compte Invite, indi
         }
     }
     foreach ($r in (Read-Csv (C 'rancon\commandes_destructrices_4688.csv'))) { $l = "$($r.LigneDeCommande)"; Indice $r.Date ('commande ' + $l.Substring(0, [Math]::Min(70, $l.Length))) }
-    foreach ($r in (Read-Csv (C 'rancon\fichiers_chiffres_par_extension.csv'))) {
-        if ([int]("0$($r.NbFichiers)" -replace '\D', '') -ge 20) { Indice $r.Premier "debut du chiffrement ($($r.NbFichiers) fichiers $($r.Extension))"; Indice $r.Dernier "fin du chiffrement $($r.Extension)" }
-    }
+    foreach ($r in (Get-Chiffrement)) { Indice $r.Premier "debut du chiffrement ($($r.NbFichiers) fichiers $($r.Extension))"; Indice $r.Dernier "fin du chiffrement $($r.Extension)" }
     $grp = $null
     foreach ($x in ($ind | Sort-Object T)) {
         if ($grp -and ($x.T - $grp.Fin).TotalMinutes -le 60) { $grp.Fin = $x.T; $grp.Quoi.Add($x.Quoi) }
@@ -747,8 +774,8 @@ Step 'Parametres de redirection RDP (lecteurs, presse-papier) et usage de rdpcli
 # =================================================================== 6. $MFT ET JOURNAL USN : FICHIERS CREES / MODIFIES PENDANT LES FENETRES
 Step 'Journal USN et $MFT : fichiers crees ou modifies pendant les fenetres (archives, profils)' {
     $arcRx = '(?i)\.(zip|7z|rar|tar|gz|tgz|cab|iso|vhdx?|bak|pst|sql|csv|xlsx?|pdf)$'
-    $ransomRx = '(?i)\.\[[^\]]{3,80}\]\.[^.]{2,15}$|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}'
-    foreach ($x in (Read-Csv (C 'rancon\fichiers_chiffres_par_extension.csv') | Where-Object { [int64]$_.NbFichiers -ge 50 })) { $ransomRx += '|' + [regex]::Escape($x.Extension) + '$' }
+    $ransomRx = $script:RxRanconNom.ToString()
+    foreach ($x in (Get-Chiffrement)) { $ransomRx += '|' + [regex]::Escape($x.Extension) + '$' }
     # USN (fsutil)
     $usnFiles = @(Get-ChildItem -LiteralPath (C 'artefacts') -Filter 'usn_journal_*.csv' -ErrorAction SilentlyContinue)
     $cov = New-Object System.Collections.Generic.List[string]
@@ -1004,7 +1031,7 @@ Step 'Note de rancon : contacts, revendication de vol de donnees, pistes de veil
         foreach ($x in $th) { $out.Add("      > $x") }
         $out.Add('')
     }
-    $ext = @(Read-Csv (C 'rancon\fichiers_chiffres_par_extension.csv') | Sort-Object { [int64]$_.NbFichiers } -Descending | Select-Object -First 3)
+    $ext = @(Get-Chiffrement | Select-Object -First 3)
     $out.Add("Extension(s) des fichiers chiffres : $(($ext | ForEach-Object { "$($_.Extension) ($($_.NbFichiers) fichiers, $($_.Premier) -> $($_.Dernier))" }) -join ' ; ')")
     $out.Add('')
     $out.Add('VEILLE A FAIRE A LA MAIN (ne pas automatiser : ne jamais envoyer le nom du cabinet a un service tiers sans accord)')

@@ -252,6 +252,19 @@ using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
+/// Chemin d'un processus protege (Defender, noyau) que WMI ne donne pas : acces "information limitee", permis meme sur ces processus.
+public static class CheminProcessus {
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(int acces, bool herite, int pid);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int options, System.Text.StringBuilder nom, ref int taille);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    public static string Lire(int pid) {
+        IntPtr h = OpenProcess(0x1000, false, pid);
+        if (h == IntPtr.Zero) return null;
+        try { var sb = new System.Text.StringBuilder(1024); int n = sb.Capacity; return QueryFullProcessImageName(h, 0, sb, ref n) ? sb.ToString(0, n) : null; }
+        finally { CloseHandle(h); }
+    }
+}
+
 public class ExtStat { public long Count; public long Bytes; public DateTime First = DateTime.MaxValue; public DateTime Last = DateTime.MinValue; public string Sample; }
 public class NoteStat { public int Count; public long Size; public bool Variee; public DateTime Last = DateTime.MinValue; public List<string> Samples = new List<string>(); }
 
@@ -411,6 +424,13 @@ Step 'Processus (ligne de commande, parent, proprietaire)' {
     $script:Procs = @{}
     $all = Get-CimInstance Win32_Process
     foreach ($p in $all) { $script:Procs[[int]$p.ProcessId] = $p }
+    # chemins : WMI, ou lecture limitee pour les processus proteges (MsMpEng.exe de Defender n'avait pas de chemin)
+    $script:Chemins = @{}
+    foreach ($p in $all) {
+        $c = $p.ExecutablePath
+        if (-not $c -and [int]$p.ProcessId -gt 4) { try { $c = [CheminProcessus]::Lire([int]$p.ProcessId) } catch {} }
+        if ($c) { $script:Chemins[[int]$p.ProcessId] = $c }
+    }
     $owners = @{}
     if ($IsAdmin) { Get-Process -IncludeUserName -ErrorAction SilentlyContinue | ForEach-Object { $owners[[int]$_.Id] = $_.UserName } }
     Save-Csv 'volatile\processus.csv' {
@@ -428,7 +448,7 @@ Step 'Connexions reseau actives' {
         Get-NetTCPConnection | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State, OwningProcess, CreationTime,
             @{n='TypeIP';e={ Get-IpType $_.RemoteAddress }},
             @{n='Process';e={ $script:Procs[[int]$_.OwningProcess].Name }},
-            @{n='Path';e={ $script:Procs[[int]$_.OwningProcess].ExecutablePath }},
+            @{n='Path';e={ $script:Chemins[[int]$_.OwningProcess] }},
             @{n='CommandLine';e={ $script:Procs[[int]$_.OwningProcess].CommandLine }}
     }
     Save-Csv 'volatile\udp_endpoints.csv' {
@@ -456,7 +476,7 @@ Step 'Sessions ouvertes, partages et fichiers ouverts' {
 
 Step 'Hash et signature des executables en cours' {
     Save-Csv 'volatile\processus_binaires.csv' {
-        $script:Procs.Values | Where-Object { $_.ExecutablePath } | Select-Object -ExpandProperty ExecutablePath -Unique | ForEach-Object {
+        $script:Chemins.Values | Sort-Object -Unique | ForEach-Object {
             $sig = $null; $h = $null
             try { $sig = Get-AuthenticodeSignature -LiteralPath $_ -ErrorAction Stop } catch {}
             try { $h   = Get-FileHash -LiteralPath $_ -Algorithm SHA256 -ErrorAction Stop } catch {}
@@ -1357,7 +1377,9 @@ Step 'Binaires suspects : hash + archive chiffree (mot de passe : infected) + qu
 if ($Full -and -not $SkipFullListing) {
     Step 'Listing complet des disques + fichiers chiffres, notes de rancon, bases metier (plusieurs minutes)' {
         if (-not $script:CsOk) { Log '    [!] Moteur C# indisponible : listing ignore'; return }
-        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.\[[^\]]{3,80}\]\.[^.]{2,15}$|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+        # nom typique d'un fichier chiffre : extension d'origine PUIS ajout du rancongiciel (identifiant entre crochets avec un chiffre,
+        # adresse e-mail, extension connue). Pas « icone@2x.png », « Film.[Groupe Release].torrent », « compte@exemple.fr_identity_provider ».
+        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
         $baseRx   = New-Object Text.RegularExpressions.Regex('(?i)(\.(fdp|fdb|gdb|mdf|ldf|ndf|accdb|mdb|4dd|4dindx|dbf)(\.|$)|axi_database)', 'Compiled')
         $enc = New-Object Text.UTF8Encoding($true)
         $hdr = 'Chemin,Taille,Creation,Modification,Acces,Attributs'
@@ -1492,7 +1514,8 @@ Step 'Synthese automatique (SYNTHESE.txt)' {
         if ($dur -le 720) { A "CHIFFREMENT : $m" } else { I "Noms suspects mais etales dans le temps (faux positif probable) : $m" }
     }
     foreach ($n in (Read-Out 'rancon\notes_rancon_candidates.csv' | Where-Object { [int]$_.NbDossiers -ge 10 } | Select-Object -First 5)) {
-        if ($n.NomEvocateur -eq 'True') { A "Note de rancon probable : $($n.Nom) dans $($n.NbDossiers) dossiers (copie dans rancon\notes)" }
+        # meme taille partout : une note deposee par un rancongiciel ; tailles differentes : aide de logiciels (help.html, README)
+        if ($n.NomEvocateur -eq 'True' -and $n.TailleIdentique -ne 'False') { A "Note de rancon probable : $($n.Nom) dans $($n.NbDossiers) dossiers (copie dans rancon\notes)" }
         else { I "Fichier texte repete : $($n.Nom) dans $($n.NbDossiers) dossiers" }
     }
     $vss = @(Get-CimInstance Win32_ShadowCopy -ErrorAction SilentlyContinue).Count

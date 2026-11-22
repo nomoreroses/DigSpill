@@ -50,6 +50,7 @@ $big = @($files | Where-Object { $_.Length -ge 4GB })
 if ($fs -match '^FAT' -and $big.Count) { throw "Destination FAT32 : $($big.Count) fichier(s) de 4 Go ou plus ne peuvent pas y etre copies. Utiliser NTFS ou exFAT." }
 
 Write-Host ('Copie de {0} fichiers ({1:N1} Go) de {2} vers {3}' -f $files.Count, ($total / 1GB), $Source, $dst)
+Write-Host ('  copie de {0:N1} Go en cours' -f ($total / 1GB))
 if ($Collecte) {
     $copies = @()
     foreach ($d in @($Collecte, "${Collecte}_analyse", "${Collecte}_scelles")) {
@@ -74,6 +75,27 @@ foreach ($m in ($files | Where-Object { $_.Name -eq 'manifeste_sha256.csv' -or $
     foreach ($r in (Import-Csv -LiteralPath $m.FullName -Encoding UTF8)) { $expected[(Join-Path $base $r.Fichier).ToLower()] = $r.SHA256 }
 }
 
+# SHA256 avec avancement en octets toutes les 2 s : une image RAM de 18 Go se re-hache en plusieurs minutes,
+# l'appli doit montrer que ca avance (avant : « 1000 / 1131 » fige). Meme resultat que Get-FileHash.
+$script:aHacher = 2 * $total; $script:hache = [int64]0; $script:palier = [datetime]::MinValue
+function Get-Sha256Suivi([string]$Chemin) {
+    $fs = $null
+    try {
+        $fs = [IO.File]::OpenRead($Chemin)
+        $h = [Security.Cryptography.SHA256]::Create(); $buf = New-Object byte[] (4MB)
+        while (($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
+            [void]$h.TransformBlock($buf, 0, $n, $null, 0)
+            $script:hache += $n
+            if (([datetime]::Now - $script:palier).TotalSeconds -ge 2) {
+                $script:palier = [datetime]::Now
+                Write-Host ('  octets {0} / {1} Mo' -f [int64]($script:hache / 1MB), [int64]($script:aHacher / 1MB))
+            }
+        }
+        [void]$h.TransformFinalBlock($buf, 0, 0)
+        return ([BitConverter]::ToString($h.Hash) -replace '-', '')
+    } catch { return $null } finally { if ($fs) { $fs.Dispose() } }
+}
+
 $rows = New-Object System.Collections.Generic.List[object]
 $i = 0
 foreach ($f in $files) {
@@ -81,8 +103,8 @@ foreach ($f in $files) {
     if ($i % 200 -eq 0) { Write-Host "  verification $i / $($files.Count)" }
     $rel = $f.FullName.Substring($Source.Length + 1)
     $c = Join-Path $dst $rel
-    $hs = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash
-    $hc = if (Test-Path -LiteralPath $c) { (Get-FileHash -LiteralPath $c -Algorithm SHA256).Hash } else { '' }
+    $hs = Get-Sha256Suivi $f.FullName
+    $hc = if (Test-Path -LiteralPath $c) { Get-Sha256Suivi $c } else { '' }
     $exp = $expected[$f.FullName.ToLower()]
     $etat = if (-not $hc) { 'ABSENT DE LA COPIE' } elseif ($hs -ne $hc) { 'COPIE DIFFERENTE' } elseif ($exp -and $exp -ne $hs) { 'SOURCE DIFFERENTE DU MANIFESTE' } else { 'OK' }
     $rows.Add([pscustomobject]@{ Fichier = $rel; Octets = $f.Length; SHA256 = $hs; SHA256Copie = $hc; SHA256Manifeste = $exp; Etat = $etat })
