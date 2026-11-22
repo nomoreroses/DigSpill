@@ -212,6 +212,7 @@ La RAM est copiée sur le poste, puis **lue au bureau** (jamais sur le poste sus
 - **Processus** et **lignes de commande** lus dans l'image, avec les programmes encore actifs.
 - **Indices** : nom qui imite un processus Windows (`svhost.exe` pour `svchost.exe`), outil d'envoi ou de vol d'identifiants, lancement depuis un dossier où tout le monde peut écrire, PowerShell encodé, parent anormal (`svchost.exe` hors de `services.exe`, plusieurs `lsass.exe`).
 - **Réseau** : sur Windows 11 24H2 et Server 2025 (build 26100), Volatility ne lit pas encore les connexions établies, seulement les ports ouverts. L'interface le dit et renvoie aux connexions relevées en direct pendant la collecte.
+- **Limite constatée** : sur le Windows de test, Volatility n'a pas retrouvé le noyau dans 2 copies sur 7 (copie faite pendant que Windows tourne). L'interface le dit et renvoie aux processus et connexions relevés en direct pendant la collecte.
 - Résultats dans `ram\` de l'analyse, rubrique **Mémoire vive** de l'interface, voie « Mémoire vive » de la chronologie, alerte si un programme suspect tournait encore.
 
 ## Testé de A à Z sur un vrai Windows

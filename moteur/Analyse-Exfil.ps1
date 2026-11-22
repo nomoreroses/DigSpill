@@ -1303,10 +1303,11 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
     $lect.Add(''); $lect.Add('Modules Volatility 3 :')
     # Un module qui echoue ecrit son message (ex. "Unsatisfied requirement") au lieu du CSV : on le garde dans
     # ram_lecture.txt, et on refait un essai sans --offline (Volatility cherche alors lui-meme les symboles).
-    function Lancer-Vol([string]$pl, [bool]$hl) {
+    function Lancer-Vol([string]$pl, [bool]$hl, [bool]$vider = $false) {
         $out = Join-Path $Work "$pl.csv"
         Remove-Item -LiteralPath $out, "$out.err" -ErrorAction SilentlyContinue
         $argv = @($vol, '-q', '-r', 'csv', '--cache-path', $cache, '-s', $symb)
+        if ($vider) { $argv += '--clear-cache' }   # un echec est garde en cache : sinon le nouvel essai echoue en 3 s
         if ($hl) { $argv += '--offline' }
         $argv += @('-f', $img, $pl)
         $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -1321,14 +1322,16 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
         Log ('    {0} : {1} lignes en {2} s{3}' -f $pl, $lignes.Count, [int]$sw.Elapsed.TotalSeconds, $(if ($msg.Count) { ' : ' + ($msg -join ' / ') }))
         return ,$lignes
     }
+    $noyauIntrouvable = $false
     foreach ($pl in 'windows.info', 'windows.pslist', 'windows.cmdline', 'windows.netscan', 'windows.netstat') {
         # netstat seulement si netscan n'a rien donne de lisible (table inconnue sur les Windows tres recents)
         if ($pl -eq 'windows.netstat' -and @($res['windows.netscan'] | Where-Object { "$($_.LocalAddr)" -match '^[0-9a-fA-F:.*]+$' }).Count) { continue }
         $lignes = Lancer-Vol $pl $horsLigne
-        if (-not $lignes.Count -and $horsLigne -and -not $SansInternet -and $pl -match 'info|pslist') {
-            # symboles prepares refuses : nouvel essai en laissant Volatility les chercher, et on garde ce mode
-            $lignes = Lancer-Vol $pl $false
-            if ($lignes.Count) { $horsLigne = $false }
+        if (-not $lignes.Count -and $pl -eq 'windows.info') {
+            # nouvel essai cache vide, puis en laissant Volatility chercher lui-meme les symboles
+            $lignes = Lancer-Vol $pl $horsLigne $true
+            if (-not $lignes.Count -and $horsLigne -and -not $SansInternet) { $lignes = Lancer-Vol $pl $false $true; if ($lignes.Count) { $horsLigne = $false } }
+            if (-not $lignes.Count) { $noyauIntrouvable = $true; $res[$pl] = $lignes; break }
         }
         $res[$pl] = $lignes
     }
@@ -1336,7 +1339,8 @@ Step 'Memoire vive : processus, lignes de commande et connexions lus dans l''ima
     if ($infoV.Count) { $infoV | Select-Object Variable, Value | Export-Csv (Join-Path $ramDir 'ram_info.csv') -NoTypeInformation -Encoding UTF8 }
     $ps = $res['windows.pslist']
     if (-not $ps.Count) {
-        $etat = 'Volatility n''a pas pu lire la liste des processus (symboles ou format de l''image) : voir ram_lecture.txt.'
+        $etat = if ($noyauIntrouvable) { 'Volatility n''a pas retrouvé le noyau de Windows dans cette image (cela arrive avec une copie faite pendant que Windows tourne). Les processus et connexions relevés en direct pendant la collecte restent dans volatile\processus.csv et volatile\tcp_connexions.csv.' }
+                 else { 'Volatility n''a pas pu lire la liste des processus (symboles ou format de l''image) : voir ram_lecture.txt.' }
         Log "    [!] $etat"; $lect.Add(''); $lect.Add($etat); $lect | Out-File (Join-Path $ramDir 'ram_lecture.txt') -Encoding utf8
         G 'Memoire vive (processus et connexions lus dans la RAM)' 'A FAIRE' $etat 'ram\ram_lecture.txt'
         return
