@@ -1338,7 +1338,7 @@ Step 'Binaires suspects : hash + archive chiffree (mot de passe : infected) + qu
 if ($Full -and -not $SkipFullListing) {
     Step 'Listing complet des disques + fichiers chiffres, notes de rancon, bases metier (plusieurs minutes)' {
         if (-not $script:CsOk) { Log '    [!] Moteur C# indisponible : listing ignore'; return }
-        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.\[[^\]]{3,80}\]\.[^.]{2,15}$|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|jpe?g|png|txt|odt|ods|csv|rtf|mdb|accdb|fdb|sql)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.\[[^\]]{3,80}\]\.[^.]{2,15}$|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
         $baseRx   = New-Object Text.RegularExpressions.Regex('(?i)(\.(fdp|fdb|gdb|mdf|ldf|ndf|accdb|mdb|4dd|4dindx|dbf)(\.|$)|axi_database)', 'Compiled')
         $enc = New-Object Text.UTF8Encoding($true)
         $hdr = 'Chemin,Taille,Creation,Modification,Acces,Attributs'

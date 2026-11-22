@@ -96,7 +96,10 @@ Write-Host ("DigSpill.exe termine en {0:N0} min, code {1}" -f ((Get-Date) - $t0)
 Bloc 'auto.log' "$T\captures_appli\auto.log" $null
 foreach ($j in Get-ChildItem "$T\captures_appli" -Filter 'journal_*.txt' -ErrorAction SilentlyContinue) { Bloc $j.BaseName $j.FullName '\[!\]|\[\*\]|erreur|Erreur|ERROR|echec|Echec|code|Resultat|Interface|scell' }
 $col = Get-ChildItem 'R:\Collecte' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '_(scelles|analyse)$' } | Sort-Object LastWriteTime | Select-Object -Last 1
-if ($col) { Bloc 'collecte.log' (Join-Path $col.FullName 'collecte.log') $null }
+if ($col) {
+    Bloc 'collecte.log' (Join-Path $col.FullName 'collecte.log') $null
+    Bloc 'fichiers_chiffres_par_extension' (Join-Path $col.FullName 'rancon\fichiers_chiffres_par_extension.csv') $null
+}
 $ana = Get-ChildItem 'D:\travail' -Recurse -Filter 'analyse.log' -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($ana) {
     Bloc 'analyse.log' $ana.FullName $null
