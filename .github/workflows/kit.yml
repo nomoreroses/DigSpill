@@ -16,6 +16,12 @@ on:
 permissions:
   contents: write
 
+# une release creee sur le site lance deux fabrications (tag pousse + release publiee) : l'une apres l'autre,
+# sinon elles joignent DigSpill.zip en meme temps et la seconde echoue
+concurrency:
+  group: kit-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   kit:
     runs-on: windows-latest

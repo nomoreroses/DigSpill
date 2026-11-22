@@ -259,11 +259,21 @@ namespace DigSpill
         void Ui(Action a) { if (IsDisposed) return; if (InvokeRequired) BeginInvoke(a); else a(); }
         void Etat(string t, double v) { Ui(() => { if (etat.Text != t) { etat.Text = t; Ajuster(); } if (v >= 0) barre.Valeur = v; else barre.Indeterminee = true; }); }
 
+        // fin du journal d'un script : expliquer un echec sans demander le fichier analyse.log
+        static readonly System.Text.RegularExpressions.Regex RxAntivirus = new System.Text.RegularExpressions.Regex(@"(?i)ScriptContainedMaliciousContent|contenu malveillant|malicious content");
+        readonly Queue<string> fin = new Queue<string>();
+        bool bloqueParAntivirus;
+
         Task<int> Ps(string script, List<string> args, IDictionary<string, string> env, Action<string> suivi = null)
         {
             if (Ctx.Demo) return Simuler(script);
             exec = new Executeur();
             exec.Ligne += l => journal.Ajouter(l);
+            exec.Ligne += l =>
+            {
+                if (string.IsNullOrWhiteSpace(l)) return;
+                lock (fin) { fin.Enqueue(l.Trim()); while (fin.Count > 8) fin.Dequeue(); if (RxAntivirus.IsMatch(l)) bloqueParAntivirus = true; }
+            };
             if (suivi != null) exec.Ligne += suivi;
             journal.Ajouter("> " + script + " " + string.Join(" ", args.ToArray()));
             return exec.Lancer("powershell.exe", Executeur.ArgumentsPowerShell(Ctx.Script(script), args), Ctx.RacineOutils, Executeur.Console850(), env);
@@ -333,6 +343,7 @@ namespace DigSpill
             if (!Ctx.AvecInternet) aa.Add("-SansInternet");
             // "[*] Etape" : chaque etape de l'analyse fait avancer la barre (19 etapes environ)
             int etapes = 0;
+            lock (fin) { fin.Clear(); bloqueParAntivirus = false; }
             int ca = await Ps("Analyse-Exfil.ps1", aa, null, l =>
             {
                 int i = l.IndexOf("[*] ", StringComparison.Ordinal);
@@ -344,7 +355,13 @@ namespace DigSpill
             });
             if (arret) { Fin(false); return; }
             bool synthese = Ctx.Demo || File.Exists(Path.Combine(analysee + "_analyse", "SYNTHESE_EXFILTRATION.txt"));
-            Ctx.ProblemeAnalyse = synthese ? null : "L'analyse s'est arrêtée (code " + ca + ") sans écrire sa synthèse : l'interface montre la collecte brute, sans chronologie racontée, grille ni mémoire vive. Voir le journal de l'analyse.";
+            string raison;
+            lock (fin)
+                raison = bloqueParAntivirus
+                    ? " Cause : l'antivirus a bloqué le script d'analyse (il contient des noms d'outils d'attaque à rechercher). Ajoutez le dossier de DigSpill aux exclusions de l'antivirus, sur ce PC d'analyse seulement."
+                    : fin.Count == 0 ? " Le script n'a rien écrit." : " Fin du journal : « " + string.Join(" · ", fin.Skip(Math.Max(0, fin.Count - 4)).ToArray()) + " ».";
+            Ctx.ProblemeAnalyse = synthese ? null : "L'analyse s'est arrêtée (code " + ca + ") sans écrire sa synthèse : l'interface montre la collecte brute, sans chronologie racontée, grille ni mémoire vive." + raison + " Voir le journal de l'analyse.";
+            if (!synthese) journal.Ajouter("[!] Analyse en échec (code " + ca + ")." + raison);
             eAna.Definir(!synthese ? Niveau.Danger : ca == 0 ? Niveau.Ok : Niveau.Attention, "2. Analyse exfiltration",
                 !synthese ? "Analyse en échec (code " + ca + ") : voir le journal ci-dessous." : ca == 0 ? "Synthèse : " + nom + "_analyse\\SYNTHESE_EXFILTRATION.txt" : "Analyse terminée avec des erreurs (code " + ca + ") : voir analyse.log.");
 
