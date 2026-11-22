@@ -105,6 +105,10 @@ const EVT_JOURNAUX = { 1102: 'Journal Securite efface', 104: 'Journal efface (Sy
   5001: 'Protection temps reel Defender desactivee', 5007: 'Configuration Defender modifiee', 7045: 'Service installe', 4697: 'Service installe (4697)',
   4698: 'Tache planifiee creee', 6005: 'Demarrage du poste', 6006: 'Arret propre', 6008: 'Arret inattendu', 1074: 'Arret / redemarrage demande' };
 
+/** services crees par Windows a chaque ouverture de session (Nom_1a2b3c) et service de copie de la RAM de DigSpill :
+ *  ni l'un ni l'autre n'est une action de l'attaquant */
+T.serviceOrdinaire = (svc, bin) => /^digspill_pmem$|^pmem$/i.test(svc || '') || (/_[0-9a-f]{4,8}$/i.test(svc || '') && /\\svchost\.exe/i.test(bin || ''));
+
 /* ======================================================================== memoire vive (Analyse-Exfil : Volatility 3 sur l'image RAM) */
 T.memoireVive = () => T.memo('memoireVive', () => {
   const lecture = T.texte('ram_lecture.txt');
@@ -205,7 +209,7 @@ T.refSrum = () => T.memo('refSrum', () => {
   return r ? { moyenne: T.num(r.MoyenneEnvoyeMo), p95: T.num(r.P95EnvoyeMo), max: T.num(r.MaxEnvoyeMo), releves: T.num(r.NbReleves), id: r._id } : null;
 });
 // bases livrees avec Windows ou SQL Server (modeles, composants) : ce ne sont pas des donnees du cabinet
-const RX_BASES_SYSTEME = /^[a-z]:\\windows\\|\\microsoft sql server\\[^\\]+\\(localdb\\)?binn\\|\\microsoft sql server\\[^\\]+\\mssql\\binn\\templates\\|\\windowsapps\\|\\\$recycle\.bin\\/i;
+const RX_BASES_SYSTEME = /^[a-z]:\\windows\\|\\microsoft visual studio\\|\\dotnet\\packs\\|\\chocolatey\\|\\nugetpackages\\|\\microsoft sdks\\|\\(item|project)templates\\|\\r\\r-[\d.]+\\library\\|\\node_modules\\|\\hostedtoolcache\\|\\microsoft sql server\\[^\\]+\\(localdb\\)?binn\\|\\microsoft sql server\\[^\\]+\\mssql\\binn\\templates\\|\\windowsapps\\|\\\$recycle\.bin\\/i;
 T.basesMetier = () => T.memo('bases', () => {
   const vus = {};
   for (const r of T.table('bases_metier')) {
@@ -225,7 +229,7 @@ T.NIVEAUX = {
 };
 T.exfil = () => T.memo('exfil', () => {
   const R = T.reglages(), serie = T.serieSrum(), ref = T.refSrum(), bases = T.basesMetier();
-  const princ = bases.filter(b => !b.sauvegarde); const tailleAuto = (princ[0] || bases[0] || {}).mo || 0;
+  const princ = bases.filter(b => !b.sauvegarde && b.mo >= 1); const tailleAuto = (princ[0] || {}).mo || 0;
   const taille = T.num(R.taille_base_mo, 0) || tailleAuto, compression = T.num(R.compression, 0) || 4, debit = T.num(R.debit_montant_mbps, 0);
   const comp = taille ? taille / compression : 0;
   const apps = {};
@@ -747,7 +751,7 @@ T.actions = () => T.memo('actions', () => {
     const msg = r.Message || '';
     const m = /Service Name:\s*(.+?)\s+Service File Name:\s*(.+?)(?:\s+Service Type:|$)/i.exec(msg) || /Nom du service\s*:\s*(.+?)\s+Nom du fichier du service\s*:\s*(.+?)(?:\s+Type de service|$)/i.exec(msg) || /:\s*([^,]+),\s*(.+)$/.exec(msg) || [];
     const svc = (m[1] || '').trim(), bin = (m[2] || '').trim().replace(/^"([^"]*)".*$/, '$1');
-    if (!svc && !bin) continue;
+    if ((!svc && !bin) || T.serviceOrdinaire(svc, bin)) continue;
     const dossier = bin.includes('\\') ? bin.slice(0, bin.lastIndexOf('\\')) : '';
     out.push({ id: 'svc-' + svc, titre: `Supprimer le service ${svc}${bin ? ' et ' + bin.split('\\').pop() : ''}`, sous: `Installé à ${T.hm(T.pdate(r.Date))}${dossier ? ' depuis ' + dossier : ''}.` });
   }
@@ -896,6 +900,7 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
     // message en anglais (« Service Name: X Service File Name: Y ») ou en français (« Nom du service : X Nom du fichier du service : Y »)
     const en = /Service Name:\s*(.+?)\s+Service File Name:\s*(.+?)(?:\s+Service Type:|$)/i.exec(e.detail) || /Nom du service\s*:\s*(.+?)\s+Nom du fichier du service\s*:\s*(.+?)(?:\s+Type de service|$)/i.exec(e.detail);
     const m = en || /:\s*([^,]+),\s*(.+)$/.exec(e.detail) || [], svc = (m[1] || '').trim(), bin = (m[2] || '').trim().replace(/^"([^"]*)".*$/, '$1'), b = base(bin);
+    if (T.serviceOrdinaire(svc, bin)) { pris.add(e.id); continue; }
     const faux = /^(svhost|scvhost|svch0st|svchosts|scvhost|lsas|lsasss|csrsss|expl0rer|svchost32)$/i.test(b);
     const runs = execs.filter(x => x.prog === b);
     const lance = runs.find(x => /Prefetch/i.test(x.r.Source || '')) || runs[0];
