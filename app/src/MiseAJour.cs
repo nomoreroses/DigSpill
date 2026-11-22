@@ -91,6 +91,12 @@ namespace DigSpill
             string json;
             using (var r = Requete("https://api.github.com/repos/" + Depot + "/releases?per_page=30", "application/vnd.github+json").GetResponse())
             using (var s = new StreamReader(r.GetResponseStream(), Encoding.UTF8)) json = s.ReadToEnd();
+            return Lire(json);
+        }
+
+        /// <summary>Choix dans la reponse de l'API des releases (separe pour etre teste sans reseau).</summary>
+        public static Release Lire(string json)
+        {
             var liste = new JavaScriptSerializer { MaxJsonLength = int.MaxValue }.Deserialize<List<Dictionary<string, object>>>(json);
             Release meilleure = null;
             foreach (var d in liste)
