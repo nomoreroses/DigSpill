@@ -18,6 +18,8 @@ Clé USB de collecte à lancer sur un poste Windows suspecté d'intrusion, d'exf
 3. Le dézipper **à la racine de la clé OUTILS**.
 4. Double-clic sur **`DigSpill.exe`**. C'est tout. Signer l'exe pour afficher le nom de l'éditeur : [docs/SIGNATURE.md](docs/SIGNATURE.md).
 
+**Mettre à jour** (au bureau, jamais sur un poste examiné) : accueil de DigSpill › **Mises à jour**. DigSpill télécharge la dernière release, vérifie son empreinte, se ferme, remplace `DigSpill.exe` et `moteur\` en gardant `digspill.ini` et les bases téléchargées, puis se rouvre. Une étape échoue : l'ancienne version revient. Clé OUTILS à interrupteur : la passer en écriture le temps de la mise à jour.
+
 Le zip est fabriqué par GitHub (workflow `Kit DigSpill`) : DigSpill.exe compilé, et les outils tiers téléchargés depuis leurs sites officiels, avec leurs licences (`moteur\outils\LISEZ-MOI-OUTILS.txt`). Le collecteur Velociraptor est généré avec `moteur\velociraptor\spec.yaml`.
 
 ## Contenu de la clé

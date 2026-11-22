@@ -196,9 +196,11 @@ $CollStamp = $null
 if ((Split-Path $Collecte -Leaf) -match '_(\d{8}_\d{6})') { $CollStamp = [datetime]::ParseExact($matches[1], 'yyyyMMdd_HHmmss', $Inv) }
 $VeloDir = Join-Path (Split-Path $Collecte -Parent) 'Velociraptor'
 if (-not $Velociraptor -and $CollStamp -and (Test-Path -LiteralPath $VeloDir)) {
-    # Conteneur produit juste apres la collecte PowerShell (meme lancement), hors conteneurs tronques par FAT32
+    # Conteneur produit juste apres la collecte PowerShell (meme lancement). Un conteneur coupe par FAT32 fait
+    # exactement 4 Gio - 1 octet : ecarte. Au-dela (NTFS, exFAT), il est lu : avant, tout conteneur de plus de 4 Go
+    # etait ignore (13,6 Go sur un poste d'essai : SRUM, Prefetch, Amcache, $MFT jamais analyses).
     $Velociraptor = Get-ChildItem -LiteralPath $VeloDir -Filter '*.zip' -ErrorAction SilentlyContinue |
-        Where-Object { $_.LastWriteTime -ge $CollStamp -and $_.LastWriteTime -le $CollStamp.AddHours(6) -and $_.Length -lt 4290000000 } |
+        Where-Object { $_.LastWriteTime -ge $CollStamp -and $_.LastWriteTime -le $CollStamp.AddHours(6) -and $_.Length -ne 4294967295 } |
         Sort-Object LastWriteTime | Select-Object -First 1 -ExpandProperty FullName
 }
 if ($Velociraptor -and (Test-Path -LiteralPath $Velociraptor)) {

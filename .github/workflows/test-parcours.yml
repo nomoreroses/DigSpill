@@ -1,18 +1,19 @@
 name: Test parcours complet
 
 # DigSpill.exe de bout en bout sur un vrai Windows, sans simulation : scenario d'attaque reel et sans danger,
-# collecte, scelle, ejection, copie verifiee, analyse complete, interface. A lancer a la main
-# (Actions > Test parcours complet). Les captures de chaque ecran sont dans le journal du job.
+# collecte, scelle, ejection, copie verifiee, analyse complete, interface. Sur chaque demande de fusion
+# (depot public : minutes gratuites) ou a la main. Les captures de chaque ecran sont dans le journal du job.
 on:
   workflow_dispatch:
+  pull_request:
   push:
-    branches: [parcours-reel, supports-preuves]
+    branches: [parcours-reel]
 
 permissions:
   contents: read
 
 concurrency:
-  group: test-parcours
+  group: test-parcours-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

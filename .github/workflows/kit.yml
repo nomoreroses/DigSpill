@@ -16,6 +16,12 @@ on:
 permissions:
   contents: write
 
+# une release creee sur le site lance deux fabrications (tag pousse + release publiee) : l'une apres l'autre,
+# sinon elles joignent DigSpill.zip en meme temps et la seconde echoue
+concurrency:
+  group: kit-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   kit:
     runs-on: windows-latest
@@ -35,10 +41,43 @@ jobs:
           # page du choix du support PREUVES (demonstration : cle, cle OUTILS et disque du poste)
           $p = Start-Process -FilePath kit\DigSpill\DigSpill.exe -ArgumentList '--demo','--page=support','--capture=support.png' -PassThru
           if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'DigSpill.exe ne repond pas (page support)' }
+          # page des mises a jour (demonstration : rien n'est telecharge)
+          $p = Start-Process -FilePath kit\DigSpill\DigSpill.exe -ArgumentList '--demo','--page=maj','--capture=maj.png' -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'DigSpill.exe ne repond pas (page mises a jour)' }
+          if (Test-Path maj.png) { Write-Host '@@PNG maj.png'; [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path maj.png).Path)) -split '(.{1,4000})' | Where-Object { $_ } | ForEach-Object { Write-Host $_ }; Write-Host '@@FINPNG' }
           if (Test-Path support.png) { Write-Host '@@PNG support.png'; [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path support.png).Path)) -split '(.{1,4000})' | Where-Object { $_ } | ForEach-Object { Write-Host $_ }; Write-Host '@@FINPNG' }
-          foreach ($f in 'moteur\Collecte-Exfil.ps1', 'moteur\interface\modele.html', 'moteur\outils\Collecteur-Velociraptor.exe', 'moteur\outils\7zr.exe', 'moteur\outils\LICENCE-WinPmem.txt', 'moteur\outils\python\python.exe', 'moteur\outils\python\vol.py', 'moteur\secours\LANCER_COLLECTE.bat') {
+          foreach ($f in 'moteur\Collecte-Exfil.ps1', 'moteur\Remplacer-Kit.ps1', 'moteur\VERSION.txt', 'moteur\interface\modele.html', 'moteur\outils\Collecteur-Velociraptor.exe', 'moteur\outils\7zr.exe', 'moteur\outils\LICENCE-WinPmem.txt', 'moteur\outils\python\python.exe', 'moteur\outils\python\vol.py', 'moteur\secours\LANCER_COLLECTE.bat') {
             if (-not (Test-Path (Join-Path 'kit\DigSpill' $f))) { throw "absent du kit : $f" }
           }
+      - name: Mise a jour du kit (Remplacer-Kit.ps1) sur une copie
+        shell: powershell
+        run: |
+          # ancien kit avec des fichiers propres a ce poste, nouvelle version reconnaissable, faux DigSpill qui se ferme
+          $tmp = Join-Path $env:RUNNER_TEMP 'DigSpill-maj'; $ancien = Join-Path $env:RUNNER_TEMP 'kit-ancien'; $nouveau = Join-Path $tmp 'nouveau'
+          Remove-Item -LiteralPath $ancien, $tmp -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          Copy-Item -LiteralPath kit\DigSpill -Destination $ancien -Recurse
+          Set-Content -LiteralPath (Join-Path $ancien 'moteur\digspill.ini') -Value 'technicien.prenom=Essai'
+          New-Item -ItemType Directory -Force -Path (Join-Path $ancien 'moteur\outils\bases') | Out-Null
+          Set-Content -LiteralPath (Join-Path $ancien 'moteur\outils\bases\liste.txt') -Value 'base'
+          Set-Content -LiteralPath (Join-Path $ancien 'moteur\obsolete.txt') -Value 'ancien'
+          Expand-Archive -LiteralPath kit\DigSpill.zip -DestinationPath $nouveau
+          Set-Content -LiteralPath (Join-Path $nouveau 'moteur\marque.txt') -Value 'nouveau'
+          $script = Join-Path $tmp 'Remplacer-Kit.ps1'
+          Copy-Item -LiteralPath (Join-Path $nouveau 'moteur\Remplacer-Kit.ps1') -Destination $script
+          $faux = Start-Process powershell.exe -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 3' -PassThru
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Attendre $faux.Id -Nouveau $nouveau -Kit $ancien
+          Start-Sleep -Seconds 5
+          Get-Content -LiteralPath (Join-Path $tmp 'journal.txt')
+          Get-Process DigSpill -ErrorAction SilentlyContinue | Stop-Process -Force
+          $m = Join-Path $ancien 'moteur'
+          if (-not (Test-Path -LiteralPath (Join-Path $m 'marque.txt'))) { throw 'nouvelle version absente' }
+          if ((Get-Content -LiteralPath (Join-Path $m 'digspill.ini')) -notmatch 'Essai') { throw 'reglages perdus' }
+          if (-not (Test-Path -LiteralPath (Join-Path $m 'outils\bases\liste.txt'))) { throw 'bases telechargees perdues' }
+          if (Test-Path -LiteralPath (Join-Path $m 'obsolete.txt')) { throw "fichier de l'ancienne version revenu" }
+          foreach ($x in 'moteur.ancien', 'moteur.nouveau', 'DigSpill.exe.ancien', 'DigSpill.exe.nouveau') { if (Test-Path -LiteralPath (Join-Path $ancien $x)) { throw "$x reste sur le kit" } }
+          if (-not (Test-Path -LiteralPath (Join-Path $ancien 'DigSpill.exe'))) { throw 'DigSpill.exe absent' }
+          Write-Host 'Mise a jour : nouvelle version en place, reglages et bases gardes, ancienne version supprimee'
       - name: Icone de DigSpill.exe telle que l'explorateur l'affiche (48 et 256 px)
         shell: powershell
         run: |
@@ -89,3 +128,23 @@ jobs:
           if ($LASTEXITCODE -eq 0) { gh release upload $env:GITHUB_REF_NAME kit\DigSpill.zip --clobber }
           else { gh release create $env:GITHUB_REF_NAME kit\DigSpill.zip --title "DigSpill $env:GITHUB_REF_NAME" --notes $notes --prerelease }
           if ($LASTEXITCODE -ne 0) { throw "DigSpill.zip non joint a la release (code $LASTEXITCODE)" }
+      - name: Release automatique d'une nouvelle version (premier titre de CHANGELOG.md, sur main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # la mise a jour dans DigSpill lit les releases : chaque version fusionnee dans main est publiee une fois
+          $v = (Get-Content kit\DigSpill\moteur\VERSION.txt -TotalCount 1).Trim()
+          if (-not $v) { throw 'version du kit inconnue' }
+          $tag = "v$v"
+          gh release view $tag 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { Write-Host "$tag deja publiee"; exit 0 }
+          $txt = Get-Content CHANGELOG.md -Raw -Encoding UTF8
+          $m = [regex]::Match($txt, "(?ms)^## $([regex]::Escape($v))[^\n]*\n(.*?)(?=^## |\z)")
+          $notes = $m.Groups[1].Value.Trim() + "`n`n---`nInstallation : dezipper DigSpill.zip a la racine de la cle OUTILS. Deja installe : DigSpill > Mises a jour."
+          [IO.File]::WriteAllText("$PWD\notes.md", $notes)
+          $opts = @()
+          if ($txt -match "(?m)^## $([regex]::Escape($v)) \(b") { $opts += '--prerelease' }
+          gh release create $tag kit\DigSpill.zip --target $env:GITHUB_SHA --title "DigSpill $tag" --notes-file notes.md @opts
+          if ($LASTEXITCODE -ne 0) { throw "release $tag non creee (code $LASTEXITCODE)" }

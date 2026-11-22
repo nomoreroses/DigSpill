@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.9.1 (bêta)
+- **Mise à jour depuis l'appli** : accueil › *Mises à jour*. Dernière release GitHub, empreinte SHA256 vérifiée, remplacement après fermeture avec retour à l'ancienne version si une étape échoue ; `digspill.ini` et les bases téléchargées sont gardés. Jamais de connexion au démarrage (poste examiné). La version du kit (`moteur\VERSION.txt`) s'affiche dans la barre latérale.
+- **Releases automatiques** : chaque nouvelle version de ce journal fusionnée dans main est publiée avec `DigSpill.zip`.
+- **Analyse** : un conteneur Velociraptor de plus de 4 Go est lu (NTFS, exFAT). Avant, il était ignoré sans le dire : SRUM, Prefetch, Amcache et `$MFT` jamais analysés sur une collecte complète d'un gros poste (13,6 Go sur le poste d'essai). Seul un conteneur coupé par FAT32 (exactement 4 Gio − 1 octet) est écarté.
+- **Analyse en échec** : l'appli affiche la fin du journal du script, et dit si l'antivirus a bloqué le script d'analyse.
+- **Kit** : plus de double fabrication en échec quand une release est créée sur le site ; le test complet tourne sur chaque demande de fusion.
+
 ## 2.9 (bêta)
 - **Support PREUVES au choix** : clé USB, **disque dur ou SSD externe** (USB, y compris USB 3 « UASP » qui se déclare SCSI à Windows et n'était pas reconnu, FireWire, carte SD), ou, à défaut, **un disque de ce poste** (celui de Windows compris). Le bus et le modèle du disque sont affichés.
 - **Disque du poste** : choix jamais automatique, avertissement avant de lancer (l'écriture peut effacer des fichiers supprimés récupérables, un rançongiciel actif peut chiffrer les preuves), ni fichiers pièges, ni coupure, ni éjection. Le disque reste examiné : seul le dossier `Collecte\` est sauté (`-DestinationSurLePoste`, automatique sur le disque de Windows). Noté dans `infos_collecte.txt`. Fin de collecte : « Copier la collecte hors du poste ».

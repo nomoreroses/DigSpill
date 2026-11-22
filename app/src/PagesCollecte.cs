@@ -32,6 +32,7 @@ namespace DigSpill
                     c.ActionsUrgence = new List<string> { "Collecte arrêtée (PowerShell et ses programmes)", "Écriture bloquée sur le disque (lecture seule)", "Volume démonté de force (un autre programme l'utilisait)", "Lettre F: retirée : le support n'est plus visible des programmes" };
                     return new PageAlerte(f);
                 case "analyser": return new PageSource(f);
+                case "maj": return new PageMiseAJour(f);
                 case "analyse": return new PageAnalyse(f);
                 case "rapport": c.Interface = @"D:\DigSpill\SECRETARIAT-01_20261119_102233\Collecte\SECRETARIAT-01_20261119_102233_INTERFACE.html"; return new PageRapport(f);
                 default: return new PageAccueil(f);
@@ -164,7 +165,10 @@ namespace DigSpill
         {
             var b = new BoutonPlat("Identifiants de ce compte", BoutonPlat.Genre.Secondaire, Ic.Personne);
             b.Click += delegate { ListerIdentifiants(); };
-            return new Control[] { b };
+            // au bureau : DigSpill va sur Internet (jamais au demarrage, pour ne rien envoyer depuis un poste examine)
+            var m = new BoutonPlat("Mises à jour", BoutonPlat.Genre.Secondaire, Ic.Actualiser);
+            m.Click += delegate { F.Aller(new PageMiseAJour(F)); };
+            return new Control[] { m, b };
         }
 
         /// <summary>Pour les autres comptes du poste : ouvrir leur session, lancer DigSpill.exe, ce bouton.</summary>

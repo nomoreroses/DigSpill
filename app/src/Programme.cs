@@ -183,6 +183,10 @@ namespace DigSpill
             else
                 Application.ThreadException += (s, e) => MessageBox.Show(e.Exception.ToString(), "DigSpill : erreur inattendue", MessageBoxButtons.OK, MessageBoxIcon.Error);
             var fenetre = new Fenetre(ctx, depart, capture);
+            // relance par le script de mise a jour : --maj=ok | --maj=echec
+            string maj = null;
+            foreach (var a in args) if (a.StartsWith("--maj=")) maj = a.Substring(6);
+            if (maj != null) fenetre.Shown += delegate { MiseAJour.Annoncer(maj, fenetre, MiseAJour.VersionKit(ctx.RacineOutils)); };
             if (auto != null && !ctx.Demo) new Autopilote(fenetre, auto, autoPreuves, autoTravail);
             Application.Run(fenetre);
         }
