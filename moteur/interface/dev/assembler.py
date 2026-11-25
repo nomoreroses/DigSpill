@@ -161,7 +161,8 @@ def charge_utile(collecte: Path, bases: Path, demo=False, tsa: Path | None = Non
     ips = ips_collecte(fich)
     asn = bases / "ip2asn-combined.tsv.gz"
     l, meta = listes(bases, ips)
-    lire = lambda p: p.read_text(encoding="utf-8-sig", errors="replace") if p.is_file() else ""
+    # octets tels quels (fins de ligne comprises), comme Generer-Interface.ps1 : read_text changerait \r\n en \n
+    lire = lambda p: p.read_bytes().decode("utf-8-sig", errors="replace") if p.is_file() else ""
     date = lambda p: datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d")
     return {
         "format": 1, "genere_le": datetime.now().strftime("%Y-%m-%d %H:%M"), "generateur": "assembler.py (developpement)" if not demo else "Generer-Interface (demonstration)",
