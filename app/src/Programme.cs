@@ -162,6 +162,8 @@ namespace DigSpill
             var ctx = new Contexte();
             ctx.Demo = args.Contains("--demo");
             ctx.RacineOutils = TrouverOutils();
+            // kit extrait d'un zip telecharge : sans cela, Windows demande confirmation a chaque lancement de Velociraptor
+            if (!ctx.Demo) Debloquer.Kit(ctx.RacineOutils);
             ctx.Reglages = Reglages.Lire(ctx.RacineOutils);
             ctx.Inter.Prenom = ctx.Reglages.Get("technicien.prenom", "");
             ctx.Inter.Nom = ctx.Reglages.Get("technicien.nom", "");

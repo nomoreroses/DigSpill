@@ -47,8 +47,8 @@ namespace DigSpill
             o.Contenu.Ajouter(Intertitre("Options"));
             o.Contenu.Espace = 8;
             copie = o.Contenu.Ajouter(new Case("Copie vérifiée des preuves avant l'analyse (SHA-256 de chaque fichier, PV de copie). Recommandé.", Ctx.CopieVerifiee));
-            complete = o.Contenu.Ajouter(new Case("Analyse complète, avec la $MFT et la mémoire vive (plus longue)", Ctx.AnalyseComplete));
-            internet = o.Contenu.Ajouter(new Case("Utiliser Internet : bases publiques à jour, symboles Windows pour la mémoire vive, horodatage du scellé (seules des empreintes sont envoyées)", Ctx.AvecInternet));
+            complete = o.Contenu.Ajouter(new Case("Analyse complète : lit aussi l'index du disque ($MFT) et la mémoire vive. Plus longue.", Ctx.AnalyseComplete));
+            internet = o.Contenu.Ajouter(new Case("Utiliser Internet : listes publiques à jour, description de Windows pour lire la mémoire vive, horodatage du scellé. Seules des empreintes partent, jamais vos fichiers.", Ctx.AvecInternet));
             proteger = o.Contenu.Ajouter(new Case("Protéger l'interface par un mot de passe (pour l'envoyer)", Ctx.Proteger));
             var g = o.Contenu.Ajouter(new Grille { Colonnes = 2 });
             g.Controls.Add(mdp1 = new Champ("Mot de passe", new TextBox { UseSystemPasswordChar = true }, true));

@@ -82,6 +82,8 @@ T.nettoyerIp = ip => {
 };
 T.ip4 = ip => { const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip); if (!m) return null; const b = m.slice(1).map(Number); if (b.some(x => x > 255)) return null; return ((b[0] << 24) >>> 0) + (b[1] << 16) + (b[2] << 8) + b[3]; };
 /** Meme classement que Get-IpType des scripts PowerShell */
+/** type d'adresse en mots simples, pour l'affichage */
+T.typeIpLib = t => ({ PUBLIQUE: 'Internet', 'VPN/CGNAT': 'VPN ou opérateur partagé', Privee: 'réseau local', Locale: 'ce poste' })[t] || t || '';
 T.typeIp = ip => {
   ip = T.nettoyerIp(ip);
   if (!ip || ip === '-') return '-';
@@ -197,7 +199,7 @@ T.fenetres = () => T.memo('fenetres', () => {
   }
   (T.reglages().fenetres_manuelles || []).forEach((m, i) => {
     const d = T.pdate(m.debut), f = T.pdate(m.fin);
-    if (d && f && f > d) out.push({ id: `M${i + 1}`, debut: d, fin: f, motif: m.motif || 'fenetre manuelle', duree: Math.round((f - d) / 60e3), preuve: '' });
+    if (d && f && f > d) out.push({ id: `M${i + 1}`, debut: d, fin: f, motif: m.motif || 'période ajoutée à la main', duree: Math.round((f - d) / 60e3), preuve: '' });
   });
   return out.sort((a, b) => a.debut - b.debut);
 });

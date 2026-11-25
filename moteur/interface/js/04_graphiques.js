@@ -52,7 +52,7 @@ T.graphFrise = (el, evts, voies, fen, onClic) => {
     grid: { left: 120, right: 24, top: 18, bottom: 70 },
     tooltip: { trigger: 'item', confine: true, formatter: p => { const e = evts[p.data.value[p.seriesIndex === 1 ? 4 : 3]]; return e ? `<b>${T.esc(e.titre)}</b><br>${T.fcourt(e.t)}${e.fin ? ' → ' + T.fcourt(e.fin) : ''}${e.fen ? ' · ' + e.fen : ''}<br><span style="color:${T.COUL.texte3}">${T.esc(e.detail).slice(0, 220)}</span>` : ''; } },
     xAxis: { type: 'time', axisLabel: { hideOverlap: true, formatter: { year: '{yyyy}', month: '{dd}/{MM}', day: '{dd}/{MM}', hour: '{HH}:{mm}', minute: '{HH}:{mm}' } }, splitLine: { show: true, lineStyle: { color: T.COUL.grille } } },
-    yAxis: { type: 'category', data: voies, inverse: true, axisTick: { show: false }, axisLine: { show: false }, splitLine: { show: true, lineStyle: { color: T.COUL.grille } }, axisLabel: { color: T.COUL.texte, fontWeight: 500 } },
+    yAxis: { type: 'category', data: voies, inverse: true, axisTick: { show: false }, axisLine: { show: false }, splitLine: { show: true, lineStyle: { color: T.COUL.grille } }, axisLabel: { color: T.COUL.texte, fontWeight: 500, formatter: v => T.nomVoie(v) } },
     dataZoom: [{ type: 'slider', xAxisIndex: 0, height: 22, bottom: 14, labelFormatter: v => T.fcourt(new Date(v)) }, { type: 'inside', xAxisIndex: 0 }],
     series: [
       { type: 'scatter', data: points, encode: { x: 0, y: 1 }, large: false, markArea: { silent: true, label: { color: T.COUL.g3, fontWeight: 600, position: 'insideTop' }, data: zonesFenetres(fen) } },
@@ -103,13 +103,13 @@ T.graphCarte = (el, analyse) => {
 T.graphSrum = (el, ex) => {
   const fen = T.fenetres();
   const data = ex.serie.map(p => ({ value: [+p.t, Math.round(p.envoye * 10) / 10], p, itemStyle: { color: p.fen ? (p.envoye > (ex.ref ? ex.ref.max : Infinity) ? T.COUL.g3 : T.COUL.g2) : T.COUL.g1 } }));
-  const ml = ex.ref ? [{ yAxis: ex.ref.p95, name: '95e centile', lineStyle: { color: T.COUL.g2, type: 'dashed' }, label: { formatter: 'P95 {c} Mo', color: T.COUL.g2 } },
-    { yAxis: ex.ref.max, name: 'max', lineStyle: { color: T.COUL.g3, type: 'dashed' }, label: { formatter: 'max habituel {c} Mo', color: T.COUL.g3 } }] : [];
+  const ml = ex.ref ? [{ yAxis: ex.ref.p95, name: '95e centile', lineStyle: { color: T.COUL.g2, type: 'dashed' }, label: { formatter: 'souvent {c} Mo', color: T.COUL.g2 } },
+    { yAxis: ex.ref.max, name: 'max', lineStyle: { color: T.COUL.g3, type: 'dashed' }, label: { formatter: 'au plus {c} Mo', color: T.COUL.g3 } }] : [];
   const g = T.graph(el, {
     grid: { left: 60, right: 30, top: 24, bottom: 70 },
-    tooltip: { trigger: 'item', formatter: x => { const p = x.data.p; return `<b>${T.fcourt(p.t)}</b> ${p.fen ? '· ' + p.fen : ''}<br>Envoyé : <b>${T.nb(p.envoye, 1)} Mo</b> · reçu ${T.nb(p.recu)} Mo<br>1re appli : ${T.esc(p.app)} (${T.nb(p.appMo, 1)} Mo)`; } },
+    tooltip: { trigger: 'item', formatter: x => { const p = x.data.p; return `<b>${T.fcourt(p.t)}</b> ${p.fen ? '· ' + p.fen : ''}<br>Envoyé : <b>${T.nb(p.envoye, 1)} Mo</b> · reçu ${T.nb(p.recu)} Mo<br>Plus gros envoi : ${T.esc(p.app)} (${T.nb(p.appMo, 1)} Mo)`; } },
     xAxis: { type: 'time', axisLabel: { hideOverlap: true, formatter: { day: '{dd}/{MM}', hour: '{HH}:{mm}' } } },
-    yAxis: { type: 'value', name: 'Mo envoyés / relevé', nameTextStyle: { align: 'left' }, splitLine: { lineStyle: { color: T.COUL.grille } } },
+    yAxis: { type: 'value', name: 'Mo envoyés par heure', nameTextStyle: { align: 'left' }, splitLine: { lineStyle: { color: T.COUL.grille } } },
     dataZoom: [{ type: 'slider', height: 22, bottom: 14, labelFormatter: v => T.fcourt(new Date(v)) }, { type: 'inside' }],
     series: [{ type: 'bar', data, barMaxWidth: 10, markLine: { symbol: 'none', silent: true, data: ml }, markArea: { silent: true, label: { color: T.COUL.g3, fontWeight: 600 }, data: zonesFenetres(fen) } }]
   });
@@ -118,10 +118,10 @@ T.graphSrum = (el, ex) => {
 
 /* ---------------------------------------------------------------- plausibilite : barres comparees */
 T.graphPlausibilite = (el, f, hyp) => {
-  const cat = ['Base compressée', 'Envoyé (SRUM)', 'Capacité de la ligne'];
+  const cat = ['Base patients compressée', 'Envoyé sur Internet', 'Maximum possible (box)'];
   const val = [hyp.comp || 0, f.couvre ? f.envoye : 0, f.capacite || 0];
   T.graph(el, {
-    grid: { left: 130, right: 70, top: 6, bottom: 6 },
+    grid: { left: 160, right: 70, top: 6, bottom: 6 },
     xAxis: { type: 'value', show: false }, yAxis: { type: 'category', data: cat, inverse: true, axisTick: { show: false }, axisLine: { show: false } },
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: v => T.nb(v) + ' Mo' },
     series: [{ type: 'bar', barWidth: 14, data: val.map((v, i) => ({ value: Math.round(v), itemStyle: { color: [T.COUL.g1, f.niveau === 'PLAUSIBLE' ? T.COUL.g3 : T.COUL.g2, T.COUL.g0][i], borderRadius: 4 } })),

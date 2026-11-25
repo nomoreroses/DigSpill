@@ -15,7 +15,7 @@ T.LISTES = {
 };
 const RX_FAI = /\b(orange|france telecom|opentransit|sfr|societe francaise du radiotelephone|free sas|proxad|free mobile|bouygues|numericable|completel|nordnet|k-net|coriolis|ozone|wanadoo|deutsche telekom|vodafone|telefonica|proximus|swisscom|comcast|verizon|charter|cox comm|bell canada|videotron|telenet|kpn|ziggo|telia|fastweb|iliad)\b/i;
 const RX_HEBERGEUR = /(ovh|hetzner|digitalocean|linode|akamai connected cloud|vultr|choopa|the constant company|m247|leaseweb|contabo|scaleway|online s\.a\.s|ionos|hostinger|datacamp|cdn77|packethub|zenlayer|frantech|buyvm|ponynet|serverius|ipxo|aeza|stark industries|pq hosting|hostkey|selectel|timeweb|gcore|g-core|psychz|quadranet|colocrossing|hostwinds|kamatera|alibaba|tencent|huawei cloud|oracle|amazon|aws|google cloud|microsoft|azure|cloudflare|tor exit|privacy|vpn|proxy|hosting|hoster|server|datacenter|data center|cloud|bulletproof|vps|dedi)/i;
-T.classerOperateur = lib => !lib ? '' : RX_FAI.test(lib) ? 'FAI grand public' : RX_HEBERGEUR.test(lib) ? 'Hebergeur / VPN / cloud' : 'Autre operateur';
+T.classerOperateur = lib => !lib ? '' : RX_FAI.test(lib) ? 'Fournisseur d\'accès grand public' : RX_HEBERGEUR.test(lib) ? 'Hébergeur, VPN ou cloud' : 'Autre opérateur';
 
 T.geo = () => T.memo('geo', () => {
   const g = {};
@@ -81,15 +81,15 @@ T.analyseIp = () => T.memo('analyseIp', () => {
     e.listes = Object.entries(listes).filter(([id, l]) => (l || []).includes(e.ip)).map(([id]) => Object.assign({ id }, T.LISTES[id] || { nom: id, cat: 'Liste', poids: 2 }));
     e.blanche = T.estBlanche(e.ip);
     let s = 0; const r = [];
-    if (e.type === 'PUBLIQUE' && e.succes) { s += 3; r.push('connexion reussie depuis Internet'); }
-    if (e.type === 'VPN/CGNAT' && e.succes) { s += 1; r.push('connexion reussie depuis une plage VPN / CGNAT'); }
-    if (e.categorie.startsWith('Hebergeur')) { s += 2; r.push('operateur hebergeur / VPN'); }
-    if (e.pays && e.pays !== 'FR' && e.type === 'PUBLIQUE') { s += 1; r.push('pays ' + e.pays); }
+    if (e.type === 'PUBLIQUE' && e.succes) { s += 3; r.push('connexion réussie depuis Internet'); }
+    if (e.type === 'VPN/CGNAT' && e.succes) { s += 1; r.push("connexion réussie depuis une adresse de VPN ou d'opérateur partagé"); }
+    if (/^H[eé]bergeur/.test(e.categorie)) { s += 2; r.push('hébergeur, VPN ou cloud'); }
+    if (e.pays && e.pays !== 'FR' && e.type === 'PUBLIQUE') { s += 1; r.push('pays : ' + (T.nomPays(e.pays) || e.pays)); }
     for (const l of e.listes) { s += l.poids; r.push('liste ' + l.nom); }
-    if (e.echecs >= 100) { s += 1; r.push(`${e.echecs} echecs (force brute)`); }
-    if (e.activeSuspecte) { s += 3; r.push(`connexion encore active a la collecte (${(e.processus || '').split('\\').pop()})`); }
-    else if (e.active) r.push('connexion active a la collecte (processus signe)');
-    if (e.blanche) { s = 0; r.length = 0; r.push('liste blanche : ' + e.blanche); }
+    if (e.echecs >= 100) { s += 1; r.push(`${e.echecs} connexions ratées (essais de mots de passe en masse)`); }
+    if (e.activeSuspecte) { s += 3; r.push(`connexion encore ouverte à la collecte (${(e.processus || '').split('\\').pop()})`); }
+    else if (e.active) r.push('connexion ouverte à la collecte par un programme signé (habituel)');
+    if (e.blanche) { s = 0; r.length = 0; r.push('déclarée légitime : ' + e.blanche); }
     e.score = s; e.raisons = r;
     return e;
   });
@@ -152,16 +152,30 @@ T.notesRancon = () => T.memo('notesRancon', () => T.table('notes_rancon_candidat
 
 /* ======================================================================== chronologie */
 T.VOIES = ['Sessions', 'Connexions', 'Force brute', 'Comptes', 'Executions', 'Mémoire vive', 'Fichiers', 'Navigation', 'Antivirus', 'Rancongiciel', 'Journaux', 'USB'];
+/** nom affiche de chaque categorie (la cle reste celle des regles du recit) */
+T.NOM_VOIE = { Sessions: 'Sessions', Connexions: 'Connexions réussies', 'Force brute': 'Connexions ratées', Comptes: 'Comptes', Executions: 'Programmes lancés', 'Mémoire vive': 'Mémoire vive',
+  Fichiers: 'Fichiers', Navigation: 'Sites web', Antivirus: 'Antivirus', Rancongiciel: 'Rançongiciel', Journaux: 'Journaux Windows', USB: 'Clés USB' };
+T.nomVoie = v => T.NOM_VOIE[v] || v;
 const RX_OUTILS = /mimikatz|mimi\.exe|lazagne|procdump|rclone|winscp|filezilla|pscp|megasync|megacmd|anydesk|rustdesk|ngrok|cloudflared|chisel|advanced_(ip|port)_scanner|netscan|nmap|netpass|webbrowserpass|mailpass|chromepass|psexec|vssadmin|bcdedit|wbadmin|cipher|\b7z|winrar|rar\.exe|teamviewer|screenconnect/i;
-const EVT_JOURNAUX = { 1102: 'Journal Securite efface', 104: 'Journal efface (System)', 4616: 'Heure systeme modifiee', 4719: "Politique d'audit modifiee",
-  5001: 'Protection temps reel Defender desactivee', 5007: 'Configuration Defender modifiee', 7045: 'Service installe', 4697: 'Service installe (4697)',
-  4698: 'Tache planifiee creee', 6005: 'Demarrage du poste', 6006: 'Arret propre', 6008: 'Arret inattendu', 1074: 'Arret / redemarrage demande' };
+const EVT_JOURNAUX = { 1102: 'Journal Sécurité effacé', 104: 'Journal effacé', 4616: 'Heure du poste modifiée', 4719: 'Règles de journalisation modifiées',
+  5001: 'Protection en temps réel de Defender coupée', 5007: 'Réglage de Defender modifié', 7045: 'Service installé', 4697: 'Service installé',
+  4698: 'Tâche planifiée créée', 6005: 'Démarrage du poste', 6006: 'Arrêt normal du poste', 6008: 'Arrêt brutal du poste (coupure, plantage)', 1074: 'Arrêt ou redémarrage demandé' };
+/** numero d'evenement Windows ecrit en fin de titre « (événement 4624) » : les regles du recit le retrouvent avec evt(4624) */
+const evt = (...ids) => new RegExp(`\\(événement (${ids.join('|')})\\)`);
+const LIB_OUVERTURE = { 2: 'au clavier', 3: 'par le réseau', 4: 'tâche planifiée', 5: 'service', 7: 'déverrouillage', 8: 'par le réseau, mot de passe en clair', 9: 'autres identifiants', 10: 'bureau à distance', 11: 'identifiants en cache' };
+const LIB_COMPTES = { 4720: 'Compte créé', 4722: 'Compte activé', 4723: 'Mot de passe changé par son titulaire', 4724: 'Mot de passe réinitialisé', 4725: 'Compte désactivé', 4726: 'Compte supprimé',
+  4738: 'Compte modifié', 4740: 'Compte verrouillé', 4767: 'Compte déverrouillé', 4781: 'Compte renommé', 4728: 'Ajouté au groupe', 4732: 'Ajouté au groupe', 4756: 'Ajouté au groupe',
+  4729: 'Retiré du groupe', 4733: 'Retiré du groupe', 4757: 'Retiré du groupe' };
 
 /** services crees par Windows a chaque ouverture de session (Nom_1a2b3c) et service de copie de la RAM de DigSpill :
  *  ni l'un ni l'autre n'est une action de l'attaquant */
 T.serviceOrdinaire = (svc, bin) => /^digspill_pmem$|^pmem$/i.test(svc || '') || (/^[a-z0-9]+_[0-9a-f]{4,8}$/i.test(svc || '') && /^"?%?(systemroot%|[a-z]:\\windows)\\system32\\/i.test(bin || ''));
 
 /* ======================================================================== memoire vive (Analyse-Exfil : Volatility 3 sur l'image RAM) */
+/** messages ecrits par les analyses d'avant 2.9.2, redits en clair */
+const ancienneRaisonRam = r => /^Image RAM presente mais non lue/.test(r) ? "Mémoire vive copiée, mais pas lue : l'analyse a tourné sur le poste examiné lui-même. Par sécurité, DigSpill ne lit la mémoire que sur un autre PC, sain : elle peut contenir le programme malveillant. Relancez l'analyse sur votre PC, à partir de la copie des preuves."
+  : /^Pas d'image RAM/.test(r) ? "Pas de copie de la mémoire vive dans cette collecte. Elle n'est faite qu'en collecte complète, sur un support NTFS ou exFAT assez grand."
+  : /^Lecture de la RAM non demandee/.test(r) ? "Mémoire vive non lue : la lecture n'a pas été demandée. Relancez l'analyse en cochant « Analyse complète »." : r;
 T.memoireVive = () => T.memo('memoireVive', () => {
   const lecture = T.texte('ram_lecture.txt');
   const procs = T.table('ram_processus').filter(r => r.PID).map(r => ({ pid: r.PID, ppid: r.PPID, parent: r.Parent, nom: r.Processus, debut: r.Debut, fin: r.Fin, threads: r.Threads,
@@ -174,7 +188,7 @@ T.memoireVive = () => T.memo('memoireVive', () => {
   const info = {}; T.table('ram_info').forEach(r => { info[r.Variable] = r.Value; });
   return { lue: procs.length > 0, lecture, procs, reseau, etablies, info, image: image[1] || '', go: image[2] || '',
     ecartees: n(/\((\d+) lignes illisibles/), suspects: procs.filter(p => p.niveau >= 2).sort((a, b) => b.niveau - a.niveau),
-    raison: procs.length ? '' : (lecture.split(/\r?\n/).filter(l => l.trim() && !/^(Lecture de la memoire|Copie sur le poste|  )/.test(l)).pop() || '') };
+    raison: procs.length ? '' : ancienneRaisonRam(lecture.split(/\r?\n/).filter(l => l.trim() && !/^(Lecture de la m[eé]moire|Copie sur le poste|  )/.test(l)).pop() || '') };
 });
 
 T.chronologie = () => T.memo('chrono', () => {
@@ -188,23 +202,23 @@ T.chronologie = () => T.memo('chrono', () => {
   };
   for (const r of T.table('sessions_reconstituees')) {
     const g = r.TypeIP === 'PUBLIQUE' ? 3 : r.TypeIP === 'VPN/CGNAT' ? 2 : 0;
-    add(r.Debut, 'Sessions', `Session ${r.Compte || '?'} (${r.Type || ''})`, g, `IP ${r.IP || '-'} (${r.TypeIP || ''}) · fin : ${r.FinPar || '?'} · ${r.DureeMin || '?'} min`, r._id, { fin: r.Fin, ip: r.IP, compte: r.Compte });
+    add(r.Debut, 'Sessions', `Session de ${r.Compte || '?'} (${r.Type || ''})`, g, `IP ${r.IP || '-'} (${T.typeIpLib(r.TypeIP)}) · fin : ${r.FinPar || '?'} · ${r.DureeMin || '?'} min`, r._id, { fin: r.Fin, ip: r.IP, compte: r.Compte });
   }
   for (const r of T.table('ouvertures_session_4624')) {
     const ti = T.typeIp(r.IP);
     if (r.Type === '7' || (r.Type === '3' && !['PUBLIQUE', 'VPN/CGNAT'].includes(ti))) continue;
-    add(r.Date, 'Connexions', `4624 type ${r.Type} ${r.Compte || ''}`, ti === 'PUBLIQUE' ? 3 : ti === 'VPN/CGNAT' ? 2 : 0, `IP ${r.IP || '-'} (${ti}) · poste ${r.Poste || '-'} · ${r.Authentification || ''}`, r._id, { ip: r.IP });
+    add(r.Date, 'Connexions', `Connexion réussie de ${r.Compte || '?'} (${LIB_OUVERTURE[r.Type] || 'type ' + r.Type}) (événement 4624)`, ti === 'PUBLIQUE' ? 3 : ti === 'VPN/CGNAT' ? 2 : 0, `IP ${r.IP || '-'} (${T.typeIpLib(ti)}) · poste ${r.Poste || '-'} · ${r.Authentification || ''} · ouverture de type ${r.Type}`, r._id, { ip: r.IP, compte: r.Compte });
   }
-  for (const r of T.table('rdp_authentifications_1149')) add(r.Date, 'Connexions', `1149 authentification RDP ${r.Utilisateur || ''}`, T.typeIp(r.IP) === 'PUBLIQUE' ? 2 : 0, `IP ${r.IP}`, r._id, { ip: r.IP });
-  for (const r of T.table('identifiants_explicites_4648')) add(r.Date, 'Comptes', `4648 identifiants explicites : ${r.CompteUtilise || ''}`, 1, `par ${r.Auteur || ''} vers ${r.Serveur || ''} (${r.Processus || ''})`, r._id);
+  for (const r of T.table('rdp_authentifications_1149')) add(r.Date, 'Connexions', `Bureau à distance : mot de passe accepté pour ${r.Utilisateur || '?'} (événement 1149)`, T.typeIp(r.IP) === 'PUBLIQUE' ? 2 : 0, `IP ${r.IP}`, r._id, { ip: r.IP });
+  for (const r of T.table('identifiants_explicites_4648')) add(r.Date, 'Comptes', `Identifiants saisis pour un autre compte : ${r.CompteUtilise || ''} (événement 4648)`, 1, `par ${r.Auteur || ''} vers ${r.Serveur || ''} (${r.Processus || ''})`, r._id);
   const agg = {};
   for (const r of T.table('echecs_connexion_4625')) {
     const d = T.pdate(r.Date); if (!d) continue;
     const k = r.Date.slice(0, 13) + '|' + r.IP;
     const a = agg[k] || (agg[k] = { n: 0, t: d, comptes: new Set(), id: r._id, ip: r.IP }); a.n++; a.comptes.add(r.Compte);
   }
-  for (const a of Object.values(agg)) add(a.t, 'Force brute', `${a.n} echec(s) depuis ${a.ip || '?'}`, a.n >= 50 ? 2 : 1, 'comptes essayes : ' + [...a.comptes].filter(Boolean).slice(0, 8).join(', '), a.id, { ip: a.ip, n: a.n });
-  for (const r of T.table('evenements_comptes')) add(r.Date, 'Comptes', `${r.EventID} ${r.Action || ''} : ${r.CibleOuGroupe || ''} ${r.Membre || ''}`.trim(), ['4720', '4724', '4732', '4728', '4756'].includes(r.EventID) ? 3 : 1, `par ${r.Auteur || ''} ${r.Details || ''}`, r._id);
+  for (const a of Object.values(agg)) add(a.t, 'Force brute', `${a.n} connexion${a.n > 1 ? 's' : ''} ratée${a.n > 1 ? 's' : ''} depuis ${a.ip || '?'}`, a.n >= 50 ? 2 : 1, 'comptes essayés : ' + [...a.comptes].filter(Boolean).slice(0, 8).join(', '), a.id, { ip: a.ip, n: a.n });
+  for (const r of T.table('evenements_comptes')) add(r.Date, 'Comptes', `${LIB_COMPTES[r.EventID] || r.Action || 'Compte'} : ${`${r.CibleOuGroupe || ''} ${r.Membre || ''}`.trim()} (événement ${r.EventID})`, ['4720', '4724', '4732', '4728', '4756'].includes(r.EventID) ? 3 : 1, `par ${r.Auteur || ''} ${r.Details || ''}`, r._id);
   let bruit = 0;
   for (const r of T.table('executions_chronologie')) {
     const sensible = r.OutilSensible === 'OUI' || RX_OUTILS.test(r.Programme || '');
@@ -215,35 +229,35 @@ T.chronologie = () => T.memo('chrono', () => {
   // comptes de stockage / transfert configures (rclone, FileZilla, WinSCP) : date du fichier de configuration
   for (const r of T.table('comptes_transfert')) if (r.Outil) add(r.Modifie, 'Comptes', `Compte ${r.Outil}${r.Type ? ' ' + r.Type : ''} configuré${r.Nom ? ' (« ' + r.Nom + ' »)' : ''}`, 3, `${r.Compte || ''}${r.Secrets ? ' · ' + r.Secrets : ''} · ${r.Fichier || ''}`, r._id, { compte: r.Profil });
   // processus lus dans l'image RAM : seulement ceux qui portent un indice (le reste est le fonctionnement normal de Windows)
-  for (const p of T.memoireVive().procs.filter(x => x.niveau >= 1)) add(p.debut, 'Mémoire vive', `En mémoire : ${p.nom} (PID ${p.pid})${p.fin ? '' : ', actif à la collecte'}`, p.niveau, `${p.indices.join(' · ')}${p.cmd ? ' · ' + p.cmd : ''}`, p.id);
+  for (const p of T.memoireVive().procs.filter(x => x.niveau >= 1)) add(p.debut, 'Mémoire vive', `En mémoire : ${p.nom} (n° ${p.pid})${p.fin ? '' : ', encore ouvert à la collecte'}`, p.niveau, `${p.indices.join(' · ')}${p.cmd ? ' · ' + p.cmd : ''}`, p.id);
   const paquets = {};
   for (const r of T.table('usn_fenetres')) {
     const d = T.pdate(r.Date); if (!d) continue;
-    if (r.Archive === 'OUI') { add(d, 'Fichiers', `Archive : ${r.Fichier}`, 3, `USN ${r.Raison || ''}`, r._id); continue; }
+    if (r.Archive === 'OUI') { add(d, 'Fichiers', `Archive créée : ${r.Fichier}`, 3, `USN ${r.Raison || ''}`, r._id); continue; }
     const k = r.Date.slice(0, 15);
     const p = paquets[k] || (paquets[k] = { t: new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), Math.floor(d.getMinutes() / 10) * 10), n: 0, ex: [], id: r._id });
     p.n++; if (p.ex.length < 5) p.ex.push(r.Fichier);
   }
-  for (const p of Object.values(paquets)) add(p.t, 'Fichiers', `${p.n} operation(s) fichier (USN)`, p.n >= 500 ? 2 : 1, p.ex.join(', '), p.id, { n: p.n });
+  for (const p of Object.values(paquets)) add(p.t, 'Fichiers', `${p.n} modification${p.n > 1 ? 's' : ''} de fichiers`, p.n >= 500 ? 2 : 1, p.ex.join(', '), p.id, { n: p.n });
   for (const r of T.table('acces_fichiers_lnk_jumplists_shellbags')) {
     const metier = r.DONNEES_METIER === 'OUI', ts = r.TSCLIENT === 'OUI';
     if (!metier && !ts && !r.Fenetre) continue;
-    add(r.Date1 || r.Date2, 'Fichiers', `${ts ? 'Copie via \\\\tsclient' : metier ? 'Acces donnees metier' : 'Fichier ouvert'} : ${(r.Chemin || '').slice(-80)}`, ts ? 3 : metier ? 2 : 1, `${r.Source || ''} (${r.Date1Type || ''}) ${r.Utilisateur || ''}`, r._id);
+    add(r.Date1 || r.Date2, 'Fichiers', `${ts ? 'Copie vers le PC distant (\\\\tsclient)' : metier ? 'Données du cabinet ouvertes' : 'Fichier ouvert'} : ${(r.Chemin || '').slice(-80)}`, ts ? 3 : metier ? 2 : 1, `${r.Source || ''} (${r.Date1Type || ''}) ${r.Utilisateur || ''}`, r._id);
   }
   for (const r of T.table('navigation_fenetres')) {
     const dom = (/^[a-z]+:\/\/([^/:]+)/i.exec(r.Url || '') || [])[1] || r.Url;
     add(r.Date, 'Navigation', dom + (r.Categorie ? ` (${r.Categorie})` : ''), ['PARTAGE / TRANSFERT', 'OUTILS / ACCES DISTANT'].includes(r.Categorie) ? 2 : r.Categorie ? 1 : 0, r.Titre, r._id);
   }
-  for (const r of T.table('telechargements')) add(r.Date, 'Navigation', `Telechargement : ${(r.Fichier || '').split('\\').pop()}`, r.Fenetre ? 2 : 0, r.Url, r._id);
-  for (const r of T.table('defender_detections')) add(r.InitialDetectionTime, 'Antivirus', `Defender : detection ${r.ThreatID || ''}`, 3, `${r.ProcessName || ''} ${r.Resources || ''} · action ${r.ActionSuccess || ''}`, r._id);
+  for (const r of T.table('telechargements')) add(r.Date, 'Navigation', `Téléchargement : ${(r.Fichier || '').split('\\').pop()}`, r.Fenetre ? 2 : 0, r.Url, r._id);
+  for (const r of T.table('defender_detections')) add(r.InitialDetectionTime, 'Antivirus', `Defender : menace détectée (n° ${r.ThreatID || '?'})`, 3, `${r.ProcessName || ''} ${r.Resources || ''} · traitée : ${/^true$/i.test(r.ActionSuccess || '') ? 'oui' : /^false$/i.test(r.ActionSuccess || '') ? 'non' : r.ActionSuccess || '?'}`, r._id);
   for (const g of T.chiffrement().groupes)
     add(g.debut, 'Rancongiciel', `Chiffrement : ${T.nb(g.n)} fichiers ${g.ext}`, 3, `${T.nb(g.mo, 1)} Mo · ${T.nb(g.pic)} en 24 h au plus · ex. ${g.exemple}`, g.ids[0], { fin: g.fin });
   for (const r of T.table('commandes_destructrices_4688')) add(r.Date, 'Rancongiciel', 'Commande destructrice', 3, r.CommandLine || r.Commande || Object.values(r).join(' '), r._id);
   // note de rancon : nom evocateur dans 3 dossiers ou plus, ou meme fichier (meme taille) dans 20 dossiers ou plus.
   // Les README et LICENSE de tailles differentes d'un poste de developpeur ne sont pas des notes.
-  for (const r of T.notesRancon()) add(r.Derniere, 'Rancongiciel', `Note de rancon : ${r.Nom} (${r.NbDossiers} dossiers)`, 3, r.Exemples, r._id);
-  for (const r of T.table('resume_evenements_cles')) if (EVT_JOURNAUX[r.EventID]) add(r.Date, 'Journaux', `${r.EventID} ${EVT_JOURNAUX[r.EventID]}`, ['1102', '104', '4616', '4719', '5001'].includes(r.EventID) ? 3 : 1, (r.Message || '').slice(0, 300), r._id);
-  for (const r of T.table('usb_chronologie')) add(r.Date, 'USB', `USB : ${(r.Peripherique || '').slice(0, 60)}`, r.Fenetre ? 2 : 0, `${r.Source || ''} · serie ${r.Serie || '-'}`, r._id);
+  for (const r of T.notesRancon()) add(r.Derniere, 'Rancongiciel', `Note de rançon : ${r.Nom} (${r.NbDossiers} dossiers)`, 3, r.Exemples, r._id);
+  for (const r of T.table('resume_evenements_cles')) if (EVT_JOURNAUX[r.EventID]) add(r.Date, 'Journaux', `${EVT_JOURNAUX[r.EventID]} (événement ${r.EventID})`, ['1102', '104', '4616', '4719', '5001'].includes(r.EventID) ? 3 : 1, (r.Message || '').slice(0, 300), r._id);
+  for (const r of T.table('usb_chronologie')) add(r.Date, 'USB', `USB : ${(r.Peripherique || '').slice(0, 60)}`, r.Fenetre ? 2 : 0, `${r.Source || ''} · n° de série ${r.Serie || '-'}`, r._id);
   ev.sort((a, b) => a.t - b.t);
   const compte = {}; ev.forEach(e => { compte[e.voie] = (compte[e.voie] || 0) + 1; });
   return { evenements: ev, voies: T.VOIES.filter(v => compte[v]), compte, tronque: Math.max(0, bruit - 3000) };
@@ -266,13 +280,13 @@ T.basesMetier = () => T.memo('bases', () => {
   return Object.values(vus).sort((a, b) => b.mo - a.mo);
 });
 T.NIVEAUX = {
-  LEGITIME: { lib: 'Fenêtre légitime (liste blanche)', cls: 'vert', icone: '' },
-  HABITUEL: { lib: 'Volume habituel du poste', cls: 'vert', icone: '' },
+  LEGITIME: { lib: 'Période légitime (adresse connue)', cls: 'vert', icone: '' },
+  HABITUEL: { lib: 'Envois habituels du poste', cls: 'vert', icone: '' },
   PLAUSIBLE: { lib: 'Copie de la base possible', cls: 'rouge', icone: '' },
   PARTIELLE: { lib: 'Copie partielle possible', cls: 'orange', icone: '' },
-  EXCLUE_RESEAU: { lib: 'Copie complète exclue (réseau de ce poste)', cls: 'vert', icone: '' },
-  IMPOSSIBLE_LIGNE: { lib: 'Impossible par la ligne', cls: 'vert', icone: '' },
-  INCONNU: { lib: 'Non mesurable', cls: 'gris', icone: '' }
+  EXCLUE_RESEAU: { lib: 'Copie complète impossible depuis ce poste', cls: 'vert', icone: '' },
+  IMPOSSIBLE_LIGNE: { lib: 'Copie complète trop lourde pour la box', cls: 'vert', icone: '' },
+  INCONNU: { lib: 'Impossible à mesurer', cls: 'gris', icone: '' }
 };
 T.exfil = () => T.memo('exfil', () => {
   const R = T.reglages(), serie = T.serieSrum(), ref = T.refSrum(), bases = T.basesMetier();
@@ -303,54 +317,62 @@ T.exfil = () => T.memo('exfil', () => {
     const releves = Math.max(1, ids.length);
     const habituel = ref && ref.p95 && envoye <= ref.p95 * releves && picMax <= ref.max;
     if (couvre) {
-      if (comp && envoye >= 0.1 * comp && envoye < comp && habituel) { niveau = 'HABITUEL'; constats.push(`${T.nb(envoye)} Mo envoyés en ${releves} relevé(s) : comparable à l'activité habituelle du poste (≤ P95 × durée). Une petite copie partielle ne peut pas être exclue.`); }
-      else if (comp && envoye >= comp) { niveau = 'PLAUSIBLE'; constats.push(`Le poste a envoyé ${T.nb(envoye)} Mo : autant ou plus que la base compressée (~${T.nb(comp)} Mo). Copie complète possible.`); }
-      else if (comp && envoye >= 0.1 * comp) { niveau = 'PARTIELLE'; constats.push(`${T.nb(envoye)} Mo envoyés : une copie partielle (~${T.nb(envoye / comp * 100)} % de la base compressée) reste possible.`); }
-      else if (comp) { niveau = 'EXCLUE_RESEAU'; constats.push(`Seulement ${T.nb(envoye, 1)} Mo envoyés pour une base de ~${T.nb(comp)} Mo compressée : copie complète par le réseau de ce poste exclue (si SRUM complet).`); }
-      else constats.push(`${T.nb(envoye, 1)} Mo envoyés. Taille de la base inconnue : la renseigner dans les réglages pour conclure.`);
-      if (ref && ref.max && picMax > ref.max) constats.push(`Pic de ${T.nb(picMax)} Mo/h, au-dessus du maximum habituel (${T.nb(ref.max)} Mo/h sur ${T.nb(ref.releves)} relevés).`);
-    } else constats.push("SRUM ne couvre pas cette fenêtre : volume envoyé non mesurable.");
+      if (comp && envoye >= 0.1 * comp && envoye < comp && habituel) { niveau = 'HABITUEL'; constats.push(`${T.nb(envoye)} Mo envoyés en ${releves} heure${releves > 1 ? 's' : ''} : comme d'habitude pour ce poste. Une petite copie partielle reste possible.`); }
+      else if (comp && envoye >= comp) { niveau = 'PLAUSIBLE'; constats.push(`Le poste a envoyé ${T.nb(envoye)} Mo sur Internet : autant ou plus que la base patients compressée (environ ${T.nb(comp)} Mo). Une copie complète est possible.`); }
+      else if (comp && envoye >= 0.1 * comp) { niveau = 'PARTIELLE'; constats.push(`${T.nb(envoye)} Mo envoyés : de quoi copier environ ${T.nb(envoye / comp * 100)} % de la base patients compressée.`); }
+      else if (comp) { niveau = 'EXCLUE_RESEAU'; constats.push(`Seulement ${T.nb(envoye, 1)} Mo envoyés, pour une base patients d'environ ${T.nb(comp)} Mo compressée : ce poste n'a pas pu l'envoyer en entier par Internet (si le relevé de Windows est complet).`); }
+      else constats.push(`${T.nb(envoye, 1)} Mo envoyés. Taille de la base patients inconnue : indiquez-la plus haut pour conclure.`);
+      if (ref && ref.max && picMax > ref.max) constats.push(`Pic de ${T.nb(picMax)} Mo en une heure : plus que le maximum habituel du poste (${T.nb(ref.max)} Mo par heure, sur ${T.nb(ref.releves)} heures relevées).`);
+    } else constats.push("Windows n'a pas relevé les envois pendant cette période (SRUM) : impossible de mesurer ce qui est parti.");
     if (capacite !== null && comp) {
       if (capacite < comp) {
-        constats.push(`Débit montant ${T.nb(debit)} Mbit/s × ${T.nb(dureeS / 60)} min = ${T.nb(capacite)} Mo au maximum : physiquement impossible de sortir toute la base (~${T.nb(comp)} Mo) par la ligne.`);
+        constats.push(`En ${T.nb(dureeS / 60)} min, la box (${T.nb(debit)} Mbit/s en envoi) pouvait envoyer ${T.nb(capacite)} Mo au plus : pas assez pour toute la base patients (environ ${T.nb(comp)} Mo).`);
         if (niveau === 'INCONNU') niveau = 'IMPOSSIBLE_LIGNE';
-      } else constats.push(`La ligne permettait jusqu'à ${T.nb(capacite)} Mo pendant la fenêtre ; envoyer la base compressée demandait ~${T.nb(besoin)} min.`);
+      } else constats.push(`La box pouvait envoyer jusqu'à ${T.nb(capacite)} Mo pendant la période. Envoyer toute la base patients compressée prenait environ ${T.nb(besoin)} min.`);
     }
-    if (legitime) { niveau = 'LEGITIME'; constats.unshift(`Fenêtre ouverte depuis une IP de la liste blanche (${[...new Set(notes)].join(', ')}) : activité considérée légitime.`); }
+    if (legitime) { niveau = 'LEGITIME'; constats.unshift(`Période ouverte depuis une adresse déclarée légitime : ${[...new Set(notes)].join(', ')}. Activité considérée comme normale.`); }
     return { id: w.id, debut: w.debut, fin: w.fin, motif: w.motif, duree: Math.round(dureeS / 60), envoye, picMax, capacite, besoin, couvre, niveau, constats, legitime,
       apps: Object.values(apps[w.id] || {}).sort((a, b) => b.mo - a.mo).slice(0, 8), preuves: ids, preuveFenetre: w.preuve };
   });
   return { serie, ref, bases, fenetres, hyp: { taille, tailleAuto, compression, comp, debit } };
 });
 T.LIMITES_EXFIL = [
-  "Un autre poste, un serveur ou un NAS du cabinet a pu servir : la borne ne vaut que pour ce poste.",
-  "Les identifiants enregistrés (logiciels web, messagerie, NAS) permettent un accès sans passer par ce poste : non borné ici.",
-  "Le taux de compression est une hypothèse (déduction) : une base Firebird ou SQL se compresse souvent de 3 à 10 fois.",
-  "SRUM enregistre environ une fois par heure ; un arrêt brutal peut perdre le dernier relevé.",
-  "Le trafic RDP inclut l'affichage de la session : un volume RDP élevé n'est pas à lui seul une exfiltration."
+  "Ce calcul ne vaut que pour ce poste : un autre poste, un serveur ou un NAS du cabinet a pu servir.",
+  "Avec les mots de passe enregistrés (logiciels en ligne, messagerie, NAS), on peut accéder aux données sans passer par ce poste : ce calcul ne le couvre pas.",
+  "La compression est une hypothèse (déduction) : une base de données se compresse souvent de 3 à 10 fois.",
+  "Windows relève les envois environ une fois par heure (SRUM) : un arrêt brutal peut faire perdre le dernier relevé.",
+  "En bureau à distance, l'image de l'écran compte aussi dans les envois : un gros volume ne veut pas dire à lui seul que des données sont sorties."
 ];
 
 /* ======================================================================== visibilite */
 const NOMS_JOURNAUX = {
   'Security': 'Sécurité (connexions, comptes)', 'System': 'Système (démarrages, services)',
-  'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational': 'Sessions RDP (LSM)',
-  'Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational': 'Authentifications RDP (1149)',
-  'Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational': 'Connexions TCP RDP (131)',
+  'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational': 'Sessions de bureau à distance',
+  'Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational': 'Mots de passe acceptés en bureau à distance',
+  'Microsoft-Windows-RemoteDesktopServices-RdpCoreTS/Operational': 'Connexions réseau du bureau à distance',
   'Microsoft-Windows-PowerShell/Operational': 'PowerShell (4104)', 'Microsoft-Windows-Windows Defender/Operational': 'Defender',
-  'Microsoft-Windows-SMBServer/Security': 'Partages SMB', 'Microsoft-Windows-Bits-Client/Operational': 'BITS (transferts)',
-  'Microsoft-Windows-DNS-Client/Operational': 'Requêtes DNS', 'Microsoft-Windows-Sysmon/Operational': 'Sysmon',
-  'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall': 'Pare-feu (événements)', 'Microsoft-Windows-TerminalServices-PnPDevices/Admin': 'Redirections RDP (PnP)'
+  'Microsoft-Windows-SMBServer/Security': 'Dossiers partagés (SMB)', 'Microsoft-Windows-Bits-Client/Operational': 'Transferts en arrière-plan (BITS)',
+  'Microsoft-Windows-DNS-Client/Operational': 'Sites contactés (DNS)', 'Microsoft-Windows-Sysmon/Operational': 'Sysmon',
+  'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall': 'Règles du pare-feu', 'Microsoft-Windows-TerminalServices-PnPDevices/Admin': 'Disques et imprimantes partagés en bureau à distance'
 };
 const ANTI = [[/wevtutil(\.exe)?\s+(cl|clear-log)/i, 'Effacement de journal (wevtutil)'], [/clear-eventlog|remove-eventlog/i, 'Effacement de journal (PowerShell)'],
-  [/fsutil(\.exe)?\s+usn\s+deletejournal/i, 'Suppression du journal USN'], [/vssadmin(\.exe)?\s+delete\s+shadows|shadowcopy\s+delete|win32_shadowcopy/i, 'Suppression des clichés VSS'],
+  [/fsutil(\.exe)?\s+usn\s+deletejournal/i, 'Suppression du journal USN'], [/vssadmin(\.exe)?\s+delete\s+shadows|shadowcopy\s+delete|win32_shadowcopy/i, 'Suppression des copies de sauvegarde de Windows (clichés VSS)'],
   [/wbadmin(\.exe)?\s+delete/i, 'Suppression des sauvegardes Windows'], [/bcdedit.*recoveryenabled\s+no/i, 'Réparation au démarrage désactivée'],
   [/cipher(\.exe)?\s+\/w/i, "Effacement de l'espace libre (cipher /w)"], [/sdelete/i, 'Effacement sécurisé (SDelete)'],
-  [/set-mppreference.*-disable|add-mppreference.*-exclusion/i, 'Defender modifié en ligne de commande'], [/auditpol(\.exe)?\s+\/(clear|remove|set)/i, "Politique d'audit modifiée"]];
+  [/set-mppreference.*-disable|add-mppreference.*-exclusion/i, 'Defender modifié en ligne de commande'], [/auditpol(\.exe)?\s+\/(clear|remove|set)/i, 'Règles de journalisation modifiées']];
 /** 5007 : Defender ecrit ses changements internes (demarrage, mises a jour, notifications) ; seuls ceux-ci l'affaiblissent */
 const RX_DEFENDER_AFFAIBLI = /\\Exclusions\\|\\Disable\w*\s*=\s*0x1\b|TamperProtection\s*=\s*0x[04]\b|SpyNetReporting\s*=\s*0x0\b|SubmitSamplesConsent\s*=\s*0x2\b|EnableControlledFolderAccess\s*=\s*0x0\b|PUAProtection\s*=\s*0x0\b/i;
 /** cle de Defender modifiee (ou dont la modification a ete bloquee), pour le libelle : « DisableBmNetworkSensor = 0x1 » */
-const cleDefender = m => { const x = /.*\\([^\\=]+?)\s*=\s*(0x[0-9a-f]+)?/i.exec(String(m || '').replace(/\s+/g, ' ')); return x ? (x[1].trim() + (x[2] ? ' = ' + x[2] : '')) : ''; };
-const EVT_ANTI = { 1102: 'Journal Sécurité effacé', 104: 'Journal effacé', 4616: 'Heure système modifiée', 4719: "Politique d'audit modifiée", 5001: 'Protection temps réel Defender désactivée', 5007: 'Configuration Defender modifiée', 5013: 'Falsification de Defender bloquée' };
+const REGLAGES_DEFENDER = { DisableRealtimeMonitoring: 'protection en temps réel', DisableBehaviorMonitoring: 'surveillance du comportement des programmes', DisableBmNetworkSensor: 'surveillance réseau des programmes',
+  DisableIOAVProtection: 'analyse des fichiers téléchargés', DisableScriptScanning: 'analyse des scripts', DisableAntiSpyware: 'antivirus', DisableAntiVirus: 'antivirus', TamperProtection: 'protection contre les modifications',
+  SpyNetReporting: 'protection dans le cloud', SubmitSamplesConsent: "envoi d'échantillons à Microsoft", EnableControlledFolderAccess: 'protection des dossiers contre les rançongiciels', PUAProtection: 'blocage des logiciels indésirables' };
+const cleDefender = m => {
+  const x = /.*\\([^\\=]+?)\s*=\s*(0x[0-9a-f]+)?/i.exec(String(m || '').replace(/\s+/g, ' ')); if (!x) return '';
+  const cle = x[1].trim(), brut = cle + (x[2] ? ' = ' + x[2] : ''), lib = REGLAGES_DEFENDER[cle];
+  if (/\\Exclusions\\/i.test(String(m || ''))) return `dossier ou programme exclu de l'analyse (${brut})`;
+  return lib ? (/^Disable/i.test(cle) && x[2] === '0x1' ? `fonction « ${lib} » arrêtée (${brut})` : `fonction « ${lib} » (${brut})`) : brut;
+};
+const EVT_ANTI = { 1102: 'Journal Sécurité effacé', 104: 'Journal effacé', 4616: 'Heure du poste modifiée', 4719: 'Règles de journalisation modifiées', 5001: 'Protection en temps réel de Defender coupée', 5007: 'Réglage de Defender modifié', 5013: 'Tentative de modifier Defender bloquée' };
 
 T.visibilite = () => T.memo('visi', () => {
   const sources = [], vus = new Set(), dateCollecte = T.pdate(T.identite().date);
@@ -365,7 +387,7 @@ T.visibilite = () => T.memo('visi', () => {
     const existe = /^true$/i.test(r.Existe), actif = /^true$/i.test(r.Active), d = T.pdate(r.PlusAncien);
     sources.push({ source: NOMS_JOURNAUX[r.Journal] || r.Journal, detail: r.Journal, debut: d, fin: d ? dateCollecte : null, etat: existe && actif && d ? 'present' : existe ? 'desactive' : 'absent', id: r._id });
   }
-  for (const [nom, table, col] of [['SRUM (volumes réseau)', 'srum_total_par_releve', 'Releve'], ['Exécutions (Prefetch / Amcache / BAM)', 'executions_chronologie', 'Date'], ['Navigation web', 'navigation_complete', 'Date'], ['Journal USN (fichiers)', 'usn_fenetres', 'Date']]) {
+  for (const [nom, table, col] of [['Relevé des envois (SRUM)', 'srum_total_par_releve', 'Releve'], ['Programmes lancés (Prefetch, Amcache, BAM)', 'executions_chronologie', 'Date'], ['Historique web', 'navigation_complete', 'Date'], ...(T.fenetres().length ? [['Journal USN (fichiers)', 'usn_fenetres', 'Date']] : [])]) {
     let a = null, b = null;
     for (const r of T.table(table)) { const d = T.pdate(r[col]); if (d) { if (!a || d < a) a = d; if (!b || d > b) b = d; } }
     sources.push({ source: nom, detail: table, debut: a, fin: b, etat: a ? 'present' : 'absent', id: a ? `${table}#1` : '' });
@@ -390,20 +412,20 @@ T.visibilite = () => T.memo('visi', () => {
       let st;
       if (s.etat !== 'present' || !s.debut) st = s.etat === 'desactive' ? 'désactivée' : 'absente';
       else if (s.debut <= w.debut && (!s.fin || s.fin >= w.fin)) st = 'couverte';
-      else if (s.debut > w.fin || (s.fin && s.fin < w.debut)) st = 'non couverte';
-      else st = 'partielle';
+      else if (s.debut > w.fin || (s.fin && s.fin < w.debut)) st = 'ne remonte pas jusque-là';
+      else st = 'en partie seulement';
       return { source: s.source, statut: st, id: s.id };
     });
     return { id: w.id, debut: w.debut, fin: w.fin, motif: w.motif, sources: lignes, taux: lignes.length ? Math.round(100 * lignes.filter(l => l.statut === 'couverte').length / lignes.length) : 0 };
   });
   const anti = [];
-  for (const nom of ['resume_evenements_cles', 'evenements_fenetres']) for (const r of T.table(nom)) if (EVT_ANTI[r.EventID] && (!['5007', '5013'].includes(r.EventID) || RX_DEFENDER_AFFAIBLI.test(r.Message || ''))) anti.push({ date: r.Date || '', trace: `${r.EventID} ${EVT_ANTI[r.EventID]}${['5007', '5013'].includes(r.EventID) && cleDefender(r.Message) ? ' : ' + cleDefender(r.Message) : ''}`, detail: (r.Message || '').slice(0, 300), id: r._id });
+  for (const nom of ['resume_evenements_cles', 'evenements_fenetres']) for (const r of T.table(nom)) if (EVT_ANTI[r.EventID] && (!['5007', '5013'].includes(r.EventID) || RX_DEFENDER_AFFAIBLI.test(r.Message || ''))) anti.push({ date: r.Date || '', trace: `${EVT_ANTI[r.EventID]}${['5007', '5013'].includes(r.EventID) && cleDefender(r.Message) ? ' : ' + cleDefender(r.Message) : ''} (événement ${r.EventID})`, detail: (r.Message || '').slice(0, 300), id: r._id });
   for (const [nom, cols] of [['commandes_destructrices_4688', null], ['executions_chronologie', ['Detail', 'Chemin']]]) for (const r of T.table(nom)) {
     const txt = cols ? cols.map(k => r[k] || '').join(' ') : Object.entries(r).filter(([k]) => k !== '_id').map(([, v]) => v).join(' ');
     for (const [rx, lib] of ANTI) if (rx.test(txt)) { anti.push({ date: r.Date || '', trace: lib, detail: txt.slice(0, 300), id: r._id }); break; }
   }
   const pref = T.texte('defender_preferences.txt');
-  for (const m of pref.matchAll(/^(Exclusion\w+)\s*:\s*\{(.+)\}/gim)) if (m[2].trim()) anti.push({ date: '', trace: `Exclusion Defender (${m[1]})`, detail: m[2].trim(), id: 'defender_preferences.txt' });
+  for (const m of pref.matchAll(/^(Exclusion\w+)\s*:\s*\{(.+)\}/gim)) if (m[2].trim()) anti.push({ date: '', trace: `Dossier, programme ou extension exclu de l'analyse de Defender (${m[1]})`, detail: m[2].trim(), id: 'defender_preferences.txt' });
   const vu = new Set(); const antiU = anti.sort((a, b) => a.date.localeCompare(b.date)).filter(a => { const k = a.date + a.trace; if (vu.has(k)) return false; vu.add(k); return true; });
   return { sources, grille, fenetres: parFenetre, anti: antiU };
 });
@@ -422,8 +444,8 @@ T.REGLES_SANTE = [
   [/patient/i, "Fichiers « patients »", [C_ID]], [/\.pst\b|\.ost\b/i, 'Boîte Outlook', [C_MAIL, C_ID]], [/\.fdb\b|\.gdb\b/i, 'Base Firebird (logiciel métier probable)', [C_ID, C_SANTE]],
   [/\.mdf\b|\.ldf\b|\.ndf\b/i, 'Base SQL Server (logiciel métier probable)', [C_ID, C_SANTE]], [/\.accdb\b|\.mdb\b/i, 'Base Access', [C_ID]]];
 const SOURCES_SANTE = [['bases_metier', 'Base présente sur le disque', ['Chemin']], ['acces_donnees_metier', 'Accès aux données métier', null],
-  ['acces_fichiers_lnk_jumplists_shellbags', 'Fichier ouvert (LNK / ShellBags)', ['Chemin']], ['usn_fenetres', 'Fichier modifié pendant une fenêtre', ['Fichier']],
-  ['navigation_fenetres', 'Site consulté pendant une fenêtre', ['Url', 'Titre']], ['navigation_sites_sensibles', 'Site santé / métier consulté', ['Url']],
+  ['acces_fichiers_lnk_jumplists_shellbags', 'Fichier ouvert (LNK / ShellBags)', ['Chemin']], ['usn_fenetres', 'Fichier modifié pendant une période suspecte', ['Fichier']],
+  ['navigation_fenetres', 'Site consulté pendant une période suspecte', ['Url', 'Titre']], ['navigation_sites_sensibles', 'Site santé / métier consulté', ['Url']],
   ['telechargements', 'Téléchargement', ['Fichier', 'Url']], ['identifiants_navigateurs', 'Identifiant enregistré', ['Site']]];
 T.JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 T.ouvert = (d, horaires) => {
@@ -458,6 +480,19 @@ T.sante = () => T.memo('sante', () => {
 /* ======================================================================== IOC, chasse, memoire */
 const HEX = /^[0-9a-f]+$/i;
 const normHash = h => { h = String(h || '').trim().toUpperCase(); if (h.startsWith('0000') && h.length === 44) h = h.slice(4); return HEX.test(h) && [32, 40, 64].includes(h.length) ? h : ''; };
+/** dossiers de DigSpill lui-même (kit lancé, copie du dépôt) : un DigSpill.exe avec ses scripts dans moteur\,
+ *  ou un DigSpill.exe identique à celui-là. Leurs fichiers ne sont pas des traces de l'attaquant. */
+T.dossiersDigSpill = () => T.memo('dossiersDigSpill', () => {
+  const bas = [...T.table('binaires_suspects').map(r => [r.Chemin, r.SHA256]), ...T.table('outils_suspects').map(r => [r.Chemin, r.SHA256]), ...T.table('processus_binaires').map(r => [r.Path, r.SHA256])]
+    .filter(x => x[0]).map(([c, x]) => [String(c).toLowerCase(), normHash(x)]);
+  const racine = c => c.replace(/\\[^\\]+$/, '').replace(/\\app\\bin$/, '');
+  const scripts = /\\moteur\\(collecte-exfil|analyse-exfil|copier-preuves|generer-interface)\.ps1$/;
+  const sures = new Set(), empreintes = new Set();
+  for (const [c, x] of bas) if (/\\digspill\.exe$/.test(c)) { const r = racine(c); if (bas.some(([y]) => y.startsWith(r + '\\moteur\\') && scripts.test(y))) { sures.add(r); if (x) empreintes.add(x); } }
+  for (const [c, x] of bas) if (/\\digspill\.exe$/.test(c) && x && empreintes.has(x)) sures.add(racine(c));
+  return [...sures];
+});
+T.estDigSpill = chemin => { const c = String(chemin || '').toLowerCase(); return !!c && T.dossiersDigSpill().some(r => c.startsWith(r + '\\')); };
 T.hachages = () => T.memo('hachages', () => {
   const vus = {};
   const add = (h, nom, chemin, source, date, id, rem = '') => {
@@ -467,9 +502,9 @@ T.hachages = () => T.memo('hachages', () => {
     if (!e.preuves.includes(id)) e.preuves.push(id);
   };
   for (const r of T.table('ioc_hachages')) for (const c of ['SHA256', 'SHA1']) add(r[c], r.Nom, r.Chemin, r.Source, r.Date, r._id, r.Remarque);
-  for (const r of T.table('binaires_suspects')) add(r.SHA256, (r.Chemin || '').split('\\').pop(), r.Chemin, `Binaire suspect (${r.Source || ''})`, r.Creation, r._id, `signature ${r.Signature || '?'}`);
-  for (const r of T.table('outils_suspects')) add(r.SHA256, (r.Chemin || '').split('\\').pop(), r.Chemin, 'Outil présent sur le disque', r.Creation, r._id);
-  for (const r of T.table('processus_binaires')) if (r.Signature !== 'Valid') add(r.SHA256, (r.Path || '').split('\\').pop(), r.Path, `Processus en cours (signature ${r.Signature || 'absente'})`, '', r._id);
+  for (const r of T.table('binaires_suspects')) if (!T.estDigSpill(r.Chemin)) add(r.SHA256, (r.Chemin || '').split('\\').pop(), r.Chemin, `Binaire suspect (${r.Source || ''})`, r.Creation, r._id, `signature ${r.Signature || '?'}`);
+  for (const r of T.table('outils_suspects')) if (!T.estDigSpill(r.Chemin)) add(r.SHA256, (r.Chemin || '').split('\\').pop(), r.Chemin, 'Outil présent sur le disque', r.Creation, r._id);
+  for (const r of T.table('processus_binaires')) if (r.Signature !== 'Valid' && !T.estDigSpill(r.Path)) add(r.SHA256, (r.Path || '').split('\\').pop(), r.Path, `Processus en cours (signature ${r.Signature || 'absente'})`, '', r._id);
   return Object.values(vus).sort((a, b) => (a.type !== 'SHA256') - (b.type !== 'SHA256') || String(a.noms[0]).localeCompare(String(b.noms[0])));
 });
 const RISQUE = /\\(users\\public|programdata|perflogs|windows\\temp|appdata\\local\\temp|\$recycle\.bin|music|downloads|t[ée]l[ée]chargements)\\/i;
@@ -678,14 +713,14 @@ T.vue = () => T.memo('vue', () => {
   const alertes = [];
   if (actives.length) alertes.push({ niv: 3, icone: '', texte: `Connexion encore active vers ${actives.map(a => `${a.ip} (${(a.processus || '?').split('\\').pop()})`).join(', ')} au moment de la collecte : l'attaquant est peut-être toujours là. Isoler le poste du réseau.`, preuves: actives.flatMap(a => a.preuves.filter(x => x.startsWith('tcp_')).slice(0, 2)) });
   if (chiffres) alertes.push({ niv: 3, icone: '', texte: `${T.nb(chiffres)} fichiers chiffrés par un rançongiciel (${T.chiffrement().groupes.slice(0, 3).map(g => g.ext).join(', ')}).`, preuves: T.chiffrement().groupes.slice(0, 2).map(g => g.ids[0]) });
-  for (const f of ex.fenetres) if (f.niveau === 'PLAUSIBLE') alertes.push({ niv: 3, icone: '', texte: `Fenêtre ${f.id} : ${T.nb(f.envoye)} Mo envoyés sur Internet, compatible avec une copie de la base patients.`, preuves: f.preuves.slice(0, 3), onglet: 'exfil' });
+  for (const f of ex.fenetres) if (f.niveau === 'PLAUSIBLE') alertes.push({ niv: 3, icone: '', texte: `Période ${f.id} : ${T.nb(f.envoye)} Mo envoyés sur Internet, assez pour copier la base patients.`, preuves: f.preuves.slice(0, 3), onglet: 'exfil' });
   const antiVus = new Map(); for (const a of vis.anti) { const x = antiVus.get(a.trace); if (x) x.n++; else antiVus.set(a.trace, Object.assign({ n: 1 }, a)); }
-  for (const a of [...antiVus.values()].slice(0, 3)) alertes.push({ niv: 2, icone: '', texte: `Anti-forensique : ${a.trace}${a.n > 1 ? ` (× ${a.n}, dès le ${T.fcourt(a.date)})` : a.date ? ' (' + T.fcourt(a.date) + ')' : ''}`, preuves: a.id.includes('#') ? [a.id] : [], onglet: 'visibilite' });
+  for (const a of [...antiVus.values()].slice(0, 3)) alertes.push({ niv: 2, icone: '', texte: `Trace effacée ou protection coupée : ${a.trace}${a.n > 1 ? ` · ${a.n} fois, dès le ${T.fcourt(a.date)}` : a.date ? ' · le ' + T.fcourt(a.date) : ''}`, preuves: a.id.includes('#') ? [a.id] : [], onglet: 'visibilite' });
   const transf = T.table('comptes_transfert').filter(r => r.Outil);
   if (transf.length) alertes.push({ niv: 3, icone: '', texte: `Compte de stockage ou de transfert configuré sur le poste : ${transf.slice(0, 3).map(r => `${r.Outil} ${r.Type || ''} ${(r.Compte || '').replace(/ ; /g, ', ')}`.replace(/\s+/g, ' ').trim()).join(' ; ')}. Mots de passe non lus.`, preuves: transf.slice(0, 3).map(r => r._id), onglet: 'exfil' });
   const ram = T.memoireVive(), ramActifs = ram.procs.filter(p => p.niveau >= 3 && !p.fin);
-  if (ramActifs.length) alertes.push({ niv: 3, icone: '', texte: `Programme suspect encore en mémoire à la collecte : ${ramActifs.slice(0, 3).map(p => `${p.nom} (PID ${p.pid}, ${p.indices[0]})`).join(' ; ')}.`, preuves: ramActifs.slice(0, 3).map(p => p.id), onglet: 'memoire' });
-  if (deja.length) alertes.push({ niv: 2, icone: '', texte: `Indicateurs déjà vus dans ${deja.length} autre(s) incident(s) : ${deja.map(d => d.client || d.poste).join(', ')}.`, preuves: [], onglet: 'ioc' });
+  if (ramActifs.length) alertes.push({ niv: 3, icone: '', texte: `Programme suspect encore en mémoire à la collecte : ${ramActifs.slice(0, 3).map(p => `${p.nom} (n° ${p.pid}, ${p.indices[0]})`).join(' ; ')}.`, preuves: ramActifs.slice(0, 3).map(p => p.id), onglet: 'memoire' });
+  if (deja.length) alertes.push({ niv: 2, icone: '', texte: `Traces déjà vues dans ${deja.length > 1 ? deja.length + ' autres incidents' : 'un autre incident'} : ${deja.map(d => d.client || d.poste).join(', ')}.`, preuves: [], onglet: 'ioc' });
   const vict = T.chercherVictimes(R.mots_cles_fuite && R.mots_cles_fuite.length ? R.mots_cles_fuite : (R.client ? [R.client] : []));
   if (vict.resultats.length) alertes.push({ niv: 3, icone: '', texte: `Nom proche du client publié sur un site de fuite : ${vict.resultats.map(r => `${r.victime} (${r.groupe})`).slice(0, 3).join(', ')}.`, preuves: [], onglet: 'fuites' });
   return { cnil, grille, alertes, actives, deja, vict, kpi: {
@@ -734,6 +769,12 @@ T.fenetreGrave = () => T.memo('fenGrave', () => {
   return best ? best.f : null;
 });
 
+/** bilan des rapports : un incident est constaté (intrusion, envoi, chiffrement, outil de pirate, alerte grave) ou non */
+T.bilan = () => T.memo('bilan', () => {
+  const v = T.vue(), k = v.kpi, sit = T.situation();
+  const graves = v.alertes.filter(a => a.niv >= 3);
+  return { incident: !sit.vide || graves.length > 0 || k.outils.length > 0, graves, k };
+});
 T.situation = () => T.memo('situation', () => {
   const v = T.vue(), k = v.kpi, ip = T.analyseIp(), fg = T.fenetreGrave(), ex = T.exfil();
   const morceaux = [];
@@ -755,16 +796,24 @@ T.situation = () => T.memo('situation', () => {
   return { vide: false, morceaux };
 });
 
-const NOMS_SOURCES = [[/pare-feu/i, 'le pare-feu'], [/DNS/i, 'le DNS'], [/SMB|partage/i, 'les partages réseau'], [/BITS/i, 'les transferts BITS'], [/PowerShell/i, 'PowerShell'],
-  [/USN/i, 'le journal des fichiers'], [/SRUM/i, 'les volumes réseau (SRUM)'], [/navigation/i, 'la navigation web'], [/Sécurité/i, 'le journal Sécurité'], [/Système/i, 'le journal Système']];
+const NOMS_SOURCES = [[/pare-feu/i, 'le pare-feu'], [/DNS/i, 'le journal des sites contactés (DNS)'], [/SMB|partag[ée]s \(/i, 'les dossiers partagés'], [/BITS/i, 'les transferts en arrière-plan (BITS)'], [/PowerShell/i, 'PowerShell'],
+  [/USN/i, 'le journal des fichiers'], [/SRUM/i, 'le relevé des envois (SRUM)'], [/navigation|historique web/i, "l'historique web"], [/programmes lancés|exécutions/i, 'les traces de programmes lancés'],
+  [/bureau à distance|RDP/i, 'les journaux du bureau à distance'], [/^Sécurité/i, 'le journal Sécurité'], [/^Système/i, 'le journal Système']];
+/** ce que le poste ne pouvait pas montrer : sources désactivées (rien noté) et sources absentes ou illisibles */
 T.limites = () => T.memo('limites', () => {
   const src = T.visibilite().sources.filter(s => ['absent', 'desactive'].includes(s.etat) && !/sysmon/i.test(s.source));
   const rang = n => { const i = NOMS_SOURCES.findIndex(x => x[1] === n); return i < 0 ? 99 : i; };
-  const noms = [...new Set(src.map(s => (NOMS_SOURCES.find(([r]) => r.test(s.source)) || [0, s.source])[1]))].sort((a, b) => rang(a) - rang(b));
+  const nom = s => (NOMS_SOURCES.find(([r]) => r.test(s.source)) || [0, s.source.charAt(0).toLowerCase() + s.source.slice(1)])[1];
+  const groupe = etat => [...new Set(src.filter(s => s.etat === etat).map(nom))].sort((a, b) => rang(a) - rang(b));
+  const desact = groupe('desactive'), abs = groupe('absent').filter(n => !desact.includes(n)), noms = [...desact, ...abs];
   if (!noms.length) return null;
-  const liste = noms.length === 1 ? noms[0] : noms.slice(0, -1).join(', ') + ' et ' + noms[noms.length - 1];
-  const pluriel = noms.length > 1 || /^les /.test(noms[0]);
-  return { noms, phrase: `${liste[0].toUpperCase()}${liste.slice(1)} n'enregistrai${pluriel ? 'ent' : 't'} rien. Si d'autres données sont parties par là, ce poste ne permet pas de le voir.` };
+  const et = l => l.length === 1 ? l[0] : l.slice(0, -1).join(', ') + ' et ' + l[l.length - 1];
+  const pl = l => l.length > 1 || /^les /.test(l[0]);
+  const morceaux = [];
+  if (desact.length) morceaux.push(`${et(desact)} n'enregistrai${pl(desact) ? 'ent' : 't'} rien`);
+  if (abs.length) morceaux.push(`${et(abs)} ${pl(abs) ? 'manquaient ou étaient illisibles' : 'manquait ou était illisible'}`);
+  const p = morceaux.join(' ; ');
+  return { noms, desact, abs, phrase: `${p.charAt(0).toUpperCase()}${p.slice(1)}. Si des données sont parties par là, ce poste ne permet pas de le voir.` };
 });
 
 const OUTILS_MDP = /mimi|mimikatz|netpass|lazagne|webbrowserpass|mailpass|chromepass|procdump/i;
@@ -775,16 +824,20 @@ T.actions = () => T.memo('actions', () => {
   const dansFen = r => String(r.Fenetre || T.fenDe(r.Date) || '').split(',').some(x => fenIds.has(x));
   // 1. isoler
   if (v.actives.length) out.push({ id: 'isoler', titre: 'Isoler le poste du réseau', sous: `Une connexion vers ${v.actives.map(a => a.ip).join(', ')} était encore ouverte au moment de la collecte.`, bouton: 'isoler' });
-  // 2. CNIL (toujours)
-  if (v.cnil) {
+  // poste sain (aucun incident constaté) : ni CNIL, ni assureur, ni chasse sur le parc
+  const incident = T.bilan().incident;
+  if (!incident) out.push({ id: 'rien', titre: "Rien d'urgent sur ce poste", sous: "Aucune trace d'intrusion, de vol de données ni de chiffrement. Remettre le poste en service et garder le rapport client avec le PV de collecte.", lien: 'preuves/rapports', lienTexte: 'Rapports à imprimer' });
+  // 2. CNIL (incident constaté)
+  if (!incident) { /* rien à notifier sur la base de cet examen */ }
+  else if (v.cnil) {
     const e = v.cnil.echeance;
     const quand = `${JOURS[e.getDay()]} ${T.jm(e)} à ${T.hm(e)}`;
-    out.push({ id: 'cnil', titre: 'Notifier la CNIL', sous: v.cnil.restantH >= 0 ? `Avant le ${quand}. Décision du cabinet et de son DPO.` : `Le délai de 72 h a expiré le ${quand}. Notifier sans attendre, en expliquant le retard. Décision du cabinet et de son DPO.`, compte: true });
-  } else out.push({ id: 'cnil', titre: 'Notifier la CNIL', sous: 'Dans les 72 h après la découverte. Décision du cabinet et de son DPO.', saisir: true });
+    out.push({ id: 'cnil', titre: 'Notifier la CNIL', sous: v.cnil.restantH >= 0 ? `Avant le ${quand}. Décision du client et de son DPO.` : `Le délai de 72 h a expiré le ${quand}. Notifier sans attendre, en expliquant le retard. Décision du cabinet et de son DPO.`, compte: true });
+  } else out.push({ id: 'cnil', titre: 'Notifier la CNIL', sous: 'Dans les 72 h après la découverte. Décision du client et de son DPO.', saisir: true });
   // 3. mots de passe
   const outilsMdp = T.table('executions_fenetres').filter(r => OUTILS_MDP.test(r.Programme || '') && dansFen(r)).sort((a, b) => T.pdate(a.Date) - T.pdate(b.Date));
   if (outilsMdp.length) out.push({ id: 'mdp', titre: 'Changer tous les mots de passe du poste', sous: `Un outil de vol de mots de passe (${nomOutilMdp(outilsMdp[0].Programme)}) a été lancé à ${T.hm(T.pdate(outilsMdp[0].Date))}.` });
-  else if (k.comptesNav) out.push({ id: 'mdp', titre: 'Changer tous les mots de passe du poste', sous: `${T.nb(k.comptesNav)} identifiant(s) enregistré(s) dans les navigateurs de ce poste.` });
+  else if (k.comptesNav && incident) out.push({ id: 'mdp', titre: 'Changer tous les mots de passe du poste', sous: `${T.nb(k.comptesNav)} identifiant(s) enregistré(s) dans les navigateurs de ce poste.` });
   // 4. serveurs touches avec d'autres identifiants (4648)
   const vus = new Set();
   for (const r of T.table('identifiants_explicites_4648').filter(dansFen)) {
@@ -817,9 +870,9 @@ T.actions = () => T.memo('actions', () => {
   if (rdpPub.length) out.push({ id: 'rdp', titre: 'Fermer le Bureau à distance exposé sur Internet', sous: `La connexion de ${T.hm(T.pdate(rdpPub[0].Date))} venait d'une IP publique.` });
   // 9. chasse sur le parc
   const io = T.iocs();
-  if (io.ip.length || io.hachages.length) out.push({ id: 'parc', titre: 'Chercher les mêmes traces sur tout le parc', sous: 'Les indicateurs sont prêts pour Datto RMM.', lien: 'details/ioc' });
-  // 10. assureur (toujours)
-  out.push({ id: 'assureur', titre: "Prévenir l'assureur cyber", sous: 'Et proposer au cabinet le dépôt de plainte.' });
+  if (incident && (io.ip.length || io.hachages.length)) out.push({ id: 'parc', titre: 'Chercher les mêmes traces sur tout le parc', sous: 'Les indicateurs sont prêts pour Datto RMM.', lien: 'details/ioc' });
+  // 10. assureur (incident constaté)
+  if (incident) out.push({ id: 'assureur', titre: "Prévenir l'assureur cyber", sous: 'Et proposer au client le dépôt de plainte.' });
   return out;
 });
 T.nomServeur = (srv, compte) => {
@@ -882,8 +935,8 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
     const ses = l.find(e => e.voie === 'Sessions'), i = ipInfo.find(x => x.ip === a) || {};
     const pays = T.nomPays(i.pays);
     const brute = T.table('echecs_par_ip').find(r => T.nettoyerIp(r.IP) === a);
-    const rdp = l.some(e => /type 10|1149|RDP/i.test(e.titre));
-    let sens = `${rdp ? 'Session Bureau à distance' : 'Connexion'} avec le compte ${String((ses && ses.compte) || (l.find(e => e.compte) || {}).compte || ((/4624 type \d+ (\S+)/.exec(l[0].titre) || [])[1] || '?')).split('\\').pop()}, depuis ${a}`;
+    const rdp = l.some(e => /type 10|1149|RDP|bureau à distance/i.test(e.titre));
+    let sens = `${rdp ? 'Session Bureau à distance' : 'Connexion'} avec le compte ${String((ses && ses.compte) || (l.find(e => e.compte) || {}).compte || ((/^Connexion réussie de (\S+)/.exec(l[0].titre) || [])[1] || '?')).split('\\').pop()}, depuis ${a}`;
     if (ses && ses.fin) sens += `, jusqu'à ${T.hm(ses.fin)}`;
     sens += '.';
     if (brute) {
@@ -911,7 +964,7 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
     const x = g[0], dossier = (x.r.Chemin || '').replace(/\\[^\\]+$/, '');
     etape(1, x.t, 'Scanne le réseau du cabinet', `${x.prog}.exe, lancé${dossier ? ' depuis ' + dossier.replace(/^c:/, 'C:').replace(/\\users\\public\\music/i, '\\Users\\Public\\Music') : ''}, cherche les autres machines du réseau.`, [...g].sort((a, b) => b.t - a.t).map(y => y.id));
   }
-  const def = ev('Antivirus'), j5001 = ev('Journaux', /^5001/), j5007 = ev('Journaux', /^5007/);
+  const def = ev('Antivirus'), j5001 = ev('Journaux', evt(5001)), j5007 = ev('Journaux', evt(5007));
   if (def.length || j5001.length || j5007.length) {
     const tous = [...def, ...j5001, ...j5007].sort((a, b) => a.t - b.t);
     const bouts = [];
@@ -929,13 +982,13 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
     const tri = [...mdp].sort((a, b) => a.t - b.t || (/Prefetch/i.test(a.r.Source) ? -1 : 1));
     etape(1, mdp[0].t, 'Lance des outils de vol de mots de passe', sens[0].toUpperCase() + sens.slice(1) + '.', tri.filter(x => /Prefetch/i.test(x.r.Source || '')).concat(tri.filter(x => !/Prefetch/i.test(x.r.Source || ''))).map(x => x.id));
   }
-  for (const e of ev('Comptes', /^4648/)) {
+  for (const e of ev('Comptes', evt(4648))) {
     const r = T.preuve(e.id) || {};
     etape(1, e.t, `Utilise le compte ${T.nomServeur(r.Serveur, r.CompteUtilise).replace(/^le /, 'du ')}`.replace('du serveur', 'du serveur'),
       `Le compte ${String(r.CompteUtilise || '').split('\\').pop()} est utilisé vers ${r.Serveur || '?'} depuis la session de ${String(r.Auteur || '').split('\\').pop()}.`, [e.id]);
   }
-  const comptes = ev('Comptes').filter(e => /^(4720|4722|4724|4728|4732|4756)/.test(e.titre));
-  const crees = comptes.filter(e => /^4720/.test(e.titre));
+  const comptes = ev('Comptes').filter(e => evt(4720, 4722, 4724, 4728, 4732, 4756).test(e.titre));
+  const crees = comptes.filter(e => evt(4720).test(e.titre));
   for (const c of crees) {
     const r = T.preuve(c.id) || {}, nom = (/SamAccountName=(\S+)/.exec(r.Details || '') || [])[1] || String(r.CibleOuGroupe || '').split('\\').pop();
     const lies = comptes.filter(e => e !== c && String((T.preuve(e.id) || {}).Membre || '').toLowerCase().endsWith('\\' + nom.toLowerCase()) && enMin(e.t, c.t) <= 60);
@@ -948,7 +1001,7 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
     etape(1, c.t, `Crée un compte ${admin ? 'administrateur ' : ''}« ${nom} »`, sens, [c.id, ...lies.map(e => e.id)]);
   }
   for (const e of comptes) if (!pris.has(e.id)) etape(1, e.t, 'Modifie un compte', e.titre, [e.id]);
-  for (const e of ev('Journaux', /^(7045|4697)/)) {
+  for (const e of ev('Journaux', evt(7045, 4697))) {
     // message en anglais (« Service Name: X Service File Name: Y ») ou en français (« Nom du service : X Nom du fichier du service : Y »)
     const en = /Service Name:\s*(.+?)\s+Service File Name:\s*(.+?)(?:\s+Service Type:|$)/i.exec(e.detail) || /Nom du service\s*:\s*(.+?)\s+Nom du fichier du service\s*:\s*(.+?)(?:\s+Type de service|$)/i.exec(e.detail);
     const m = en || /:\s*([^,]+),\s*(.+)$/.exec(e.detail) || [], svc = (m[1] || '').trim(), bin = (m[2] || '').trim().replace(/^"([^"]*)".*$/, '$1'), b = base(bin);
@@ -959,8 +1012,8 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
     etape(1, e.t, faux ? `Installe un faux service « ${b} »` : (svc || b) ? `Installe le service « ${svc || b} »` : 'Installe un service',
       `${b}.exe${faux ? ', au nom proche de svchost.exe,' : ''} est installé comme service ${svc}${lance ? `, puis lancé à ${T.hm(lance.t)}` : ''}.`, [e.id, ...[...runs].sort((x, y) => (/Prefetch/i.test(x.r.Source || '') ? -1 : 1)).map(x => x.id)]);
   }
-  for (const e of ev('Journaux', /^4698/)) etape(1, e.t, 'Crée une tâche planifiée', e.detail, [e.id]);
-  for (const e of ev('Journaux', /^4719/)) etape(1, e.t, "Modifie la politique d'audit", e.detail, [e.id]);
+  for (const e of ev('Journaux', evt(4698))) etape(1, e.t, 'Crée une tâche planifiée', e.detail, [e.id]);
+  for (const e of ev('Journaux', evt(4719))) etape(1, e.t, 'Change ce que Windows note dans ses journaux', e.detail, [e.id]);
   for (const g of grouper(execDe(RX.distance), 60)) etape(1, g[0].t, `Installe un outil d'accès à distance (${g[0].prog})`, `${g[0].prog}.exe lancé à ${T.hm(g[0].t)}.`, g.map(x => x.id));
   for (const g of grouper(execDe(RX.latéral), 30)) if (!g.every(x => pris.has(x.id))) etape(1, g[0].t, `Lance ${g[0].prog} vers d'autres postes`, `${g[0].prog}.exe à ${T.hm(g[0].t)}.`, g.map(x => x.id));
 
@@ -975,13 +1028,13 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
     const titre = pages.length ? `Ouvre ${pages.map(art).join(' et ').replace(/ et (?=.* et )/g, ', ')} dans ${site}` : `Consulte ${site}`;
     etape(2, g[0].t, titre, `Pages ${pages.join(' et ') || site} consultées dans ${rows[0].Navigateur ? rows[0].Navigateur[0].toUpperCase() + rows[0].Navigateur.slice(1) : 'le navigateur'} avec le compte ${rows[0].Utilisateur || '?'}.`, g.map(e => e.id));
   }
-  const accesMetier = ev('Fichiers', /^Acces donnees metier|tsclient/i);
+  const accesMetier = ev('Fichiers', /^Données du cabinet ouvertes|tsclient/i);
   for (const g of grouper(execDe(RX.archive), 15)) {
     const cmd = g.map(x => x.r.Detail || '').find(d => /\s(a|u)\s/.test(d + ' ')) || '';
     const tokens = cmd.split(/\s+/);
     const ia = tokens.findIndex(tk => /\.(7z|zip|rar)$/i.test(tk));
     const archive = ia >= 0 ? tokens[ia] : '', source = ia >= 0 ? tokens.slice(ia + 1).join(' ') : '';
-    const usn = ev('Fichiers', /^Archive :/).filter(e => !archive || e.titre.toLowerCase().includes(archive.split('\\').pop().toLowerCase()));
+    const usn = ev('Fichiers', /^Archive créée :/).filter(e => !archive || e.titre.toLowerCase().includes(archive.split('\\').pop().toLowerCase()));
     const finEcr = usn.filter(e => /CLOSE|EXTEND/i.test(e.detail)).sort((a, b) => b.t - a.t)[0];
     const metierSrc = /logos|medist|axisante|weda|hellodoc|crossway|julie|dentalvision|visiodent|logosw|doctolib|\\data\b/i.test(source + ' ' + cmd);
     const principal = g.find(x => /4688/.test(x.r.Source || '')) || g[0];
@@ -989,7 +1042,7 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
     const lies = accesMetier.filter(e => enMin(e.t, principal.t) <= 30 && e.t <= principal.t);
     etape(2, principal.t, metierSrc ? 'Compresse les données du logiciel métier' : 'Compresse des fichiers', sens, [principal.id, ...usn.sort((a, b) => a.t - b.t).map(e => e.id)], [...lies.map(e => e.id), ...g.filter(x => x !== principal).map(x => x.id)]);
   }
-  for (const e of accesMetier) if (!pris.has(e.id)) etape(2, e.t, /tsclient/i.test(e.titre) ? 'Copie des fichiers par le Bureau à distance' : 'Ouvre les données du logiciel métier', e.titre.replace(/^Acces donnees metier : /, '') + '.', [e.id]);
+  for (const e of accesMetier) if (!pris.has(e.id)) etape(2, e.t, /tsclient/i.test(e.titre) ? 'Copie des fichiers par le Bureau à distance' : 'Ouvre les données du logiciel métier', e.titre.replace(/^Données du cabinet ouvertes : /, '') + '.', [e.id]);
   const srumFen = T.table('srum_total_par_releve').filter(r => String(r.Fenetre || '').split(',').includes(fenId));
   for (const g of grouper(execDe(RX.envoi), 120)) {
     const prog = g[0].prog, cmd = g.map(x => x.r.Detail || '').find(d => /copy|sync|move|put|upload|-T/i.test(d)) || '';
@@ -1003,7 +1056,7 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
     const exPl = T.exfil().fenetres.find(f => f.id === fenId);
     let sens = `${prog} ${fichier ? 'copie ' + fichier : 'envoie des fichiers'}${remote ? ' vers ' + remote : dest ? ' vers ' + dest : ''}${dernier ? ` jusqu'à ${T.hm(dernier)}` : ''}.`;
     if (exPl && exPl.niveau === 'PLAUSIBLE') sens += ' Volume compatible avec une copie de la base patients.';
-    const telech = ev('Navigation', /^Telechargement/).filter(e => new RegExp(prog, 'i').test(e.titre + e.detail));
+    const telech = ev('Navigation', /^Téléchargement/).filter(e => new RegExp(prog, 'i').test(e.titre + e.detail));
     const creation = evts.filter(e => e.voie === 'Fichiers' && new RegExp(prog + '\\.exe', 'i').test(e.detail));
     const navLies = sites.filter(e => new RegExp(prog + '|' + (dest.split(' ')[0] || '§'), 'i').test(e.titre + ' ' + e.detail) || /PARTAGE|TRANSFERT/i.test(e.titre));
     const tri = [...g].sort((a, b) => (/4688/.test(b.r.Source || '') ? 1 : 0) - (/4688/.test(a.r.Source || '') ? 1 : 0) || (/Prefetch/i.test(b.r.Source || '') ? 1 : 0) - (/Prefetch/i.test(a.r.Source || '') ? 1 : 0));
@@ -1025,21 +1078,21 @@ T.recit = fenId => T.memo('recit:' + fenId, () => {
   }
   for (const e of ev('Rancongiciel', /^Chiffrement/)) {
     const r = T.preuve(e.id) || {}, ext = r.Extension || '';
-    const notes = ev('Rancongiciel', /^Note de rancon/), n0 = notes[0] ? T.preuve(notes[0].id) || {} : null;
-    const paquets = evts.filter(x => x.voie === 'Fichiers' && /operation\(s\) fichier/.test(x.titre) && ext && x.detail.includes(ext));
+    const notes = ev('Rancongiciel', /^Note de rançon/), n0 = notes[0] ? T.preuve(notes[0].id) || {} : null;
+    const paquets = evts.filter(x => x.voie === 'Fichiers' && /modifications? de fichiers/.test(x.titre) && ext && x.detail.includes(ext));
     etape(3, e.t, `Chiffre ${T.nb(T.num(r.NbFichiers))} fichiers`, `Extension ${ext}, ${T.nb(Math.floor(T.num(r.TailleMo)))} Mo en ${String(r.DureeMinutes || '?').replace('.', ',')} minutes.${n0 ? ` Note de rançon déposée dans ${T.nb(T.num(n0.NbDossiers))} dossiers.` : ''}`,
       [e.id, ...notes.map(x => x.id)], paquets.map(x => x.id));
   }
-  for (const e of ev('Rancongiciel', /^Note de rancon/)) if (!pris.has(e.id)) etape(3, e.t, 'Dépose une note de rançon', e.titre, [e.id]);
-  const effac = ev('Journaux', /^(104|1102)/), wev = execDe(RX.journal);
+  for (const e of ev('Rancongiciel', /^Note de rançon/)) if (!pris.has(e.id)) etape(3, e.t, 'Dépose une note de rançon', e.titre, [e.id]);
+  const effac = ev('Journaux', evt(104, 1102)), wev = execDe(RX.journal);
   for (const e of effac) {
-    const quel = /^1102/.test(e.titre) ? 'Sécurité' : ((/journal (\w+)/i.exec(e.detail) || [])[1] || 'System');
+    const quel = evt(1102).test(e.titre) ? 'Sécurité' : ((/journal (\w+)/i.exec(e.detail) || [])[1] || 'System').replace(/^System$/i, 'Système');
     const w = wev.filter(x => enMin(x.t, e.t) <= 5);
     const compte = w.map(x => x.r.Compte).find(Boolean);
     etape(3, (w[0] && w[0].t < e.t) ? w[0].t : e.t, `Efface le journal ${quel}`, w.length ? `Avec wevtutil${compte ? ` et le compte « ${compte} »` : ''}.` : 'Événement d\'effacement enregistré par Windows.', [e.id, ...w.map(x => x.id)]);
   }
   for (const x of wev) if (!pris.has(x.id)) etape(3, x.t, 'Efface des journaux Windows', x.r.Detail || 'wevtutil', [x.id]);
-  for (const e of ev('Journaux', /^4616/)) etape(3, e.t, "Modifie l'heure du poste", e.detail, [e.id]);
+  for (const e of ev('Journaux', evt(4616))) etape(3, e.t, "Modifie l'heure du poste", e.detail, [e.id]);
 
   /* ---------- tout le reste d'important : rien ne disparait en silence ---------- */
   const evExec = evts.filter(e => e.voie === 'Executions');

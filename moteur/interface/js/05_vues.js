@@ -11,7 +11,8 @@ T.onglet = 'resume';
 T.toast = (m, ms = 2600) => { const t = h('div', { class: 'toast' }, m); document.body.append(t); setTimeout(() => t.remove(), ms); };
 T.bp = id => id ? h('button', { class: 'preuve', 'data-preuve': id, title: 'Voir la ligne source' }, id) : '';
 T.bps = (ids, max = 3) => { ids = (ids || []).filter(Boolean); return h('span', {}, ids.slice(0, max).map(i => [T.bp(i), ' ']), ids.length > max ? h('span', { class: 'pale petit' }, `+${ids.length - max}`) : ''); };
-T.pillStatut = s => h('span', { class: 'pill st-' + String(s || '').replace(/\s+/g, '_') }, s || '?');
+T.STATUTS = { INDICE: 'Indice trouvé', 'A FAIRE': 'À vérifier vous-même', 'A LIRE': 'À lire', 'NON VERIFIABLE': 'Impossible à vérifier', RAS: 'Rien de suspect' };
+T.pillStatut = s => h('span', { class: 'pill st-' + String(s || '').replace(/\s+/g, '_') }, T.STATUTS[s] || s || '?');
 T.pillNiveau = n => { const x = T.NIVEAUX[n] || T.NIVEAUX.INCONNU; return h('span', { class: 'pill st-' + n }, x.lib); };
 T.carte = (titre, aide, ...contenu) => h('div', { class: 'carte' }, titre ? h('h2', {}, titre, aide ? h('span', { class: 'aide' }, aide) : '') : '', ...contenu);
 T.vide = txt => h('div', { class: 'vide' }, txt || 'Rien à afficher.');
@@ -73,7 +74,7 @@ T.ouvrirPreuve = (id, contexte) => {
   const r = T.preuve(id), s = T.sourcePreuve(id);
   T._focusAvant = document.activeElement;
   c.innerHTML = '';
-  if (contexte) c.append(h('div', { class: 'contexte-preuve' }, h('div', { class: 'gras' }, contexte.titre), h('div', { class: 'pale petit mono' }, contexte.t ? T.fcourt(contexte.t) : '', contexte.fen ? ` · fenêtre ${contexte.fen}` : ''), contexte.detail ? h('div', { class: 'doux petit', style: 'margin-top:6px' }, contexte.detail) : ''));
+  if (contexte) c.append(h('div', { class: 'contexte-preuve' }, h('div', { class: 'gras' }, contexte.titre), h('div', { class: 'pale petit mono' }, contexte.t ? T.fcourt(contexte.t) : '', contexte.fen ? ` · période ${contexte.fen}` : ''), contexte.detail ? h('div', { class: 'doux petit', style: 'margin-top:6px' }, contexte.detail) : ''));
   c.append(h('dl', {}, h('dt', {}, 'Preuve'), h('dd', { class: 'mono' }, id),
     h('dt', {}, 'Fichier'), h('dd', { class: 'mono' }, s.chemin),
     h('dt', {}, 'Ligne du fichier'), h('dd', {}, s.ligne ? `${s.ligne} (en-tête = ligne 1)` : '–'),
@@ -168,7 +169,7 @@ T.ligneAction = (a, etat) => {
   const coche = h('input', { type: 'checkbox', checked: !!etat[a.id], 'aria-label': `${a.titre} : fait`, onchange: e => { T.cocherAction(a.id, e.target.checked); } });
   const sous = h('span', { class: 's' }, a.sous);
   if (a.saisir) sous.append(' ', h('button', { class: 'lk', type: 'button', onclick: e => { e.preventDefault(); T.ouvrirReglages('decouverte'); } }, 'Saisir la date de découverte'));
-  if (a.lien) sous.append(' ', h('a', { class: 'lk doux', href: '#' + a.lien }, 'Voir les indicateurs'));
+  if (a.lien) sous.append(' ', h('a', { class: 'lk doux', href: '#' + a.lien }, a.lienTexte || 'Voir les indicateurs'));
   const li = h('li', { class: 'act' }, h('label', { class: 'actl' }, coche, h('span', {}, h('span', { class: 't' }, a.titre), sous)));
   if (a.bouton === 'isoler') li.append(h('button', { class: 'btn-principal', type: 'button', onclick: () => T.ouvrirIsoler() }, T.ic('prise'), 'Isoler le poste'));
   if (a.compte) li.append(T.compteCnil());
@@ -187,7 +188,7 @@ T.ECRANS.resume = c => {
   m.append(h1);
   if (rc && rc.etapes.length) m.append(h('p', { class: 'intro' }, `${rc.periode.dans}, de ${T.hm(rc.debut)} à ${T.hm(rc.fin)}. `, h('a', { class: 'lk', href: '#chrono/' + fg.id }, `Voir ${rc.periode.nom} en ${rc.etapes.length} étape${rc.etapes.length > 1 ? 's' : ''} →`)));
   else if (sit.vide) m.append(h('p', { class: 'intro' }, h('a', { class: 'lk', href: '#details/visibilite' }, 'Ce que chaque source voyait →')));
-  if (!T.D.collecte.analyse) m.append(h('p', { class: 'intro' }, "Le dossier d'analyse (_analyse) est absent : lancer DigSpill.exe › Analyser une collecte puis régénérer ce fichier pour avoir les sessions, SRUM, exécutions et la grille."));
+  if (!T.D.collecte.analyse) m.append(h('p', { class: 'intro' }, "Cette collecte n'a pas encore été analysée. DigSpill → « Analyser une collecte » ajoute les connexions, les données envoyées, les programmes lancés et les points vérifiés."));
   // a faire maintenant
   const acts = T.actions(), etat = T.etatActions(), VISIBLES = 3;
   const sec = h('section', { class: 'section', 'aria-labelledby': 'tAFaire' }, h('h2', { class: 'lbl', id: 'tAFaire' }, 'À faire maintenant'));
@@ -230,17 +231,17 @@ T.ligneEtape = (s, f) => {
 T.ECRANS.chrono = (c, fenId) => {
   const fens = T.fenetres(), f = fens.find(x => x.id === fenId) || T.fenetreGrave() || fens[0], id = T.identite();
   const m = h('main', { class: 'col', id: 'principal' }); c.append(m);
-  if (!f) { m.append(h('h1', { class: 'recit-titre' }, 'Chronologie'), h('p', { class: 'intro' }, "Aucune fenêtre d'analyse : il n'y a pas de nuit à raconter. Tous les événements restent consultables."), h('p', { class: 'intro' }, h('a', { class: 'lk', href: '#details/evenements' }, 'Tous les événements →'))); return; }
+  if (!f) { m.append(h('h1', { class: 'recit-titre' }, 'Chronologie'), h('p', { class: 'intro' }, 'Aucune période suspecte : rien à raconter. Tous les événements restent consultables.'), h('p', { class: 'intro' }, h('a', { class: 'lk', href: '#details/evenements' }, 'Tous les événements →'))); return; }
   const r = T.recit(f.id), n = r.chapitres.reduce((t, ch) => t + ch.etapes.length, 0);
-  m.append(h('p', { class: 'lbl', title: f.motif || null }, `Fenêtre ${f.id} · poste ${id.poste}`), h('h1', { class: 'recit-titre' }, r.periode.titre),
-    h('p', { class: 'intro' }, n ? `De ${T.hm(r.debut)} à ${T.hm(r.fin)}, en ${n} étape${n > 1 ? 's' : ''}. Cliquez sur une étape pour voir ce qui la prouve.` : `De ${T.hm(f.debut)} à ${T.hm(f.fin)}. Aucun événement important dans cette fenêtre.`));
+  m.append(h('p', { class: 'lbl', title: f.motif || null }, `Période ${f.id} · poste ${id.poste}`), h('h1', { class: 'recit-titre' }, r.periode.titre),
+    h('p', { class: 'intro' }, n ? `De ${T.hm(r.debut)} à ${T.hm(r.fin)}, en ${n} étape${n > 1 ? 's' : ''}. Cliquez sur une étape pour voir ce qui la prouve.` : `De ${T.hm(f.debut)} à ${T.hm(f.fin)}. Aucun événement important dans cette période.`));
   for (const ch of r.chapitres) {
     m.append(h('section', { class: 'chap', 'aria-label': `${ch.n} ${ch.nom}` }, h('h2', { class: 'cht' }, h('span', { class: 'chn' }, ch.n), ch.nom, h('span', { class: 'rng' }, ch.plage)),
       h('ol', { class: 'tl' }, ch.etapes.map(s => T.ligneEtape(s, f))),
-      ch.caches ? h('p', { class: 'petit doux', style: 'margin:8px 0 0 86px' }, `${T.nb(ch.caches)} autre${ch.caches > 1 ? 's' : ''} événement${ch.caches > 1 ? 's' : ''} dans cette fenêtre : `, h('a', { class: 'lk', href: '#details/evenements', onclick: () => { T.zoomFenetre = f.id; } }, 'Tous les événements →')) : ''));
+      ch.caches ? h('p', { class: 'petit doux', style: 'margin:8px 0 0 86px' }, `${T.nb(ch.caches)} autre${ch.caches > 1 ? 's' : ''} événement${ch.caches > 1 ? 's' : ''} dans cette période : `, h('a', { class: 'lk', href: '#details/evenements', onclick: () => { T.zoomFenetre = f.id; } }, 'Tous les événements →')) : ''));
   }
   const autres = fens.filter(x => x.id !== f.id);
-  m.append(h('footer', { class: 'pied-page' }, autres.length ? h('span', {}, 'Autres fenêtres : ', autres.map((x, i) => [i ? ', ' : '', h('a', { class: 'lk doux', href: '#chrono/' + x.id, title: x.motif || null }, `${x.id} · ${T.jm(x.debut)}`)])) : h('span', {}, "Une seule fenêtre d'analyse."),
+  m.append(h('footer', { class: 'pied-page' }, autres.length ? h('span', {}, 'Autres périodes : ', autres.map((x, i) => [i ? ', ' : '', h('a', { class: 'lk doux', href: '#chrono/' + x.id, title: x.motif || null }, `${x.id} · ${T.jm(x.debut)}`)])) : h('span', {}, 'Une seule période suspecte.'),
     h('a', { class: 'lk doux droite', href: '#details/evenements' }, 'Tous les événements, sans récit →')));
   if (T.etapeOuverte) {
     const b = m.querySelector(`[data-etape="${CSS.escape(T.etapeOuverte)}"]`); T.etapeOuverte = null;
@@ -250,27 +251,30 @@ T.ECRANS.chrono = (c, fenId) => {
 
 /* ---------------------------------------------------------------- Details et Preuves : rubriques */
 T.RUBRIQUES = {
-  details: [['grille', 'Grille par canal'], ['fenetres', "Fenêtres d'analyse"], ['chiffres', 'Chiffres clés et alertes'], ['ip', 'IP et pays'], ['exfil', 'Exfiltration'], ['memoire', 'Mémoire vive'], ['visibilite', 'Visibilité'],
-    ['sante', 'Santé et RGPD'], ['fuites', 'Identifiants et fuites'], ['ioc', 'IOC et chasse'], ['ia', 'Analyse IA'], ['evenements', 'Tous les événements'], ['synthese', 'SYNTHESE.txt']],
-  preuves: [['integrite', 'Intégrité'], ['rapports', 'Rapports']]
+  details: [['grille', 'Points vérifiés'], ['fenetres', 'Périodes suspectes'], ['chiffres', 'Chiffres clés et alertes'], ['ip', 'Adresses IP et pays'], ['exfil', 'Données sorties du poste'], ['memoire', 'Mémoire vive'], ['visibilite', 'Angles morts'],
+    ['sante', 'Santé et RGPD'], ['fuites', 'Mots de passe et fuites'], ['ioc', 'Traces à chercher ailleurs'], ['ia', 'Analyse par IA'], ['evenements', 'Tous les événements'], ['synthese', 'Résumé de la collecte']],
+  preuves: [['integrite', 'Intégrité des preuves'], ['rapports', 'Rapports à imprimer']]
 };
 T.RENDUS = { rapports: 'rapport' };
 const pl = (n, mot, motPl) => `${T.nb(n)} ${n > 1 ? (motPl || mot + 's') : mot}`;
-const LIB_STATUT = { INDICE: 'avec un indice', 'A FAIRE': 'à vérifier à la main', 'A LIRE': 'à lire', 'NON VERIFIABLE': 'non vérifiables', RAS: 'sans indice' };
+/* statuts de la grille (Analyse-Exfil) : libelle court, compte (singulier, pluriel) et explication */
+const LIB_STATUT = { INDICE: ['avec un indice', 'avec un indice'], 'A FAIRE': ['à vérifier vous-même', 'à vérifier vous-même'], 'A LIRE': ['à lire', 'à lire'], 'NON VERIFIABLE': ['impossible à vérifier', 'impossibles à vérifier'], RAS: ['sans rien de suspect', 'sans rien de suspect'] };
+const AIDE_STATUT = { INDICE: 'une trace montre que ce moyen a pu servir', 'A FAIRE': 'DigSpill ne peut pas trancher seul : une vérification à faire à la main', 'A LIRE': 'des traces à parcourir, sans indice clair',
+  'NON VERIFIABLE': 'la source manque ou ne notait rien : on ne peut rien conclure', RAS: 'rien de suspect dans les traces disponibles' };
 T.CONSTATS = {
-  grille: () => { const g = T.vue().grille; if (!g.length) return "Grille absente : l'analyse n'a pas été lancée."; const parts = Object.keys(LIB_STATUT).map(s => [s, g.filter(x => x.statut === s).length]).filter(([, n]) => n).map(([s, n]) => `${n} ${LIB_STATUT[s]}`); return `${pl(g.length, 'canal vérifié', 'canaux vérifiés')} : ${parts.join(', ')}.`; },
-  fenetres: () => { const f = T.exfil().fenetres; if (!f.length) return "Aucune fenêtre d'analyse."; const p = f.filter(x => x.niveau === 'PLAUSIBLE').map(x => x.id); return `${pl(f.length, "fenêtre d'analyse", "fenêtres d'analyse")}, du ${T.jm(f[0].debut)} au ${T.jm(f[f.length - 1].fin)}.${p.length ? ` Copie de la base possible pendant ${p.join(', ')}.` : ''}`; },
+  grille: () => { const g = T.vue().grille; if (!g.length) return "Rien à afficher : l'analyse de la collecte n'a pas été lancée."; const parts = Object.keys(LIB_STATUT).map(s => [s, g.filter(x => x.statut === s).length]).filter(([, n]) => n).map(([s, n]) => `${n} ${LIB_STATUT[s][n > 1 ? 1 : 0]}`); return `${pl(g.length, 'point vérifié', 'points vérifiés')} : ${parts.join(', ')}.`; },
+  fenetres: () => { const f = T.exfil().fenetres; if (!f.length) return 'Aucune période suspecte trouvée.'; const p = f.filter(x => x.niveau === 'PLAUSIBLE').map(x => x.id); return `${pl(f.length, 'période suspecte', 'périodes suspectes')}, du ${T.jm(f[0].debut)} au ${T.jm(f[f.length - 1].fin)}.${p.length ? ` Copie de la base patients possible pendant ${p.join(', ')}.` : ''}`; },
   chiffres: () => { const a = T.vue().alertes; return a.length ? `${pl(a.length, 'alerte calculée', 'alertes calculées')} à partir des traces.` : 'Aucune alerte majeure calculée à partir des traces.'; },
-  ip: () => { const a = T.analyseIp().ips.filter(e => e.type === 'PUBLIQUE'), s = a.filter(e => e.succes && !e.blanche), p = [...new Set(s.map(e => T.nomPays(e.pays)).filter(Boolean))]; return `${pl(a.length, 'IP publique vue', 'IP publiques vues')}, dont ${s.length} avec une connexion réussie${p.length ? ` (${p.join(', ')})` : ''}.`; },
-  exfil: () => { const f = T.exfil().fenetres; if (f.length && f.every(x => !x.envoye && (x.niveau === 'INCONNU' || !x.niveau))) return 'Volume envoyé non mesurable : pas de relevé SRUM pendant les fenêtres (Windows Server, ou SRUM vide).'; const m = f.reduce((x, y) => !x || y.envoye > x.envoye ? y : x, null); return m ? `Jusqu'à ${T.volume(m.envoye)} envoyés pendant la fenêtre ${m.id} : ${(T.NIVEAUX[m.niveau] || T.NIVEAUX.INCONNU).lib.toLowerCase()}.` : "Aucune fenêtre d'analyse : rien à borner."; },
-  memoire: () => { const m = T.memoireVive(); if (!m.lue) return m.raison || "La mémoire vive n'a pas été lue pour cette collecte."; return `${pl(m.procs.length, 'processus lu', 'processus lus')} dans la RAM, ${m.suspects.length ? `dont ${pl(m.suspects.length, 'avec un indice fort', 'avec un indice fort')}` : 'aucun avec un indice fort'} ; ${pl(m.etablies.length, 'connexion établie lue', 'connexions établies lues')}.`; },
+  ip: () => { const a = T.analyseIp().ips.filter(e => e.type === 'PUBLIQUE'), s = a.filter(e => e.succes && !e.blanche), p = [...new Set(s.map(e => T.nomPays(e.pays)).filter(Boolean))]; return `${pl(a.length, 'adresse IP d\'Internet vue', 'adresses IP d\'Internet vues')}, dont ${s.length} avec une connexion réussie${p.length ? ` (${p.join(', ')})` : ''}.`; },
+  exfil: () => { const f = T.exfil().fenetres; if (f.length && f.every(x => !x.envoye && (x.niveau === 'INCONNU' || !x.niveau))) return "Impossible de mesurer ce qui a été envoyé : Windows n'a rien relevé pendant les périodes suspectes (relevé SRUM vide ou absent, fréquent sur Windows Server)."; const m = f.reduce((x, y) => !x || y.envoye > x.envoye ? y : x, null); return m ? `Jusqu'à ${T.volume(m.envoye)} envoyés sur Internet pendant la période ${m.id} : ${(T.NIVEAUX[m.niveau] || T.NIVEAUX.INCONNU).lib.toLowerCase()}.` : 'Aucune période suspecte : rien à mesurer.'; },
+  memoire: () => { const m = T.memoireVive(); if (!m.lue) return m.raison || "La mémoire vive n'a pas été lue pour cette collecte."; return `${pl(m.procs.length, 'programme lu', 'programmes lus')} dans la mémoire, ${m.suspects.length ? `dont ${pl(m.suspects.length, 'suspect')}` : 'aucun suspect'} ; ${pl(m.etablies.length, 'connexion active', 'connexions actives')} vers une autre machine.`; },
   visibilite: () => { const l = T.limites(); return l ? l.phrase.split('. ')[0] + '.' : 'Les sources attendues enregistraient.'; },
   sante: () => { const v = T.vue().cnil; if (!v) return 'Date de découverte à saisir pour calculer le délai CNIL de 72 h.'; const e = v.echeance, q = `${JOURS[e.getDay()]} ${T.jm(e)} à ${T.hm(e)}`; return v.restantH >= 0 ? `Notification CNIL, si le cabinet la décide, avant le ${q}.` : `Le délai CNIL de 72 h a expiré le ${q}.`; },
   fuites: () => { const n = T.identifiants().comptes.length; return n ? `${pl(n, 'compte enregistré', 'comptes enregistrés')} dans les navigateurs du poste, à faire changer.` : 'Aucun identifiant enregistré dans les navigateurs (ou liste non collectée).'; },
-  ioc: () => { const i = T.iocs(); return `${pl(i.ip.length, 'IP', 'IP')} et ${pl(T.hachages().length, 'empreinte')} à chercher sur tout le parc.`; },
-  ia: () => 'Facultatif : Claude lit une synthèse filtrée, et chaque phrase est vérifiée contre ses preuves.',
-  evenements: () => { const ch = T.chronologie(); return `${pl(ch.evenements.length, 'événement')} sur ${pl(ch.voies.length, 'voie')}, sans récit.`; },
-  synthese: () => T.texte('SYNTHESE.txt') ? 'Résumé texte écrit par la collecte, sur le poste.' : 'SYNTHESE.txt absent de la collecte.',
+  ioc: () => { const i = T.iocs(); return `${pl(i.ip.length, 'adresse IP', 'adresses IP')} et ${pl(T.hachages().length, 'empreinte de fichier', 'empreintes de fichiers')} à chercher sur les autres postes que vous gérez.`; },
+  ia: () => 'Facultatif : Claude (une IA) lit un résumé de la collecte sans les noms, et chaque phrase de sa réponse est vérifiée contre les preuves.',
+  evenements: () => { const ch = T.chronologie(); return `${pl(ch.evenements.length, 'événement')}, rangés en ${pl(ch.voies.length, 'catégorie')}, dans l'ordre où ils se sont produits.`; },
+  synthese: () => T.texte('SYNTHESE.txt') ? 'Le résumé écrit par DigSpill sur le poste, juste après la collecte.' : 'Résumé absent de la collecte (SYNTHESE.txt).',
   integrite: () => { const s = T.scelleActuel(); if (!s) return 'Aucun scellé dans ce fichier.'; return `${pl(s.elements.length, 'fichier scellé', 'fichiers scellés')}, ${s.jeton && !s.jeton.erreur && s.jetonConforme ? `horodaté par un tiers le ${T.jm(new Date(s.jeton.date))}` : 'pas encore horodaté par un tiers'}.`; },
   rapports: () => 'Trois documents à imprimer ou à enregistrer en PDF.'
 };
@@ -291,36 +295,36 @@ T.ECRANS.preuves = ecranRubriques('preuves', 'Preuves');
 /* rubriques reprises de l'ancienne vue d'ensemble */
 T.ECRANS.grille = c => {
   const g = T.vue().grille;
-  c.append(h('h1', {}, 'Grille par canal'), h('p', { class: 'sous-titre' }, "Chaque canal par lequel des données peuvent sortir, et ce que les traces en disent. Produite par Analyse-Exfil.ps1."));
-  if (!g.length) { c.append(T.vide('Grille absente (analyse non lancée).')); return; }
+  c.append(h('h1', {}, 'Points vérifiés'), h('p', { class: 'sous-titre' }, "Pour chaque moyen de faire sortir des données du poste (Internet, clé USB, bureau à distance…), ce que les traces montrent."));
+  if (!g.length) { c.append(T.vide("Rien à afficher : lancez l'analyse de la collecte (DigSpill → « Analyser une collecte »).")); return; }
   const ordre = [...Object.keys(LIB_STATUT), ...new Set(g.map(x => x.statut).filter(s => !LIB_STATUT[s]))];
   for (const st of ordre) {
     const l = g.filter(x => x.statut === st); if (!l.length) continue;
-    c.append(T.carte(h('span', {}, T.pillStatut(st), ' ', l.length), '', h('ul', { class: 'lignes' }, l.map(r => h('li', {}, h('div', {}, h('div', { class: 'gras' }, r.canal), h('div', { class: 'doux petit' }, r.constat)), h('div', { class: 'droite' }, T.bp(r.id)))))));
+    c.append(T.carte(h('span', {}, T.pillStatut(st), ' ', l.length), AIDE_STATUT[st] || '', h('ul', { class: 'lignes' }, l.map(r => h('li', {}, h('div', {}, h('div', { class: 'gras' }, r.canal), h('div', { class: 'doux petit' }, r.constat)), h('div', { class: 'droite' }, T.bp(r.id)))))));
   }
 };
 T.ECRANS.fenetres = c => {
   const fen = T.exfil().fenetres;
-  c.append(h('h1', {}, "Fenêtres d'analyse"), h('p', { class: 'sous-titre' }, 'Sessions suspectes, plus une marge avant et après. La Chronologie raconte chacune.'));
+  c.append(h('h1', {}, 'Périodes suspectes'), h('p', { class: 'sous-titre' }, "Les moments où l'attaquant a pu agir : chaque connexion ou activité suspecte, avec une marge avant et après. L'onglet Chronologie les raconte étape par étape."));
   c.append(fen.length ? h('ul', { class: 'lignes' }, fen.map(f => h('li', {}, h('span', { class: 'mono gras', style: 'min-width:34px' }, f.id),
     h('div', {}, h('div', {}, `${T.fcourt(f.debut)} → ${T.fcourt(f.fin)} · ${f.duree} min`), h('div', { class: 'doux petit' }, f.motif)),
-    h('div', { class: 'droite' }, T.pillNiveau(f.niveau), T.bp(f.preuveFenetre), h('a', { class: 'lk doux petit', href: '#chrono/' + f.id }, 'Raconter →'))))) : T.vide('Aucune fenêtre.'));
+    h('div', { class: 'droite' }, T.pillNiveau(f.niveau), T.bp(f.preuveFenetre), h('a', { class: 'lk doux petit', href: '#chrono/' + f.id }, 'Raconter étape par étape →'))))) : T.vide('Aucune période suspecte.'));
 };
 T.ECRANS.chiffres = c => {
   const v = T.vue(), k = v.kpi;
   c.append(h('h1', {}, 'Chiffres clés et alertes'), h('p', { class: 'sous-titre' }, 'Comptés sur toute la collecte. Chaque alerte renvoie à ses preuves.'));
   c.append(h('div', { class: 'grille g4', style: 'margin:0 0 32px' },
-    T.kpi('', T.nb(k.sessions), 'sessions depuis Internet ou un VPN', k.sessions ? 'rouge' : ''),
-    T.kpi('', T.nb(k.ipSucces), 'IP publiques avec connexion réussie' + (k.pays.length ? ' · ' + k.pays.map(T.nomPays).join(', ') : ''), k.ipSucces ? 'rouge' : ''),
-    T.kpi('', T.nb(k.echecs), `échecs de connexion · ${k.ipBrute} IP en force brute`, k.echecs > 500 ? 'orange' : ''),
-    T.kpi('', T.nb(k.outils.length), 'outils sensibles lancés pendant les fenêtres', k.outils.length ? 'rouge' : '', k.outils.join(', ')),
-    T.kpi('', T.volume(k.envoyeMax), `envoyés au maximum${k.envoyeFen ? ' (fenêtre ' + k.envoyeFen + ')' : ''}`, k.envoyeMax > 500 ? 'rouge' : ''),
-    T.kpi('', T.nb(k.chiffres), 'fichiers chiffrés', k.chiffres ? 'rouge' : ''),
-    T.kpi('', T.nb(k.anti), "traces d'anti-forensique", k.anti ? 'orange' : ''),
-    T.kpi('', T.nb(k.defender), 'détections Defender', k.defender ? 'orange' : '')));
+    T.kpi('', T.nb(k.sessions), 'connexions au poste depuis Internet ou un VPN', k.sessions ? 'rouge' : ''),
+    T.kpi('', T.nb(k.ipSucces), 'adresses IP d\'Internet qui ont réussi à se connecter' + (k.pays.length ? ' · ' + k.pays.map(T.nomPays).join(', ') : ''), k.ipSucces ? 'rouge' : ''),
+    T.kpi('', T.nb(k.echecs), `connexions ratées · ${k.ipBrute} adresses IP qui essaient des mots de passe en masse`, k.echecs > 500 ? 'orange' : ''),
+    T.kpi('', T.nb(k.outils.length), 'outils à risque lancés pendant les périodes suspectes', k.outils.length ? 'rouge' : '', k.outils.join(', ')),
+    T.kpi('', T.volume(k.envoyeMax), `envoyés sur Internet au plus${k.envoyeFen ? ' (période ' + k.envoyeFen + ')' : ''}`, k.envoyeMax > 500 ? 'rouge' : ''),
+    T.kpi('', T.nb(k.chiffres), 'fichiers chiffrés par un rançongiciel', k.chiffres ? 'rouge' : ''),
+    T.kpi('', T.nb(k.anti), 'traces effacées ou protections coupées', k.anti ? 'orange' : ''),
+    T.kpi('', T.nb(k.defender), "alertes de l'antivirus Defender", k.defender ? 'orange' : '')));
   c.append(h('p', { class: 'lbl', style: 'margin-bottom:6px' }, `Alertes · ${v.alertes.length}`));
   for (const a of v.alertes) c.append(h('div', { class: 'alerte n' + a.niv }, h('div', {}, a.texte), h('div', { class: 'actions' }, T.bps(a.preuves, 2), a.onglet ? h('a', { class: 'lk doux petit', href: '#' + T.route(a.onglet) }, 'Voir →') : '')));
-  if (!v.alertes.length) c.append(T.vide('Aucune alerte majeure calculée. Lire quand même la grille par canal.'));
+  if (!v.alertes.length) c.append(T.vide('Aucune alerte majeure. Regardez quand même les points vérifiés.'));
 };
 /** traces identiques regroupees (ex. 40 evenements 5007 : une ligne x 40, premiere et derniere date) */
 T.grouperAnti = anti => {
@@ -334,52 +338,61 @@ T.grouperAnti = anti => {
 };
 
 /* ---------------------------------------------------------------- memoire vive */
-const pillRam = n => n >= 3 ? h('span', { class: 'pill rouge' }, 'fort') : n >= 2 ? h('span', { class: 'pill orange' }, 'à vérifier') : n >= 1 ? h('span', { class: 'pill gris' }, 'à noter') : '';
+const pillRam = n => n >= 3 ? h('span', { class: 'pill rouge' }, 'suspect') : n >= 2 ? h('span', { class: 'pill orange' }, 'à vérifier') : n >= 1 ? h('span', { class: 'pill gris' }, 'à noter') : '';
+const ETATS_TCP = { ESTABLISHED: 'connectée', LISTENING: 'en attente', LISTEN: 'en attente', CLOSED: 'fermée', CLOSE_WAIT: 'en fermeture', TIME_WAIT: 'en fermeture', FIN_WAIT1: 'en fermeture', FIN_WAIT2: 'en fermeture', LAST_ACK: 'en fermeture', CLOSING: 'en fermeture', SYN_SENT: 'en ouverture', SYN_RCVD: 'en ouverture' };
+T.etatTcp = e => ETATS_TCP[String(e || '').toUpperCase()] || e || '–';
 T.filtreRam = '';
+/** la page tient sans la lecture de la memoire : ce qu'il faut pour qu'elle soit lue, en trois conditions */
+const conditionsRam = () => h('ul', { class: 'lignes' }, [
+  ['1', 'Une copie de la mémoire vive dans la collecte', 'Elle est faite seulement en collecte complète, sur une clé ou un disque NTFS ou exFAT avec assez de place (au moins la taille de la mémoire du poste).'],
+  ['2', 'Une analyse sur un autre PC que le poste examiné', 'Sur votre PC : DigSpill → « Analyser une collecte ». Jamais sur le poste examiné : sa mémoire peut contenir le programme malveillant.'],
+  ['3', 'Les cases « Analyse complète » et « Utiliser Internet » cochées', 'Internet sert une seule fois : DigSpill télécharge chez Microsoft la description de Windows qui permet de lire la mémoire. Elle est ensuite gardée dans le kit.']
+].map(([n, t, d]) => h('li', {}, h('span', { class: 'mono gras', style: 'min-width:20px' }, n), h('div', {}, h('div', { class: 'gras' }, t), h('div', { class: 'doux petit' }, d)))));
+const detailRam = (m, ouvert) => m.lecture ? h('details', { style: 'margin-top:4px', open: ouvert || null }, h('summary', { class: 'petit gras' }, 'Détail technique de la lecture (ram_lecture.txt)'), h('pre', { class: 'apercu', style: 'margin-top:8px' }, m.lecture)) : '';
 T.ECRANS.memoire = c => {
   const m = T.memoireVive();
-  c.append(h('h1', {}, 'Mémoire vive'), h('p', { class: 'sous-titre' }, "Ce qui tournait sur le poste au moment de la collecte, lu au bureau dans la copie de la RAM (Volatility 3). Montre aussi ce qui n'a laissé aucune trace sur le disque."));
-  if (!m.lue) { c.append(T.vide("Elle est lue au bureau : DigSpill → Analyser une collecte, option « Analyse complète ». Il faut une image RAM dans la collecte (collecte complète, clé PREUVES exFAT ou NTFS assez grande).")); if (m.lecture) c.append(T.carte('Comment la RAM a été traitée', 'ram_lecture.txt', h('pre', { class: 'apercu' }, m.lecture))); return; }
+  c.append(h('h1', {}, 'Mémoire vive'), h('p', { class: 'sous-titre' }, "Les programmes ouverts et les connexions du poste au moment de la collecte, lus dans la copie de sa mémoire vive (RAM). Elle montre aussi un programme malveillant qui n'a laissé aucune trace sur le disque."));
+  if (!m.lue) { c.append(T.carte('Pour lire la mémoire vive, il faut :', '', conditionsRam(), detailRam(m))); return; }
   c.append(h('div', { class: 'grille g4', style: 'margin-bottom:16px' },
-    T.kpi('', T.nb(m.procs.length), 'processus lus dans la RAM', '', m.ecartees ? `${m.ecartees} lignes illisibles écartées (copie faite pendant que Windows tournait)` : ''),
-    T.kpi('', T.nb(m.suspects.length), 'avec un indice fort', m.suspects.length ? 'rouge' : 'vert'),
-    T.kpi('', T.nb(m.procs.filter(p => !p.fin).length), 'encore actifs à la collecte'),
-    T.kpi('', T.nb(m.etablies.length), 'connexions établies lues', m.etablies.some(x => x.niveau >= 2) ? 'rouge' : '')));
+    T.kpi('', T.nb(m.procs.length), 'programmes lus dans la mémoire', '', m.ecartees ? `${m.ecartees} lignes illisibles écartées : normal, la copie est faite pendant que Windows tourne` : ''),
+    T.kpi('', T.nb(m.suspects.length), 'programmes suspects', m.suspects.length ? 'rouge' : 'vert'),
+    T.kpi('', T.nb(m.procs.filter(p => !p.fin).length), 'encore ouverts au moment de la collecte'),
+    T.kpi('', T.nb(m.etablies.length), 'connexions actives vers une autre machine', m.etablies.some(x => x.niveau >= 2) ? 'rouge' : '')));
   const aRegarder = m.procs.filter(p => p.niveau >= 1).sort((a, b) => b.niveau - a.niveau || (T.pdate(a.debut) - T.pdate(b.debut)));
-  c.append(T.carte(`À regarder · ${aRegarder.length}`, 'processus qui portent un indice : nom imité, outil d\'envoi, dossier public, commande encodée…', T.tableau([
+  c.append(T.carte(`À regarder · ${aRegarder.length}`, 'programmes avec un signe suspect : nom qui imite Windows, outil d\'envoi de fichiers, dossier public, commande cachée…', T.tableau([
     { t: '', l: '84px', v: p => pillRam(p.niveau) },
-    { t: 'Processus', v: p => h('div', {}, h('div', { class: 'mono gras' }, p.nom), h('div', { class: 'pale petit' }, `PID ${p.pid} · parent ${p.parent || '?'} (${p.ppid})`)) },
-    { t: 'Lancé', l: '110px', v: p => h('div', {}, h('div', { class: 'mono' }, T.fcourt(p.debut)), h('div', { class: 'pale petit' }, p.fin ? 'terminé ' + T.fcourt(p.fin) : 'actif à la collecte')) },
+    { t: 'Programme', v: p => h('div', {}, h('div', { class: 'mono gras' }, p.nom), h('div', { class: 'pale petit' }, `n° ${p.pid} · lancé par ${p.parent || '?'} (n° ${p.ppid})`)) },
+    { t: 'Lancé', l: '110px', v: p => h('div', {}, h('div', { class: 'mono' }, T.fcourt(p.debut)), h('div', { class: 'pale petit' }, p.fin ? 'fermé ' + T.fcourt(p.fin) : 'encore ouvert')) },
     { t: 'Pourquoi', v: p => h('ul', { class: 'petit', style: 'margin:0;padding-left:16px' }, p.indices.map(i => h('li', {}, i))) },
-    { t: 'Ligne de commande', v: p => h('div', { class: 'mono petit', style: 'word-break:break-all' }, p.cmd.slice(0, 260) || '–') },
-    { t: 'Preuve', l: '150px', v: p => T.bp(p.id) }], aRegarder, { vide: 'Aucun processus ne porte d\'indice.', cls: p => p.niveau >= 3 ? 'attention' : '' })));
+    { t: 'Commande lancée', v: p => h('div', { class: 'mono petit', style: 'word-break:break-all' }, p.cmd.slice(0, 260) || '–') },
+    { t: 'Preuve', l: '150px', v: p => T.bp(p.id) }], aRegarder, { vide: 'Aucun programme suspect.', cls: p => p.niveau >= 3 ? 'attention' : '' })));
   const ext = m.reseau.filter(x => x.ip && !/^(0\.0\.0\.0|::|\*|127\.|::1$)/.test(x.ip)).sort((a, b) => b.niveau - a.niveau);
-  const note = m.lecture.split(/\r?\n/).find(l => /ne lit pas encore la table des connexions/.test(l));
-  c.append(T.carte(`Connexions lues dans la RAM · ${ext.length}`, m.reseau.length ? `module ${m.reseau[0].source} · ${m.reseau.length} lignes au total (ports en écoute compris)` : '',
+  const note = m.lecture.split(/\r?\n/).find(l => /ne (lit|sait) pas encore (la table|lire la liste) des connexions/.test(l));
+  c.append(T.carte(`Connexions vers d'autres machines · ${ext.length}`, m.reseau.length ? `${m.reseau.length} lignes lues en tout, y compris les ports simplement ouverts en attente` : '',
     note ? h('div', { class: 'alerte n1' }, h('div', {}, note.trim(), ' ', h('a', { class: 'lk', href: '#details/ip' }, 'Connexions relevées en direct →'))) : '',
-    T.tableau([{ t: '', l: '84px', v: x => pillRam(x.niveau) }, { t: 'Distant', v: x => h('span', { class: 'mono' }, `${x.ip}:${x.port}`) }, { t: 'État', l: '110px', v: x => x.etat },
-      { t: 'Processus', v: x => h('span', {}, h('span', { class: 'mono' }, x.nom || '?'), h('span', { class: 'pale petit' }, ` PID ${x.pid}`)) }, { t: 'Local', v: x => h('span', { class: 'mono petit' }, x.local) },
-      { t: 'Créée', l: '110px', v: x => h('span', { class: 'mono' }, T.fcourt(x.cree)) }, { t: 'Preuve', l: '150px', v: x => T.bp(x.id) }], ext, { max: 300, vide: 'Aucune connexion vers une autre machine lue dans la RAM.' })));
+    T.tableau([{ t: '', l: '84px', v: x => pillRam(x.niveau) }, { t: 'Autre machine (IP:port)', v: x => h('span', { class: 'mono' }, `${x.ip}:${x.port}`) }, { t: 'État', l: '110px', v: x => T.etatTcp(x.etat) },
+      { t: 'Programme', v: x => h('span', {}, h('span', { class: 'mono' }, x.nom || '?'), h('span', { class: 'pale petit' }, ` n° ${x.pid}`)) }, { t: 'Côté poste', v: x => h('span', { class: 'mono petit' }, x.local) },
+      { t: 'Ouverte', l: '110px', v: x => h('span', { class: 'mono' }, T.fcourt(x.cree)) }, { t: 'Preuve', l: '150px', v: x => T.bp(x.id) }], ext, { max: 300, vide: 'Aucune connexion vers une autre machine lue dans la mémoire.' })));
   const tous = h('div');
   const rendre = () => {
     const q = T.filtreRam.toLowerCase();
     const l = m.procs.filter(p => !q || (p.nom + ' ' + p.cmd + ' ' + p.pid).toLowerCase().includes(q));
     tous.innerHTML = '';
-    tous.append(T.tableau([{ t: 'PID', l: '64px', v: p => h('span', { class: 'mono' }, p.pid) }, { t: 'Processus', v: p => h('span', { class: 'mono' + (p.niveau >= 2 ? ' gras' : '') }, p.nom) },
-      { t: 'Parent', v: p => h('span', { class: 'petit' }, `${p.parent || '?'} (${p.ppid})`) }, { t: 'Lancé', l: '110px', v: p => h('span', { class: 'mono' }, T.fcourt(p.debut)) },
-      { t: 'Fin', l: '110px', v: p => h('span', { class: 'mono pale' }, p.fin ? T.fcourt(p.fin) : 'actif') },
-      { t: 'Ligne de commande', v: p => h('span', { class: 'mono petit', style: 'word-break:break-all' }, p.cmd.slice(0, 200)) }, { t: '', l: '84px', v: p => pillRam(p.niveau) }],
-      l, { max: 600, hauteur: '520px', vide: 'Aucun processus pour ce filtre.' }));
+    tous.append(T.tableau([{ t: 'N°', l: '64px', v: p => h('span', { class: 'mono' }, p.pid) }, { t: 'Programme', v: p => h('span', { class: 'mono' + (p.niveau >= 2 ? ' gras' : '') }, p.nom) },
+      { t: 'Lancé par', v: p => h('span', { class: 'petit' }, `${p.parent || '?'} (n° ${p.ppid})`) }, { t: 'Lancé', l: '110px', v: p => h('span', { class: 'mono' }, T.fcourt(p.debut)) },
+      { t: 'Fermé', l: '110px', v: p => h('span', { class: 'mono pale' }, p.fin ? T.fcourt(p.fin) : 'encore ouvert') },
+      { t: 'Commande lancée', v: p => h('span', { class: 'mono petit', style: 'word-break:break-all' }, p.cmd.slice(0, 200)) }, { t: '', l: '84px', v: p => pillRam(p.niveau) }],
+      l, { max: 600, hauteur: '520px', vide: 'Aucun programme pour ce filtre.' }));
   };
-  c.append(T.carte(`Tous les processus · ${m.procs.length}`, 'triés par heure de lancement', h('div', { class: 'filtres' },
-    h('input', { type: 'search', class: 'texte', placeholder: 'Filtrer : nom, PID, ligne de commande', value: T.filtreRam, 'aria-label': 'Filtrer les processus', style: 'width:320px', oninput: e => { T.filtreRam = e.target.value; rendre(); } }),
-    h('button', { class: 'btn', style: 'margin-left:auto', onclick: () => T.telecharger(`${T.identite().poste}_ram_processus.csv`, T.texte('ram_processus')) }, 'CSV')), tous));
+  c.append(T.carte(`Tous les programmes · ${m.procs.length}`, 'du plus ancien au plus récent · n° = numéro donné par Windows (PID)', h('div', { class: 'filtres' },
+    h('input', { type: 'search', class: 'texte', placeholder: 'Chercher : nom, numéro, commande', value: T.filtreRam, 'aria-label': 'Chercher un programme', style: 'width:320px', oninput: e => { T.filtreRam = e.target.value; rendre(); } }),
+    h('button', { class: 'btn', style: 'margin-left:auto', onclick: () => T.telecharger(`${T.identite().poste}_ram_processus.csv`, T.texte('ram_processus')) }, 'Télécharger (CSV)')), tous));
   rendre();
-  c.append(T.carte('Comment la RAM a été lue', 'ram_lecture.txt : image, symboles, modules Volatility, limites', h('pre', { class: 'apercu' }, m.lecture)));
+  c.append(T.carte('Comment la mémoire a été lue', 'outil Volatility 3', detailRam(m, true)));
 };
 T.ECRANS.synthese = c => {
   const s = T.texte('SYNTHESE.txt');
-  c.append(h('h1', {}, 'SYNTHESE.txt'), h('p', { class: 'sous-titre' }, 'Tel qu\'écrit par Collecte-Exfil.ps1, sans retouche.'), s ? h('pre', { class: 'apercu', style: 'max-height:none' }, s) : T.vide('Fichier absent.'));
+  c.append(h('h1', {}, 'Résumé de la collecte'), h('p', { class: 'sous-titre' }, 'Le texte écrit par DigSpill sur le poste, juste après la collecte (SYNTHESE.txt), sans retouche.'), s ? h('pre', { class: 'apercu', style: 'max-height:none' }, s) : T.vide('Résumé absent de la collecte.'));
 };
 
 /* ---------------------------------------------------------------- tous les evenements (ancienne chronologie, sans champ de recherche) */
@@ -387,7 +400,7 @@ T.filtreChrono = { g: 0, q: '', voies: null };
 T.ECRANS.evenements = c => {
   const ch = T.chronologie(), F = T.filtreChrono, fen = T.fenetres();
   if (!F.voies) F.voies = new Set(ch.voies);
-  c.append(h('h1', {}, 'Tous les événements'), h('p', { class: 'sous-titre' }, `Zones rouges = fenêtres d'analyse · clic sur un point = sa preuve · Ctrl K pour chercher une IP, un compte ou un programme.`));
+  c.append(h('h1', {}, 'Tous les événements'), h('p', { class: 'sous-titre' }, `Zones rouges = périodes suspectes · cliquez sur un point pour voir sa preuve · Ctrl K pour chercher une adresse IP, un compte ou un programme.`));
   const graphEl = h('div', { class: 'graph haut', id: 'gFrise' });
   const liste = h('div');
   const filtrer = () => ch.evenements.filter(e => e.g >= F.g && F.voies.has(e.voie) && (!F.q || (e.titre + ' ' + e.detail + ' ' + (e.ip || '') + ' ' + (e.compte || '')).toLowerCase().includes(F.q)));
@@ -404,17 +417,17 @@ T.ECRANS.evenements = c => {
     liste.innerHTML = '';
     liste.append(T.carte(`Événements · ${T.nb(vis.length)}`, zoom ? 'limités à la période zoomée' : '', T.tableau([
       { t: '', l: '18px', v: e => h('span', { title: 'gravité ' + e.g, style: `display:inline-block;width:8px;height:8px;border-radius:50%;background:${T.COUL['g' + e.g]}` }) },
-      { t: 'Date', l: '120px', v: e => h('span', { class: 'mono' }, T.fcourt(e.t)) }, { t: 'Voie', l: '110px', v: e => e.voie },
+      { t: 'Date', l: '120px', v: e => h('span', { class: 'mono' }, T.fcourt(e.t)) }, { t: 'Catégorie', l: '130px', v: e => T.nomVoie(e.voie) },
       { t: 'Événement', v: e => h('div', {}, h('div', { class: e.g >= 2 ? 'gras' : '' }, e.titre), h('div', { class: 'pale petit' }, e.detail.slice(0, 180))) },
-      { t: 'Fen.', l: '50px', v: e => e.fen ? h('span', { class: 'pill rouge' }, e.fen) : '' }, { t: 'Preuve', l: '200px', v: e => T.bp(e.id) }],
+      { t: 'Période', l: '60px', v: e => e.fen ? h('span', { class: 'pill rouge', title: 'pendant la période suspecte ' + e.fen }, e.fen) : '' }, { t: 'Preuve', l: '200px', v: e => T.bp(e.id) }],
       vis, { max: 600 })));
   };
   const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Gravité' }, [['Tout', 0], ['Notable', 1], ['Important', 2], ['Critique', 3]].map(([l, g]) => h('button', { type: 'button', class: F.g === g ? 'actif' : '', 'aria-pressed': String(F.g === g), onclick: e => { F.g = g; T.$$('button', seg).forEach(b => { b.classList.remove('actif'); b.setAttribute('aria-pressed', 'false'); }); e.target.classList.add('actif'); e.target.setAttribute('aria-pressed', 'true'); dessiner(); } }, l)));
   const zooms = h('div', { class: 'seg', role: 'group', 'aria-label': 'Zoom' }, h('button', { type: 'button', onclick: () => { zoom = null; dessiner(); } }, 'Tout'), fen.map(w => h('button', { type: 'button', title: w.motif, onclick: () => { zoom = [+w.debut - 30 * 60e3, +w.fin + 30 * 60e3]; dessiner(); } }, w.id)));
-  const voies = h('div', { class: 'filtres' }, ch.voies.map(v => h('label', { class: 'pill gris', style: 'cursor:pointer' }, h('input', { type: 'checkbox', checked: F.voies.has(v), onchange: e => { e.target.checked ? F.voies.add(v) : F.voies.delete(v); dessiner(); } }), ` ${v} (${ch.compte[v]})`)));
+  const voies = h('div', { class: 'filtres' }, ch.voies.map(v => h('label', { class: 'pill gris', style: 'cursor:pointer' }, h('input', { type: 'checkbox', checked: F.voies.has(v), onchange: e => { e.target.checked ? F.voies.add(v) : F.voies.delete(v); dessiner(); } }), ` ${T.nomVoie(v)} (${ch.compte[v]})`)));
   const filtreQ = F.q ? h('span', { class: 'pill bleu' }, `Filtre : ${F.q} `, h('button', { type: 'button', class: 'lk', 'aria-label': 'Retirer le filtre', onclick: () => { F.q = ''; T.rafraichir(); } }, 'retirer')) : '';
   c.append(T.carte('', '', h('div', { class: 'filtres' }, h('span', { class: 'pale petit' }, 'Gravité'), seg, h('span', { class: 'pale petit', style: 'margin-left:10px' }, 'Zoom'), zooms, filtreQ), voies, graphEl,
-    ch.tronque ? h('div', { class: 'pale petit' }, `${T.nb(ch.tronque)} exécutions ordinaires hors fenêtres non affichées (bruit).`) : ''), liste);
+    ch.tronque ? h('div', { class: 'pale petit' }, `${T.nb(ch.tronque)} lancements de programmes ordinaires, hors périodes suspectes, masqués pour la lisibilité.`) : ''), liste);
   if (T.zoomFenetre) { const w = fen.find(x => x.id === T.zoomFenetre); if (w) zoom = [+w.debut - 30 * 60e3, +w.fin + 30 * 60e3]; T.zoomFenetre = null; }
   requestAnimationFrame(dessiner);
 };
@@ -423,15 +436,15 @@ T.ECRANS.evenements = c => {
 T.filtreIp = 'interessantes';
 T.ECRANS.ip = c => {
   const a = T.analyseIp(), pub = a.ips.filter(e => e.type === 'PUBLIQUE'), b = T.D.bases || {};
-  c.append(h('h1', {}, 'IP et pays'), h('p', { class: 'sous-titre' }, 'Pays et opérateur trouvés hors ligne · listes publiques comparées en local · rien n\'est envoyé sans clic'));
+  c.append(h('h1', {}, 'Adresses IP et pays'), h('p', { class: 'sous-titre' }, "Pays et opérateur trouvés sans Internet, listes publiques d'adresses malveillantes comparées sur place. Rien n'est envoyé sans votre clic."));
   c.append(h('div', { class: 'grille g4', style: 'margin-bottom:16px' },
-    T.kpi('', T.nb(pub.length), 'IP publiques vues'), T.kpi('', T.nb(a.pays.length), 'pays'),
-    T.kpi('', T.nb(pub.filter(e => e.succes && !e.blanche).length), 'avec connexion réussie', pub.some(e => e.succes && !e.blanche) ? 'rouge' : 'vert'),
-    T.kpi('', T.nb(pub.filter(e => e.listes.length).length), 'sur une liste noire publique', pub.some(e => e.listes.length) ? 'orange' : '')));
+    T.kpi('', T.nb(pub.length), "adresses IP d'Internet vues"), T.kpi('', T.nb(a.pays.length), 'pays'),
+    T.kpi('', T.nb(pub.filter(e => e.succes && !e.blanche).length), 'ont réussi à se connecter', pub.some(e => e.succes && !e.blanche) ? 'rouge' : 'vert'),
+    T.kpi('', T.nb(pub.filter(e => e.listes.length).length), "sur une liste publique d'adresses malveillantes", pub.some(e => e.listes.length) ? 'orange' : '')));
   const carte = h('div', { class: 'graph carte-monde', id: 'gCarte' });
-  c.append(T.carte('Origine des connexions', 'rouge = connexion réussie · orange = échecs seulement', carte,
-    h('div', { class: 'pale petit' }, b.asn ? `Base pays/opérateur : ${b.asn.source} du ${b.asn.date}` : 'Base de géolocalisation absente à la génération : régénérer le fichier avec Internet.',
-      b.ville ? ` · villes : ${b.ville.source} du ${b.ville.date}` : '', ' · ', (b.listes || []).filter(l => l.date).length ? `listes : ${(b.listes || []).filter(l => l.date).map(l => l.nom).join(', ')}` : 'listes noires non téléchargées')));
+  c.append(T.carte('Origine des connexions', 'rouge = connexion réussie · orange = tentatives ratées seulement', carte,
+    h('div', { class: 'pale petit' }, b.asn ? `Base pays/opérateur : ${b.asn.source} du ${b.asn.date}` : 'Base des pays absente : régénérez le rapport avec Internet.',
+      b.ville ? ` · villes : ${b.ville.source} du ${b.ville.date}` : '', ' · ', (b.listes || []).filter(l => l.date).length ? `listes : ${(b.listes || []).filter(l => l.date).map(l => l.nom).join(', ')}` : "listes d'adresses malveillantes non téléchargées")));
   requestAnimationFrame(() => T.graphCarte(carte, a));
   const tbl = h('div');
   const rendre = () => {
@@ -439,32 +452,32 @@ T.ECRANS.ip = c => {
     const lignes = a.ips.filter(e => f === 'toutes' ? true : f === 'succes' ? e.succes : f === 'brute' ? e.echecs >= 20 : f === 'listes' ? e.listes.length : (e.type !== 'Privee' && (e.succes || e.echecs || e.active)));
     tbl.innerHTML = '';
     tbl.append(T.tableau([
-      { t: 'Score', l: '60px', v: e => h('span', { class: 'pill ' + (e.blanche ? 'vert' : e.score >= 5 ? 'rouge' : e.score >= 3 ? 'orange' : 'gris'), title: e.raisons.join('\n') }, e.blanche ? 'blanche' : e.score) },
-      { t: 'IP', v: e => h('div', {}, h('div', { class: 'mono gras' }, e.ip), h('div', { class: 'pale petit' }, e.type)) },
+      { t: 'Risque', l: '60px', v: e => h('span', { class: 'pill ' + (e.blanche ? 'vert' : e.score >= 5 ? 'rouge' : e.score >= 3 ? 'orange' : 'gris'), title: (e.blanche ? 'adresse déclarée légitime\n' : 'note de risque de 0 à 10\n') + e.raisons.join('\n') }, e.blanche ? 'légitime' : e.score) },
+      { t: 'Adresse IP', v: e => h('div', {}, h('div', { class: 'mono gras' }, e.ip), h('div', { class: 'pale petit' }, T.typeIpLib(e.type))) },
       { t: 'Pays', v: e => e.pays ? h('span', {}, T.drapeau(e.pays), ' ', T.nomPays(e.pays), e.ville ? h('div', { class: 'pale petit' }, e.ville) : '') : '–' },
-      { t: 'Opérateur', v: e => h('div', {}, h('div', {}, e.operateur || '–'), e.categorie ? h('span', { class: 'pill ' + (e.categorie.startsWith('Heb') ? 'rouge' : e.categorie.startsWith('FAI') ? 'bleu' : 'gris') }, e.categorie) : '') },
-      { t: 'Succès', l: '60px', v: e => e.succes ? h('b', { style: 'color:var(--red)' }, T.nb(e.succes)) : '0' }, { t: 'Échecs', l: '70px', v: e => T.nb(e.echecs) },
+      { t: 'Opérateur', v: e => h('div', {}, h('div', {}, e.operateur || '–'), e.categorie ? h('span', { class: 'pill ' + (/^H[eé]b/.test(e.categorie) ? 'rouge' : /^(FAI|Fournisseur)/.test(e.categorie) ? 'bleu' : 'gris') }, e.categorie) : '') },
+      { t: 'Réussies', l: '70px', v: e => e.succes ? h('b', { style: 'color:var(--red)' }, T.nb(e.succes)) : '0' }, { t: 'Ratées', l: '70px', v: e => T.nb(e.echecs) },
       { t: 'Période', v: e => h('span', { class: 'petit' }, T.fcourt(e.premier), e.dernier && e.dernier !== e.premier ? ' → ' + T.fcourt(e.dernier) : '') },
       { t: 'Comptes', v: e => h('span', { class: 'petit' }, e.comptes.slice(0, 4).join(', ')) },
       { t: 'Pourquoi', v: e => h('div', { class: 'petit' }, e.listes.map(l => h('span', { class: 'pill rouge', style: 'margin:1px' }, '' + l.nom)), h('div', { class: 'doux' }, e.raisons.filter(r => !r.startsWith('liste ')).join(' · '))) },
       { t: 'Preuves', v: e => T.bps(e.preuves, 2) },
-      { t: '', l: '170px', v: e => h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, e.type === 'PUBLIQUE' || e.type === 'VPN/CGNAT' ? h('button', { class: 'btn petit', title: 'Ajouter / retirer de la liste blanche (IP légitime : box du cabinet, technicien…)', onclick: () => T.basculerBlanche(e.ip) }, e.blanche ? 'Retirer' : 'Légitime') : '',
-          e.type === 'PUBLIQUE' ? h('button', { class: 'btn petit', title: 'Interroger Shodan InternetDB (envoie uniquement cette IP)', onclick: ev => T.internetDb(e.ip, ev.target) }, 'InternetDB') : '') }],
+      { t: '', l: '170px', v: e => h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, e.type === 'PUBLIQUE' || e.type === 'VPN/CGNAT' ? h('button', { class: 'btn petit', title: 'Déclarer cette adresse légitime (box du cabinet, technicien…) : elle ne sera plus signalée', onclick: () => T.basculerBlanche(e.ip) }, e.blanche ? 'Plus légitime' : 'Légitime') : '',
+          e.type === 'PUBLIQUE' ? h('button', { class: 'btn petit', title: "Demander à Shodan InternetDB ce qu'il sait de cette adresse (seule l'adresse est envoyée)", onclick: ev => T.internetDb(e.ip, ev.target) }, 'InternetDB') : '') }],
       lignes, { max: 400, cls: e => e.score >= 5 ? 'attention' : '', vide: 'Aucune IP pour ce filtre.' }));
   };
-  const seg = h('div', { class: 'seg' }, [['interessantes', 'À regarder'], ['succes', 'Connexions réussies'], ['brute', 'Force brute'], ['listes', 'Sur une liste'], ['toutes', 'Toutes']].map(([k, l]) =>
+  const seg = h('div', { class: 'seg' }, [['interessantes', 'À regarder'], ['succes', 'Connexions réussies'], ['brute', 'Essais de mots de passe'], ['listes', 'Sur une liste'], ['toutes', 'Toutes']].map(([k, l]) =>
     h('button', { class: T.filtreIp === k ? 'actif' : '', onclick: ev => { T.filtreIp = k; T.$$('button', seg).forEach(x => x.classList.remove('actif')); ev.target.classList.add('actif'); rendre(); } }, l)));
-  c.append(T.carte('Adresses IP', 'Légitime = liste blanche, partagée via Réglages · InternetDB = envoie cette IP seulement', h('div', { class: 'filtres' }, seg,
-    h('button', { class: 'btn', style: 'margin-left:auto', onclick: () => T.telecharger(`${T.identite().poste}_ip.csv`, T.versCsv(a.ips.map(e => ({ IP: e.ip, Type: e.type, Pays: e.pays, Ville: e.ville, ASN: e.asn, Operateur: e.operateur, Categorie: e.categorie, Succes: e.succes, Echecs: e.echecs, Premier: e.premier, Dernier: e.dernier, Score: e.score, Raisons: e.raisons.join(' | '), Listes: e.listes.map(l => l.nom).join(' | ') })))) }, 'CSV')), tbl));
+  c.append(T.carte('Adresses IP', "« Légitime » : adresse connue (box du cabinet, technicien), plus signalée ensuite · « InternetDB » : ce que Shodan sait de l'adresse", h('div', { class: 'filtres' }, seg,
+    h('button', { class: 'btn', style: 'margin-left:auto', onclick: () => T.telecharger(`${T.identite().poste}_ip.csv`, T.versCsv(a.ips.map(e => ({ IP: e.ip, Type: e.type, Pays: e.pays, Ville: e.ville, ASN: e.asn, Operateur: e.operateur, Categorie: e.categorie, Succes: e.succes, Echecs: e.echecs, Premier: e.premier, Dernier: e.dernier, Score: e.score, Raisons: e.raisons.join(' | '), Listes: e.listes.map(l => l.nom).join(' | ') })))) }, 'Télécharger (CSV)')), tbl));
   rendre();
   const g = h('div', { class: 'graph bas', id: 'gBrute', style: 'height:200px' });
-  c.append(T.carte('Force brute : échecs de connexion par jour', '4625', g));
-  requestAnimationFrame(() => { if (!T.graphBrute(g)) g.replaceWith(T.vide('Aucun échec de connexion collecté.')); });
+  c.append(T.carte('Connexions ratées, par jour', 'mot de passe ou compte refusé (événement 4625) : un grand nombre = quelqu\'un essaie des mots de passe en masse', g));
+  requestAnimationFrame(() => { if (!T.graphBrute(g)) g.replaceWith(T.vide('Aucune connexion ratée.')); });
 };
 T.basculerBlanche = ip => {
   const R = T.reglages(), lb = (R.liste_blanche || []).slice();
   const i = lb.findIndex(l => T.nettoyerIp(l.valeur) === ip);
-  if (i >= 0) lb.splice(i, 1); else { const note = prompt(`Pourquoi ${ip} est légitime ? (ex. box du cabinet, domicile du praticien, technicien)`, ''); if (note === null) return; lb.push({ valeur: ip, note: note || 'légitime' }); }
+  if (i >= 0) lb.splice(i, 1); else { const note = prompt(`Pourquoi ${ip} est-elle légitime ? (ex. box du cabinet, domicile du praticien, technicien)`, ''); if (note === null) return; lb.push({ valeur: ip, note: note || 'légitime' }); }
   T.majReglages({ liste_blanche: lb }); T.rafraichir();
 };
 T.internetDb = async (ip, bouton) => {
@@ -483,94 +496,94 @@ T.versCsv = lignes => { if (!lignes.length) return ''; const k = Object.keys(lig
 /* ---------------------------------------------------------------- exfiltration */
 T.ECRANS.exfil = c => {
   const ex = T.exfil(), R = T.reglages(), hy = ex.hyp;
-  c.append(h('h1', {}, 'Exfiltration'), h('p', { class: 'sous-titre' }, 'On ne peut pas toujours prouver ce qui est sorti. Mais on peut souvent borner ce qui a pu sortir.'));
+  c.append(h('h1', {}, 'Données sorties du poste'), h('p', { class: 'sous-titre' }, "On ne peut pas toujours prouver ce qui est sorti du poste. Mais on peut souvent dire ce qui a pu sortir, et ce qui était impossible."));
   const maj = (k, v) => { T.majReglages({ [k]: v }); T.rafraichir(); };
-  c.append(T.carte('Test de plausibilité : hypothèses', 'à ajuster avec le cabinet', h('div', { class: 'champs' },
-    h('div', { class: 'champ' }, h('label', {}, 'Débit montant de la box (Mbit/s)'), h('input', { type: 'number', min: 0, step: 0.1, value: R.debit_montant_mbps, placeholder: 'ex. 1 (ADSL), 40 (VDSL), 300 (fibre)', onchange: e => maj('debit_montant_mbps', e.target.value) }),
-      h('div', { class: 'aide' }, 'Test de débit ou contrat FAI. Sert à la borne physique.')),
+  c.append(T.carte('Hypothèses du calcul', 'à ajuster avec le cabinet', h('div', { class: 'champs' },
+    h('div', { class: 'champ' }, h('label', {}, "Débit d'envoi de la box (Mbit/s)"), h('input', { type: 'number', min: 0, step: 0.1, value: R.debit_montant_mbps, placeholder: 'ex. 1 (ADSL), 40 (VDSL), 300 (fibre)', onchange: e => maj('debit_montant_mbps', e.target.value) }),
+      h('div', { class: 'aide' }, 'Voir un test de débit ou le contrat internet. Sert à calculer le maximum que la box pouvait envoyer.')),
     h('div', { class: 'champ' }, h('label', {}, 'Taille de la base patients (Mo)'), h('input', { type: 'number', min: 0, value: R.taille_base_mo, placeholder: hy.tailleAuto ? `auto : ${T.nb(hy.tailleAuto)} Mo` : 'inconnue', onchange: e => maj('taille_base_mo', e.target.value) }),
-      h('div', { class: 'aide' }, hy.tailleAuto ? `Plus grosse base trouvée sur le disque : ${T.nb(hy.tailleAuto)} Mo.` : 'Aucune base métier trouvée par la collecte.')),
+      h('div', { class: 'aide' }, hy.tailleAuto ? `Plus grosse base trouvée sur le disque : ${T.nb(hy.tailleAuto)} Mo.` : 'Aucune base de données du cabinet trouvée par la collecte.')),
     h('div', { class: 'champ' }, h('label', {}, 'Compression supposée (×)'), h('input', { type: 'number', min: 1, step: 0.5, value: R.compression || 4, onchange: e => maj('compression', e.target.value) }),
       h('div', { class: 'aide' }, h('span', { class: 'deduction' }, 'déduction'), ' Une base se compresse souvent de 3 à 10 fois.'))),
     h('div', { class: 'petit doux', style: 'margin-top:8px' }, `Base compressée estimée : ${hy.comp ? T.nb(hy.comp) + ' Mo' : 'inconnue'}`)));
-  if (!ex.fenetres.length) c.append(T.vide('Aucune fenêtre d\'analyse : rien à borner.'));
+  if (!ex.fenetres.length) c.append(T.vide('Aucune période suspecte : rien à mesurer.'));
   for (const f of ex.fenetres) {
     const g = h('div', { class: 'graph bas', id: 'gPl' + f.id });
     c.append(h('div', { class: 'carte' }, h('h2', {}, `${f.id}`, h('span', { class: 'pale', style: 'font-weight:500' }, `${T.fcourt(f.debut)} → ${T.fcourt(f.fin)} · ${f.duree} min`), h('span', { style: 'margin-left:auto' }, T.pillNiveau(f.niveau))),
       h('div', { class: 'doux petit', style: 'margin:-4px 0 8px' }, f.motif),
       h('div', { class: 'grille g2' }, g, h('ul', { class: 'lignes' }, f.constats.map(x => h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, x))))),
-      f.apps.length ? h('details', { style: 'margin-top:8px' }, h('summary', { class: 'petit gras', style: 'cursor:pointer' }, `Applications qui ont envoyé (${f.apps.length})`),
-        T.tableau([{ t: 'Application', v: a => h('span', { class: 'mono' }, a.app) }, { t: 'Envoyé', v: a => T.nb(a.mo, 1) + ' Mo' }, { t: 'Écart à la référence', v: a => a.ecart ? h('span', { class: 'pill rouge' }, a.ecart) : '' }, { t: 'Preuves', v: a => T.bps(a.ids, 2) }], f.apps, { defile: false })) : '',
+      f.apps.length ? h('details', { style: 'margin-top:8px' }, h('summary', { class: 'petit gras', style: 'cursor:pointer' }, `Programmes qui ont envoyé des données (${f.apps.length})`),
+        T.tableau([{ t: 'Programme', v: a => h('span', { class: 'mono' }, a.app) }, { t: 'Envoyé', v: a => T.nb(a.mo, 1) + ' Mo' }, { t: "Par rapport à d'habitude", v: a => a.ecart ? h('span', { class: 'pill rouge' }, a.ecart) : '' }, { t: 'Preuves', v: a => T.bps(a.ids, 2) }], f.apps, { defile: false })) : '',
       h('div', { class: 'petit', style: 'margin-top:6px' }, 'Preuves : ', T.bp(f.preuveFenetre), ' ', T.bps(f.preuves, 4))));
     requestAnimationFrame(() => T.graphPlausibilite(g, f, hy));
   }
   const gs = h('div', { class: 'graph', id: 'gSrum' });
-  c.append(T.carte('Volumes envoyés par le poste (SRUM)', ex.ref ? `référence : moyenne ${T.nb(ex.ref.moyenne, 1)} · P95 ${T.nb(ex.ref.p95, 1)} · max ${T.nb(ex.ref.max, 1)} Mo/h` : '', ex.serie.length ? gs : T.vide('SRUM absent de l\'analyse.')));
+  c.append(T.carte('Données envoyées par le poste, heure par heure (SRUM)', ex.ref ? `d'habitude : ${T.nb(ex.ref.moyenne, 1)} Mo par heure en moyenne, ${T.nb(ex.ref.max, 1)} Mo au plus` : '', ex.serie.length ? gs : T.vide("Relevé des envois (SRUM) absent de l'analyse.")));
   if (ex.serie.length) requestAnimationFrame(() => T.graphSrum(gs, ex));
   c.append(
-    T.carte('Comptes de transfert configurés', 'rclone, FileZilla, WinSCP · identifiants seulement, mots de passe jamais lus', T.tableau([{ t: 'Outil', l: '90px', v: r => h('span', { class: 'gras' }, r.Outil) }, { t: 'Type', l: '80px', v: r => r.Type },
-      { t: 'Compte', v: r => h('span', { class: 'mono petit' }, r.Compte) }, { t: 'Secrets', v: r => h('span', { class: 'petit doux' }, r.Secrets) }, { t: 'Configuré', l: '110px', v: r => h('span', { class: 'mono' }, T.fcourt(r.Modifie)) },
-      { t: 'Profil', l: '110px', v: r => r.Profil }, { t: 'Preuve', v: r => T.bp(r._id) }], T.table('comptes_transfert').filter(r => r.Outil), { vide: 'Aucune configuration rclone, FileZilla ou WinSCP trouvée dans les profils.', defile: false })),
-    h('div', { class: 'grille g2' }, T.carte('Bases métier sur le disque', '', T.tableau([{ t: 'Chemin', v: b => h('span', { class: 'mono petit' }, b.chemin) }, { t: 'Taille', l: '90px', v: b => T.nb(b.mo) + ' Mo' }, { t: '', v: b => b.sauvegarde ? h('span', { class: 'pill gris' }, 'sauvegarde') : '' }, { t: 'Preuve', v: b => T.bp(b.id) }], ex.bases, { max: 20, vide: 'Aucune base métier trouvée (rancon\\bases_metier.csv).', defile: false })),
-    T.carte('Limites du test', '', h('ul', { class: 'lignes' }, T.LIMITES_EXFIL.map(x => h('li', {}, h('span', { class: 'ic' }, '•'), h('span', { class: 'petit' }, x)))))));
+    T.carte('Comptes de stockage en ligne configurés', 'rclone, FileZilla, WinSCP · seul le nom du compte est relevé, jamais le mot de passe', T.tableau([{ t: 'Outil', l: '90px', v: r => h('span', { class: 'gras' }, r.Outil) }, { t: 'Type', l: '80px', v: r => r.Type },
+      { t: 'Compte', v: r => h('span', { class: 'mono petit' }, r.Compte) }, { t: 'Mot de passe', v: r => h('span', { class: 'petit doux' }, r.Secrets) }, { t: 'Configuré', l: '110px', v: r => h('span', { class: 'mono' }, T.fcourt(r.Modifie)) },
+      { t: 'Profil', l: '110px', v: r => r.Profil }, { t: 'Preuve', v: r => T.bp(r._id) }], T.table('comptes_transfert').filter(r => r.Outil), { vide: 'Aucun compte rclone, FileZilla ou WinSCP configuré sur le poste.', defile: false })),
+    h('div', { class: 'grille g2' }, T.carte('Bases de données du cabinet sur le disque', '', T.tableau([{ t: 'Chemin', v: b => h('span', { class: 'mono petit' }, b.chemin) }, { t: 'Taille', l: '90px', v: b => T.nb(b.mo) + ' Mo' }, { t: '', v: b => b.sauvegarde ? h('span', { class: 'pill gris' }, 'sauvegarde') : '' }, { t: 'Preuve', v: b => T.bp(b.id) }], ex.bases, { max: 20, vide: 'Aucune base de données du cabinet trouvée.', defile: false })),
+    T.carte('Limites de ce calcul', '', h('ul', { class: 'lignes' }, T.LIMITES_EXFIL.map(x => h('li', {}, h('span', { class: 'ic' }, '•'), h('span', { class: 'petit' }, x)))))));
 };
 
 /* ---------------------------------------------------------------- visibilite */
 T.ECRANS.visibilite = c => {
   const v = T.visibilite();
-  c.append(h('h1', {}, 'Visibilité'), h('p', { class: 'sous-titre' }, "Une absence de trace ne prouve rien si la source ne regardait pas à ce moment. Cette carte montre ce qu'on ne pourra jamais savoir."));
+  c.append(h('h1', {}, 'Angles morts'), h('p', { class: 'sous-titre' }, "Ne rien trouver ne prouve rien si Windows ne notait rien à ce moment-là. Cette page montre ce qu'on ne pourra jamais savoir."));
   const g = h('div', { class: 'graph', id: 'gVisi', style: `height:${Math.max(260, 70 + v.sources.length * 26 + 90)}px` });
-  c.append(T.carte('Couverture des sources, heure par heure', 'cadres rouges = fenêtres de l\'attaquant', v.grille.heures.length ? g : T.vide('Aucune fenêtre d\'analyse.')));
+  c.append(T.carte('Ce que Windows notait, heure par heure', 'cadres rouges = périodes suspectes', v.grille.heures.length ? g : T.vide('Aucune période suspecte.')));
   if (v.grille.heures.length) requestAnimationFrame(() => T.graphVisibilite(g, v));
   c.append(h('div', { class: 'grille g2' },
-    T.carte('Par fenêtre', '', v.fenetres.length ? h('ul', { class: 'lignes' }, v.fenetres.map(w => h('li', {}, h('span', { class: 'ic gras' }, w.id),
-      h('div', {}, h('div', {}, h('b', {}, w.taux + ' %'), ' des sources couvrent la fenêtre'), h('div', { class: 'petit doux' }, w.sources.filter(s => s.statut !== 'couverte').map(s => `${s.source} : ${s.statut}`).join(' · ') || 'toutes couvertes'))))) : T.vide()),
-    T.carte("Traces d'anti-forensique", 'effacements, désactivations, exclusions', v.anti.length ? h('ul', { class: 'lignes' }, T.grouperAnti(v.anti).map(g => h('li', {}, h('span', { class: 'ic' }, ''),
+    T.carte('Par période suspecte', '', v.fenetres.length ? h('ul', { class: 'lignes' }, v.fenetres.map(w => h('li', {}, h('span', { class: 'ic gras' }, w.id),
+      h('div', {}, h('div', {}, h('b', {}, w.taux + ' %'), ' des sources notaient pendant toute la période'), h('div', { class: 'petit doux' }, w.sources.filter(s => s.statut !== 'couverte').map(s => `${s.source} : ${s.statut}`).join(' · ') || 'toutes notaient'))))) : T.vide()),
+    T.carte('Traces effacées, protections coupées', "journaux effacés, antivirus désactivé, dossiers exclus de l'antivirus…", v.anti.length ? h('ul', { class: 'lignes' }, T.grouperAnti(v.anti).map(g => h('li', {}, h('span', { class: 'ic' }, ''),
       h('div', {}, h('div', { class: 'gras' }, g.trace, g.n > 1 ? h('span', { class: 'pill gris', style: 'margin-left:8px' }, `× ${g.n}`) : ''),
         h('div', { class: 'petit doux' }, (g.debut ? (g.n > 1 && g.fin !== g.debut ? `du ${T.fcourt(g.debut)} au ${T.fcourt(g.fin)}` : T.fcourt(g.debut)) + ' · ' : '') + g.detail.slice(0, 160))),
       h('div', { class: 'droite' }, T.bps(g.ids, 2))))) : h('div', {}, 'Aucune trace détectée.'))));
-  c.append(T.carte('Sources', '', T.tableau([{ t: 'Source', v: s => s.source }, { t: 'État', v: s => h('span', { class: 'pill ' + (s.etat === 'present' ? 'vert' : s.etat === 'desactive' ? 'rouge' : 'gris') }, s.etat === 'present' ? 'présente' : s.etat === 'desactive' ? 'désactivée' : 'absente') },
+  c.append(T.carte('Sources de traces', 'journaux et relevés de Windows lus par DigSpill', T.tableau([{ t: 'Source', v: s => s.source }, { t: 'État', v: s => h('span', { class: 'pill ' + (s.etat === 'present' ? 'vert' : s.etat === 'desactive' ? 'rouge' : 'gris') }, s.etat === 'present' ? 'présente' : s.etat === 'desactive' ? 'désactivée' : 'absente') },
     { t: 'Du', v: s => T.fcourt(s.debut) }, { t: 'Au', v: s => T.fcourt(s.fin) }, { t: 'Preuve', v: s => T.bp(s.id) }], v.sources, { defile: false })));
 };
 
 /* ---------------------------------------------------------------- sante et RGPD */
 T.ECRANS.sante = c => {
   const s = T.sante(), v = T.vue(), R = T.reglages(), ex = T.exfil();
-  c.append(h('h1', {}, 'Santé et RGPD'), h('p', { class: 'sous-titre' }, 'Ce qui aide le cabinet à décider de la notification. La décision appartient au responsable de traitement et à son DPO.'));
+  c.append(h('h1', {}, 'Santé et RGPD'), h('p', { class: 'sous-titre' }, "Ce qui aide le cabinet à décider s'il doit déclarer l'incident à la CNIL. La décision appartient au cabinet (responsable de traitement) et à son DPO."));
   const dec = h('input', { type: 'datetime-local', value: (R.decouverte || '').replace(' ', 'T').slice(0, 16), onchange: e => { T.majReglages({ decouverte: e.target.value.replace('T', ' ') }); T.rafraichir(); } });
   const pire = ex.fenetres.reduce((m, f) => (!m || f.envoye > m.envoye) ? f : m, null);
   c.append(h('div', { class: 'grille g2' },
     T.carte('Délai CNIL (art. 33 RGPD : 72 h après la découverte)', '', h('div', { class: 'champ' }, h('label', {}, 'Date et heure de découverte'), dec,
-      h('div', { class: 'aide' }, R.decouverte && T.decouverteFiche() === R.decouverte ? 'Reprise de A_COMPLETER_TECHNICIEN.txt' : 'Saisie dans cette interface')),
+      h('div', { class: 'aide' }, R.decouverte && T.decouverteFiche() === R.decouverte ? 'Reprise de la fiche remplie pendant la collecte' : 'Saisie dans ce rapport')),
       v.cnil ? h('div', { style: 'margin-top:12px;font-size:18px' }, v.cnil.restantH < 0 ? h('b', { style: 'color:var(--red)' }, `Délai dépassé depuis ${Math.floor(-v.cnil.restantH)} h`) : h('span', {}, '', h('b', {}, `${Math.floor(v.cnil.restantH)} h ${p2m(v.cnil.restantH)}`), ' restantes'),
         h('div', { class: 'petit doux' }, `Échéance : ${T.flong(v.cnil.echeance)}`)) : '',
       h('div', { class: 'petit', style: 'margin-top:10px' }, 'Téléservice : ', h('a', { href: 'https://notifications.cnil.fr/notifications/index', target: '_blank', rel: 'noopener' }, 'notifications.cnil.fr'))),
     T.carte('Éléments pour le formulaire CNIL', 'pré-rempli, à vérifier', h('ul', { class: 'lignes' },
-      h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('b', {}, 'Nature : '), [T.vue().kpi.chiffres ? 'rançongiciel (chiffrement)' : '', T.vue().kpi.sessions ? 'accès à distance non autorisé' : '', pire && ['PLAUSIBLE', 'PARTIELLE'].includes(pire.niveau) ? 'exfiltration possible' : ''].filter(Boolean).join(', ') || 'à préciser')),
+      h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('b', {}, 'Nature : '), [T.vue().kpi.chiffres ? 'rançongiciel (chiffrement)' : '', T.vue().kpi.sessions ? 'accès à distance non autorisé' : '', pire && ['PLAUSIBLE', 'PARTIELLE'].includes(pire.niveau) ? 'vol de données possible' : ''].filter(Boolean).join(', ') || 'à préciser')),
       h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('b', {}, 'Catégories de données : '), s.categories.map(x => x.categorie).join(', ') || 'à préciser', ' ', h('span', { class: 'deduction' }, 'déduction'))),
       h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('b', {}, 'Nombre de personnes : '), 'à demander au cabinet (nombre de patients dans la base, pas de fichiers)')),
-      h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('b', {}, 'Exfiltration : '), pire ? `${T.NIVEAUX[pire.niveau].lib.toLowerCase()} (fenêtre ${pire.id}, ${T.nb(pire.envoye)} Mo envoyés)` : 'non évaluée')),
+      h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('b', {}, 'Données sorties : '), pire ? `${T.NIVEAUX[pire.niveau].lib.toLowerCase()} (période ${pire.id}, ${T.nb(pire.envoye)} Mo envoyés)` : 'non évaluée')),
       h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('b', {}, 'Mesures prises : '), 'isolement, collecte forensique, changement des mots de passe, chasse sur le parc (à compléter)'))))));
   c.append(T.carte('Logiciels et données de santé repérés', 'déduits des chemins et des sites : à confirmer avec le cabinet', s.logiciels.length ? T.tableau([
-    { t: 'Logiciel / source', v: t => h('div', {}, h('b', {}, t.logiciel), s.pendant.includes(t.logiciel) ? h('div', {}, h('span', { class: 'pill rouge' }, 'touché pendant une fenêtre')) : '') },
+    { t: 'Logiciel / source', v: t => h('div', {}, h('b', {}, t.logiciel), s.pendant.includes(t.logiciel) ? h('div', {}, h('span', { class: 'pill rouge' }, 'ouvert pendant une période suspecte')) : '') },
     { t: 'Données probables', v: t => h('div', {}, t.categories.map(x => h('span', { class: 'pill violet', style: 'margin:1px' }, x))) },
     { t: 'Traces', v: t => h('div', { class: 'petit' }, Object.entries(t.traces).map(([k, n]) => h('div', {}, `${n} × ${k}`))) },
     { t: 'Preuves', v: t => T.bps(t.preuves.map(p => p.id), 3) }], s.logiciels, { defile: false }) : T.vide('Aucun logiciel métier ni site santé repéré.')));
   const H = Object.assign({}, T.REGLAGES_DEFAUT.horaires, R.horaires || {});
   const horaires = h('div', { class: 'champs' }, T.JOURS.map((j, i) => h('div', { class: 'champ' }, h('label', {}, j), h('input', { value: H[i] || '', placeholder: 'fermé', onchange: e => { const n = Object.assign({}, H, { [i]: e.target.value }); T.majReglages({ horaires: n }); T.rafraichir(); } }))));
   const distantes = s.sessions.filter(x => ['PUBLIQUE', 'VPN/CGNAT'].includes(x.typeIp));
-  c.append(T.carte("Horaires du cabinet et sessions à distance", 'format 08:00-12:00,14:00-19:00', horaires,
+  c.append(T.carte('Horaires du cabinet et connexions à distance', 'format 08:00-12:00,14:00-19:00 · une connexion hors horaires est plus suspecte', horaires,
     h('div', { style: 'margin-top:12px' }, T.tableau([{ t: 'Début', v: x => T.fcourt(x.debut) }, { t: 'Jour', v: x => x.jour }, { t: 'Fin', v: x => T.fcourt(x.fin) }, { t: 'Compte', v: x => x.compte }, { t: 'IP', v: x => h('span', { class: 'mono' }, x.ip) },
-      { t: '', v: x => x.hors ? h('span', { class: 'pill rouge' }, 'hors horaires') : h('span', { class: 'pill gris' }, 'heures d\'ouverture') }, { t: 'Preuve', v: x => T.bp(x.id) }], distantes, { vide: 'Aucune session depuis Internet / VPN.', defile: false }))));
+      { t: '', v: x => x.hors ? h('span', { class: 'pill rouge' }, 'hors horaires') : h('span', { class: 'pill gris' }, 'heures d\'ouverture') }, { t: 'Preuve', v: x => T.bp(x.id) }], distantes, { vide: 'Aucune connexion depuis Internet ou un VPN.', defile: false }))));
 };
 
 /* ---------------------------------------------------------------- identifiants et fuites */
 T.ECRANS.fuites = c => {
   const id = T.identifiants(), R = T.reglages(), b = (T.D.bases || {}).ransomware;
-  c.append(h('h1', {}, 'Identifiants et fuites'), h('p', { class: 'sous-titre' }, 'Les mots de passe ne sont jamais lus par la collecte : seuls les sites et identifiants enregistrés sont listés.'));
+  c.append(h('h1', {}, 'Mots de passe et fuites'), h('p', { class: 'sous-titre' }, 'DigSpill ne lit jamais les mots de passe : il liste seulement les sites et les noms de compte enregistrés.'));
   c.append(T.carte(`Comptes à faire changer (${id.comptes.length})`, 'enregistrés dans les navigateurs du poste', T.tableau([{ t: 'Utilisateur', v: x => x.utilisateur }, { t: 'Site', v: x => h('b', {}, x.site) }, { t: 'Identifiant(s)', v: x => h('span', { class: 'mono petit' }, x.identifiants) }, { t: 'Navigateur', v: x => x.navigateurs }, { t: 'Preuve', v: x => T.bp(x.id) }], id.comptes, { vide: 'Aucun (ou identifiants non listés : DigSpill.exe › Identifiants de ce compte).', defile: false }),
     id.comptes.length ? h('button', { class: 'btn', style: 'margin-top:8px', onclick: async () => T.toast(await T.copier(id.comptes.map(x => `☐ ${x.site} (${x.identifiants})`).join('\n')) ? 'Liste copiée (à coller dans un mail ou une fiche)' : 'Copie impossible') }, 'Copier la liste à cocher') : '',
-    id.wifi ? h('div', { class: 'petit doux', style: 'margin-top:8px' }, `${id.wifi} profil(s) Wi-Fi enregistré(s) : clés lisibles par un administrateur du poste, à changer si le compte était admin.`) : ''));
+    id.wifi ? h('div', { class: 'petit doux', style: 'margin-top:8px' }, `${pl(id.wifi, 'réseau Wi-Fi enregistré', 'réseaux Wi-Fi enregistrés')} : un administrateur du poste peut lire leurs mots de passe. À changer si l'attaquant avait un compte administrateur.`) : ''));
   const res = h('div', { style: 'margin-top:10px' }), mdp = h('input', { type: 'password', class: 'texte', placeholder: 'Mot de passe à tester (jamais envoyé)', style: 'max-width:320px', autocomplete: 'off' });
   const tester = async () => {
     if (!mdp.value) return; res.innerHTML = 'Vérification…';
@@ -579,23 +592,23 @@ T.ECRANS.fuites = c => {
     mdp.value = '';
   };
   c.append(h('div', { class: 'grille g2' },
-    T.carte('Mot de passe dans une fuite publique ?', 'Have I Been Pwned · k-anonymat', h('ul', { class: 'lignes' },
-      h('li', {}, h('span', { class: 'ic' }, ''), h('span', { class: 'petit' }, 'Le mot de passe est haché ici (SHA-1). Seuls les 5 premiers caractères du hachage partent sur Internet.')),
-      h('li', {}, h('span', { class: 'ic' }, ''), h('span', { class: 'petit' }, 'Utile pour expliquer l\'entrée : un mot de passe RDP déjà fuité = force brute réussie.'))),
+    T.carte('Mot de passe dans une fuite publique ?', 'Have I Been Pwned · le mot de passe ne quitte pas ce PC', h('ul', { class: 'lignes' },
+      h('li', {}, h('span', { class: 'ic' }, ''), h('span', { class: 'petit' }, 'Le mot de passe est transformé ici en empreinte (SHA-1) : seuls ses 5 premiers caractères partent sur Internet.')),
+      h('li', {}, h('span', { class: 'ic' }, ''), h('span', { class: 'petit' }, "Utile pour comprendre l'entrée : un mot de passe de bureau à distance déjà dans une fuite explique une connexion réussie."))),
       h('div', { class: 'filtres', style: 'margin-top:8px' }, mdp, h('button', { class: 'btn primaire', onclick: tester }, 'Vérifier')), res),
     T.carte(`Adresses e-mail trouvées (${id.emails.length})`, 'à vérifier sur haveibeenpwned.com', id.emails.length ? h('ul', { class: 'lignes' }, id.emails.map(e => h('li', {}, h('span', { class: 'ic' }, ''), h('div', {}, h('div', { class: 'mono gras' }, e.email), h('div', { class: 'petit doux' }, e.sites.join(', '))),
-      h('div', { class: 'droite' }, h('a', { class: 'btn petit', href: 'https://haveibeenpwned.com/', target: '_blank', rel: 'noopener', title: 'Ouvre le site : saisir l\'adresse vous-même' }, 'HIBP ↗'), T.bp(e.preuves[0]))))) : T.vide('Aucune adresse e-mail parmi les identifiants enregistrés.'))));
+      h('div', { class: 'droite' }, h('a', { class: 'btn petit', href: 'https://haveibeenpwned.com/', target: '_blank', rel: 'noopener', title: "Ouvre le site Have I Been Pwned : saisissez l'adresse vous-même" }, 'Vérifier ↗'), T.bp(e.preuves[0]))))) : T.vide('Aucune adresse e-mail parmi les identifiants enregistrés.'))));
   const mots = h('input', { class: 'texte', value: (R.mots_cles_fuite && R.mots_cles_fuite.length ? R.mots_cles_fuite : (R.client ? [R.client] : [])).join(', '), placeholder: 'Nom du cabinet, domaine, ville…', style: 'max-width:480px' });
   const zone = h('div', { style: 'margin-top:10px' });
   const chercher = () => {
     const m = mots.value.split(',').map(x => x.trim()).filter(Boolean); T.majReglages({ mots_cles_fuite: m });
     const r = T.chercherVictimes(m); zone.innerHTML = '';
-    if (!r.nb) { zone.append(T.vide('Liste des victimes absente : régénérer le fichier avec Internet pour la télécharger.')); return; }
+    if (!r.nb) { zone.append(T.vide('Liste des victimes absente : régénérez le rapport avec Internet pour la télécharger.')); return; }
     zone.append(h('div', { class: 'petit doux', style: 'margin-bottom:6px' }, `${T.nb(r.nb)} victimes publiées dans la liste embarquée${b && b.date ? ' (téléchargée le ' + b.date + ')' : ''}.`));
     zone.append(r.resultats.length ? T.tableau([{ t: 'Victime publiée', v: x => h('b', {}, x.victime) }, { t: 'Groupe', v: x => h('span', { class: 'pill rouge' }, x.groupe) }, { t: 'Date', v: x => T.fcourt(x.date) || x.date }, { t: 'Site', v: x => x.site },
       { t: 'Correspondance', v: x => h('span', { class: 'pill ' + (x.exact ? 'rouge' : 'orange') }, (x.exact ? 'exacte' : 'partielle') + ' : ' + x.mot) }], r.resultats, { defile: false }) : h('div', { class: 'alerte n1' }, h('div', { class: 'ic' }, ''), h('div', {}, 'Aucune victime correspondante dans la liste embarquée.')));
   };
-  c.append(T.carte('Sites de fuite des rançongiciels', 'ransomware.live · recherche faite DANS ce fichier', h('div', { class: 'petit doux', style: 'margin-bottom:8px' }, 'Le nom du client n\'est jamais envoyé : la liste publique des victimes (France et récentes) a été téléchargée par DigSpill, la recherche se fait ici.'),
+  c.append(T.carte('Le cabinet est-il cité par un groupe de pirates ?', 'liste publique ransomware.live · recherche faite dans ce fichier, sans Internet', h('div', { class: 'petit doux', style: 'margin-bottom:8px' }, 'Le nom du client n\'est jamais envoyé : la liste publique des victimes (France et récentes) a été téléchargée par DigSpill, la recherche se fait ici.'),
     h('div', { class: 'filtres' }, mots, h('button', { class: 'btn primaire', onclick: chercher }, 'Chercher')), zone));
   chercher();
 };
@@ -603,38 +616,38 @@ T.ECRANS.fuites = c => {
 /* ---------------------------------------------------------------- IOC et chasse */
 T.ECRANS.ioc = c => {
   const i = T.iocs(), hs = T.hachages(), deja = T.dejaVu();
-  c.append(h('h1', {}, 'IOC et chasse'), h('p', { class: 'sous-titre' }, 'Indicateurs de compromission de cet incident, à chercher sur tout le parc.'));
-  if (deja.length) c.append(T.carte('Déjà vus dans d\'autres incidents', 'mémoire tenue par DigSpill sur la clé', h('ul', { class: 'lignes' }, deja.map(d => h('li', {}, h('span', { class: 'ic' }, ''),
+  c.append(h('h1', {}, 'Traces à chercher ailleurs'), h('p', { class: 'sous-titre' }, "Les traces laissées par l'attaquant (adresses IP, fichiers, empreintes, comptes) : à chercher sur les autres postes que vous gérez. En anglais : IOC, indicateurs de compromission."));
+  if (deja.length) c.append(T.carte('Déjà vues dans d\'autres incidents', 'liste tenue par DigSpill sur la clé', h('ul', { class: 'lignes' }, deja.map(d => h('li', {}, h('span', { class: 'ic' }, ''),
     h('div', {}, h('div', { class: 'gras' }, `${d.client || 'client ?'} · ${d.poste}`), h('div', { class: 'petit doux' }, `collecte du ${T.fcourt(d.date)} · en commun : ` + d.communs.map(x => `${x.type} ${x.valeur.length > 20 ? x.valeur.slice(0, 16) + '…' : x.valeur}`).join(', ')))))),
     h('div', { class: 'petit doux' }, 'Même attaquant ou même outillage : prévenir les autres clients concernés et comparer les chronologies.')));
   const script = h('pre', { class: 'apercu', style: 'display:none;margin-top:10px' });
-  c.append(T.carte('Chasse sur tout le parc (Datto RMM)', 'lecture seule sur les postes', h('div', { class: 'grille g4', style: 'margin-bottom:12px' },
-    T.kpi('', i.ip.length, `IP de l'attaquant · + ${i.ipBrute.length} IP de force brute`), T.kpi('', i.hachages.length, 'hachages'), T.kpi('', i.fichiers.length, 'noms de fichiers'), T.kpi('', i.taches.length + i.services.length + i.comptes.length, 'tâches, services, comptes')),
+  c.append(T.carte('Chercher ces traces sur tous les postes (Datto RMM)', 'le script lit seulement, il ne change rien', h('div', { class: 'grille g4', style: 'margin-bottom:12px' },
+    T.kpi('', i.ip.length, `adresses IP de l'attaquant · + ${i.ipBrute.length} qui essayaient des mots de passe`), T.kpi('', i.hachages.length, 'empreintes de fichiers'), T.kpi('', i.fichiers.length, 'noms de fichiers'), T.kpi('', i.taches.length + i.services.length + i.comptes.length, 'tâches planifiées, services, comptes')),
     h('ul', { class: 'lignes' }, h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Télécharger le composant ci-dessous.')), h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Datto RMM : nouveau composant PowerShell, coller le script, exécuter en SYSTEM.')),
-      h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Lancer en tâche sur tous les sites. Code retour 1 = correspondance (résumé dans la sortie, CSV dans C:\\ProgramData\\TriageIOC).'))),
+      h('li', {}, h('span', { class: 'ic' }, ''), h('span', {}, 'Lancez-le sur tous les sites. Résultat 1 = trace trouvée (résumé dans la sortie, détail dans C:\\ProgramData\\TriageIOC).'))),
     h('div', { class: 'filtres', style: 'margin-top:10px' }, h('button', { class: 'btn primaire', onclick: () => T.telecharger(`Chasse_IOC_${T.identite().poste}.ps1`, '\ufeff' + T.scriptChasse()) }, 'Télécharger le composant (.ps1)'),
       h('button', { class: 'btn', onclick: () => { script.style.display = script.style.display === 'none' ? 'block' : 'none'; script.textContent = T.scriptChasse(); } }, 'Voir le script'),
       h('button', { class: 'btn', onclick: async () => T.toast(await T.copier(T.scriptChasse()) ? 'Script copié' : 'Copie impossible') }, 'Copier')), script));
-  c.append(T.carte(`Hachages (${hs.length})`, 'liens externes : le hachage part uniquement si vous cliquez', T.tableau([
-    { t: 'Type', l: '70px', v: e => h('span', { class: 'pill gris' }, e.type) }, { t: 'Hachage', v: e => h('span', { class: 'mono', title: e.hash, style: 'font-size:11.5px' }, e.hash.slice(0, 20) + '…') },
+  c.append(T.carte(`Empreintes de fichiers (${hs.length})`, "VT = VirusTotal, MB = MalwareBazaar : l'empreinte n'est envoyée que si vous cliquez", T.tableau([
+    { t: 'Type', l: '70px', v: e => h('span', { class: 'pill gris' }, e.type) }, { t: 'Empreinte', v: e => h('span', { class: 'mono', title: e.hash, style: 'font-size:11.5px' }, e.hash.slice(0, 20) + '…') },
     { t: 'Nom', v: e => h('b', {}, e.noms.slice(0, 2).join(', ')) }, { t: 'Source', v: e => h('span', { class: 'petit' }, e.sources.slice(0, 2).join(' · '), e.remarque ? h('div', { class: 'pale' }, e.remarque) : '') },
     { t: 'Preuves', v: e => T.bps(e.preuves, 2) },
     { t: '', l: '170px', v: e => h('div', {}, h('button', { class: 'btn petit', onclick: async () => T.toast(await T.copier(e.hash) ? 'Copié' : 'Copie impossible') }, 'Copier'),
         ' ', h('a', { class: 'btn petit', href: 'https://www.virustotal.com/gui/file/' + e.hash.toLowerCase(), target: '_blank', rel: 'noopener' }, 'VT ↗'),
         ' ', h('a', { class: 'btn petit', href: 'https://bazaar.abuse.ch/browse.php?search=' + (e.type === 'SHA256' ? 'sha256%3A' : e.type === 'SHA1' ? 'sha1%3A' : 'md5%3A') + e.hash.toLowerCase(), target: '_blank', rel: 'noopener' }, 'MB ↗')) }],
-    hs, { vide: 'Aucun hachage collecté.' })));
+    hs, { vide: 'Aucune empreinte relevée.' })));
   c.append(h('div', { class: 'grille g2' },
-    T.carte('Persistance suspecte', 'tâches et services lancés depuis des dossiers à risque', T.tableau([{ t: 'Type', v: x => x.t }, { t: 'Nom', v: x => h('b', {}, x.nom) }, { t: 'Commande', v: x => h('span', { class: 'mono petit' }, x.cmd) }, { t: 'Preuve', v: x => T.bp(x.id) }],
+    T.carte('Programmes installés pour se relancer seuls', 'tâches planifiées et services lancés depuis des dossiers à risque', T.tableau([{ t: 'Type', v: x => x.t }, { t: 'Nom', v: x => h('b', {}, x.nom) }, { t: 'Commande', v: x => h('span', { class: 'mono petit' }, x.cmd) }, { t: 'Preuve', v: x => T.bp(x.id) }],
       [...i.taches.map(t => ({ t: 'Tâche', nom: t.nom, cmd: t.commande, id: t.id })), ...i.services.map(s => ({ t: 'Service', nom: s.nom, cmd: s.chemin, id: s.id }))], { vide: 'Rien de suspect repéré.', defile: false })),
-    T.carte('Comptes créés pendant les fenêtres', '', T.tableau([{ t: 'Compte', v: x => h('b', {}, x.nom) }, { t: 'Date', v: x => T.fcourt(x.date) }, { t: 'Preuve', v: x => T.bp(x.id) }], i.comptes, { vide: 'Aucun.', defile: false }))));
+    T.carte('Comptes créés pendant les périodes suspectes', '', T.tableau([{ t: 'Compte', v: x => h('b', {}, x.nom) }, { t: 'Date', v: x => T.fcourt(x.date) }, { t: 'Preuve', v: x => T.bp(x.id) }], i.comptes, { vide: 'Aucun.', defile: false }))));
 };
 
 /* ---------------------------------------------------------------- analyse IA */
 T.ECRANS.ia = c => {
   const cleSauv = T.stockage.lire('digspill:cle-anthropic') || '';
-  c.append(h('h1', {}, 'Analyse IA (Claude)'), h('p', { class: 'sous-titre' }, 'Claude lit une synthèse filtrée, cite une preuve pour chaque phrase, et ce fichier vérifie chaque citation.'));
+  c.append(h('h1', {}, 'Analyse par IA'), h('p', { class: 'sous-titre' }, 'Claude (une IA) lit un résumé de la collecte, sans les noms. Il doit citer une preuve pour chaque phrase, et ce rapport vérifie chaque citation.'));
   c.append(h('div', { class: 'grille g3', style: 'margin-bottom:16px' },
-    T.kpi('', 'Masqué', 'comptes (U1, U2…), noms de fichiers, e-mails, chemins des URL'), T.kpi('', 'Sourcé', 'chaque phrase doit citer [fichier#ligne]'), T.kpi('', 'Vérifié', 'citation existante et valeurs retrouvées dans la ligne')));
+    T.kpi('', 'Masqué', 'comptes (U1, U2…), noms de fichiers, e-mails, chemins des URL'), T.kpi('', 'Sourcé', 'chaque phrase cite sa preuve [fichier#ligne]'), T.kpi('', 'Vérifié', 'la preuve existe et contient bien ce que dit la phrase')));
   const cle = h('input', { type: 'password', class: 'texte', placeholder: 'sk-ant-…', value: cleSauv, autocomplete: 'off' });
   const memo = h('input', { type: 'checkbox', checked: !!cleSauv });
   const modele = h('select', { class: 'texte' }, [['claude-sonnet-5-5', 'Claude Sonnet 5.5 (conseillé)'], ['claude-opus-5-5', 'Claude Opus 5.5 (plus fin)'], ['claude-haiku-5-5', 'Claude Haiku 5.5 (rapide)']].map(([v, l]) => h('option', { value: v }, l)));
@@ -686,17 +699,17 @@ T.ECRANS.ia = c => {
 T.ECRANS.rapport = c => {
   c.append(h('h1', {}, 'Rapports'), h('p', { class: 'sous-titre' }, 'Impression ou PDF (« Enregistrer au format PDF » dans la fenêtre d\'impression).'));
   c.append(h('div', { class: 'grille g2' },
-    T.carte('Rapport praticien', '1 page, sans jargon', h('ul', { class: 'lignes' }, ['Ce qui s\'est passé, en 5 lignes', 'Ce que le cabinet doit faire', 'Échéance CNIL'].map(x => h('li', {}, h('span', { class: 'ic' }, '•'), x))),
-      h('button', { class: 'btn primaire', onclick: () => T.imprimer('praticien') }, 'Imprimer / PDF')),
-    T.carte('Rapport technique sourcé', 'pour l\'assureur, l\'expert ou la plainte', h('ul', { class: 'lignes' }, ['Indicateurs, grille, IP, exfiltration, visibilité', 'Chaque constat avec sa preuve [fichier#ligne]', 'Index des fichiers avec leur SHA256'].map(x => h('li', {}, h('span', { class: 'ic' }, '•'), x))),
+    T.carte('Rapport client', '1 page, sans jargon', h('ul', { class: 'lignes' }, ["Ce que l'examen a trouvé, en quelques lignes", 'Ce que le client doit faire', 'CNIL : échéance des 72 h, ou rien à notifier si aucune fuite'].map(x => h('li', {}, h('span', { class: 'ic' }, '•'), x))),
+      h('button', { class: 'btn primaire', onclick: () => T.imprimer('client') }, 'Imprimer / PDF')),
+    T.carte('Rapport technique sourcé', 'pour l\'assureur, l\'expert ou la plainte', h('ul', { class: 'lignes' }, ['Alertes, points vérifiés, adresses IP, données sorties, angles morts', 'Chaque constat avec sa preuve [fichier#ligne]', 'Liste des fichiers avec leur empreinte (SHA-256)'].map(x => h('li', {}, h('span', { class: 'ic' }, '•'), x))),
       h('button', { class: 'btn primaire', onclick: () => T.imprimer('technique') }, 'Imprimer / PDF')),
     T.carte('PV de collecte et certificat d\'intégrité', 'à signer, pour la plainte ou l\'assureur', h('ul', { class: 'lignes' }, ['Qui a collecté, quand, avec quels outils', 'Empreinte du scellé, horodatage, chaîne de possession', 'Cases de signature technicien, cabinet, témoin'].map(x => h('li', {}, h('span', { class: 'ic' }, '•'), x))),
       h('button', { class: 'btn primaire', onclick: () => T.imprimer('pv') }, 'Imprimer / PDF'))));
   c.append(T.carte('Exports', '', h('div', { class: 'filtres' },
     h('button', { class: 'btn', onclick: () => T.telecharger(`${T.D.collecte.nom}_reglages.json`, JSON.stringify(T.stockage.lire(T.cleStockage()) || {}, null, 1), 'application/json') }, 'Réglages (.json)'),
-    h('button', { class: 'btn', onclick: () => T.telecharger(`${T.identite().poste}_chronologie.csv`, T.versCsv(T.chronologie().evenements.map(e => ({ Date: T.fdate(e.t), Fin: e.fin ? T.fdate(e.fin) : '', Voie: e.voie, Gravite: e.g, Evenement: e.titre, Detail: e.detail, Fenetre: e.fen, Preuve: e.id })))) }, 'Chronologie (.csv)'),
+    h('button', { class: 'btn', onclick: () => T.telecharger(`${T.identite().poste}_chronologie.csv`, T.versCsv(T.chronologie().evenements.map(e => ({ Date: T.fdate(e.t), Fin: e.fin ? T.fdate(e.fin) : '', Categorie: T.nomVoie(e.voie), Gravite: e.g, Evenement: e.titre, Detail: e.detail, Fenetre: e.fen, Preuve: e.id })))) }, 'Chronologie (.csv)'),
     h('button', { class: 'btn', onclick: () => T.telecharger(`Chasse_IOC_${T.identite().poste}.ps1`, '\ufeff' + T.scriptChasse()) }, 'Script de chasse (.ps1)')),
-    h('div', { class: 'petit doux' }, 'Astuce : enregistrer le fichier de réglages à côté du dossier de collecte. DigSpill le reprendra à la prochaine génération.')));
+    h('div', { class: 'petit doux' }, 'Astuce : enregistrez le fichier de réglages à côté du dossier de collecte. DigSpill le reprendra la prochaine fois.')));
 };
 
 /* ---------------------------------------------------------------- reglages */
@@ -731,10 +744,10 @@ T.ouvrirReglages = focus => {
     h('div', { class: 'corps' },
       h('p', { class: 'lbl', style: 'margin-bottom:10px' }, 'Apparence'), choixTheme, h('div', { class: 'aide petit pale', style: 'margin-top:6px' }, 'Le rapport imprimé reste toujours clair.'),
       h('p', { class: 'lbl', style: 'margin:26px 0 10px' }, 'Cet incident'), h('div', { class: 'champs' }, ch('Client (cabinet)', f.client), ch('Technicien', f.technicien), ch("Découverte de l'incident", f.decouverte, 'Point de départ des 72 h CNIL')),
-      h('p', { class: 'lbl', style: 'margin:26px 0 10px' }, 'Exfiltration'), h('div', { class: 'champs' }, ch('Débit montant (Mbit/s)', f.debit), ch('Taille base patients (Mo)', f.taille, 'vide = automatique'), ch('Compression (×)', f.compression)),
+      h('p', { class: 'lbl', style: 'margin:26px 0 10px' }, 'Données sorties'), h('div', { class: 'champs' }, ch("Débit d'envoi de la box (Mbit/s)", f.debit), ch('Taille base patients (Mo)', f.taille, 'vide = automatique'), ch('Compression (×)', f.compression)),
       h('p', { class: 'lbl', style: 'margin:26px 0 10px' }, 'Sites de fuite'), ch('Mots-clés (séparés par des virgules)', f.mots, 'Nom du cabinet, domaine, ville. Recherche locale uniquement.'),
-      h('p', { class: 'lbl', style: 'margin:26px 0 10px' }, 'Liste blanche'), ch('Une IP ou plage par ligne : IP ; note', f.lb, 'ex. 100.64.0.0/10 ; NetBird techniciens'),
-      h('p', { class: 'lbl', style: 'margin:26px 0 10px' }, 'Fenêtres en plus'), ch('Une par ligne : début ; fin ; motif', f.fm, 'ex. 2026-11-16 20:00 ; 2026-11-17 04:00 ; signalement du praticien'),
+      h('p', { class: 'lbl', style: 'margin:26px 0 10px' }, 'Adresses légitimes'), ch('Une adresse IP ou une plage par ligne : IP ; note', f.lb, 'ex. 100.64.0.0/10 ; NetBird techniciens'),
+      h('p', { class: 'lbl', style: 'margin:26px 0 10px' }, 'Périodes suspectes en plus'), ch('Une par ligne : début ; fin ; motif', f.fm, 'ex. 2026-11-16 20:00 ; 2026-11-17 04:00 ; signalement du praticien'),
       h('p', { class: 'lbl', style: 'margin:26px 0 10px' }, 'Notes'), ch('Notes libres', f.notes)),
     h('footer', {}, importer, h('button', { class: 'btn', type: 'button', onclick: () => importer.click() }, 'Importer'),
       h('button', { class: 'btn', type: 'button', onclick: () => T.telecharger(`${T.D.collecte.nom}_reglages.json`, JSON.stringify(T.stockage.lire(T.cleStockage()) || {}, null, 1), 'application/json') }, 'Exporter'),
@@ -753,40 +766,65 @@ T.imprimer = type => {
 };
 T.rapportHtml = type => {
   const v = T.vue(), k = v.kpi, id = T.identite(), R = T.reglages(), ex = T.exfil(), s = T.sante(), ip = T.analyseIp();
-  const tete = T.logoSvg('logo-imp', '#111113', '#D71921') + `<h1>Incident de sécurité – ${esc(R.client || id.poste)}</h1><div class="note">Poste ${esc(id.poste)} · collecte du ${esc(T.flong(id.date))} · rapport du ${esc(T.flong(new Date()))}${R.technicien ? ' · technicien ' + esc(R.technicien) : ''}</div>`;
-  const cnil = `<div class="bloc"><b>Notification CNIL (art. 33 RGPD)</b> : découverte le ${v.cnil ? esc(T.flong(v.cnil.decouverte)) : 'à renseigner'}${v.cnil ? ` · échéance des 72 h : <b>${esc(T.flong(v.cnil.echeance))}</b>` : ''}.<br><span class="note">La décision de notifier et d'informer les patients (art. 34) appartient au cabinet (responsable de traitement) et à son DPO.</span></div>`;
+  // incident constate ou non : le titre, le bloc CNIL et le rapport client en dependent (poste sain : pas de « données concernées »)
+  const bi = T.bilan(), lim = T.limites();
+  const tete = T.logoSvg('logo-imp', '#111113', '#D71921') + `<h1>${bi.incident ? 'Incident de sécurité' : 'Examen de sécurité'} – ${esc(R.client || id.poste)}</h1><div class="note">Poste ${esc(id.poste)} · collecte du ${esc(T.flong(id.date))} · rapport du ${esc(T.flong(new Date()))}${R.technicien ? ' · technicien ' + esc(R.technicien) : ''}</div>`;
+  const cnil = bi.incident
+    ? `<div class="bloc"><b>Notification CNIL (art. 33 RGPD)</b> : date de découverte ${v.cnil ? esc(T.flong(v.cnil.decouverte)) : 'à renseigner'}${v.cnil ? ` · échéance des 72 h : <b>${esc(T.flong(v.cnil.echeance))}</b>` : ''}.<br><span class="note">La décision de notifier, et d'informer les personnes concernées (art. 34), appartient au client (responsable de traitement) et à son DPO.</span></div>`
+    : `<div class="bloc"><b>Violation de données</b> : cet examen ne montre aucune violation de données sur ce poste, donc rien à notifier à la CNIL sur cette base.<br><span class="note">Si le client a d'autres raisons de penser que des données ont fuité, la décision de notifier lui appartient, avec son DPO.</span></div>`;
   const pire = ex.fenetres.reduce((m, f) => (!m || f.envoye > m.envoye) ? f : m, null);
-  if (type === 'praticien') {
+  const note = '<p class="note">Ce document résume une analyse technique. Le rapport technique détaillé et sourcé est disponible auprès de votre prestataire.</p>';
+  const bloc = (titre, l) => `<h2>${titre}</h2><div class="bloc">${l.map(x => `<div>${esc(x)}</div>`).join('')}</div>`;
+  if ((type === 'client' || type === 'praticien') && !bi.incident) {
+    const trouve = ["Aucune trace d'intrusion, de vol de données ni de chiffrement n'a été trouvée sur ce poste."];
+    if (k.defender) trouve.push(`L'antivirus Defender a repéré ${k.defender > 1 ? k.defender + ' menaces' : 'une menace'} sur ce poste : le technicien vérifie qu'${k.defender > 1 ? 'elles ont bien été supprimées' : 'elle a bien été supprimée'}.`);
+    if (k.anti) trouve.push(`${k.anti > 1 ? k.anti + ' réglages de sécurité ont été modifiés' : 'Un réglage de sécurité a été modifié'} (antivirus ou journaux de Windows) : le technicien vérifie qu'il s'agit d'un changement normal.`);
+    const limites = [`Cet examen porte sur ce poste seulement (${id.poste}), pas sur les autres ordinateurs, le serveur ou les comptes en ligne.`];
+    if (lim && lim.noms.length > 3) limites.push(`Il ne voit que ce que Windows a gardé, et plusieurs sources de traces étaient désactivées ou manquaient (${lim.noms.slice(0, 3).join(', ')}…) : si des données sont parties par là, ce poste ne permet pas de le voir. Le détail est dans le rapport technique.`);
+    else if (lim) limites.push(`Il ne voit que ce que Windows a gardé : ${lim.phrase.charAt(0).toLowerCase()}${lim.phrase.slice(1)}`);
+    const a = ["Reprendre l'utilisation normale du poste, sauf avis contraire du technicien.", 'Garder ce rapport avec le procès-verbal de collecte.', 'Au moindre nouveau doute (message étrange, fichiers illisibles, connexion inconnue), prévenir votre prestataire.'];
+    return tete + cnil + bloc("Ce que l'examen a trouvé", trouve) + bloc('Limites', limites) + bloc('Ce que vous pouvez faire', a) + note;
+  }
+  if (type === 'client' || type === 'praticien') {
     const l = [];
     if (k.sessions) l.push(`Des connexions à distance ont été faites sur ce poste depuis Internet (${k.pays.map(T.nomPays).join(', ') || 'pays non déterminé'}).`);
     if (k.chiffres) l.push(`${T.nb(k.chiffres)} fichiers ont été chiffrés par un rançongiciel.`);
-    if (pire && ['PLAUSIBLE', 'PARTIELLE'].includes(pire.niveau)) l.push(`Le volume envoyé sur Internet pendant l'intrusion (${T.nb(pire.envoye)} Mo) rend possible une copie des données patients.`);
-    else if (pire) l.push('Les volumes mesurés ne permettent pas une copie complète de la base patients depuis ce poste.');
-    if (k.outils.length) l.push(`Des outils sensibles ont été lancés pendant l'intrusion (${esc(k.outils.slice(0, 6).join(', '))}).`);
-    if (s.categories.length) l.push(`Données potentiellement concernées : ${esc(s.categories.map(x => x.categorie).slice(0, 4).join(', '))} (à confirmer).`);
-    const a = ['Ne pas rallumer ni utiliser le poste concerné sans accord du technicien.', 'Changer les mots de passe listés par le technicien (logiciels en ligne, messagerie, banque).', 'Prévenir votre assureur cyber ; un dépôt de plainte est conseillé.', 'Décider avec votre DPO de la notification CNIL avant l\'échéance.'];
-    return tete + cnil + `<h2>Ce qui s'est passé</h2><div class="bloc">${l.map(x => `<div>${esc(x)}</div>`).join('') || 'Analyse en cours.'}</div><h2>Ce que vous devez faire</h2><div class="bloc">${a.map(x => `<div>${esc(x)}</div>`).join('')}</div><p class="note">Ce document résume une analyse technique. Le rapport technique détaillé et sourcé est disponible auprès de votre prestataire.</p>`;
+    if (pire && ['PLAUSIBLE', 'PARTIELLE'].includes(pire.niveau)) l.push(`Le volume envoyé sur Internet pendant l'intrusion (${T.nb(pire.envoye)} Mo) rend possible une copie des données.`);
+    else if (pire) l.push('Les volumes mesurés ne permettent pas une copie complète de la base de données depuis ce poste.');
+    if (k.outils.length) l.push(`Des outils de pirate ont été lancés pendant l'intrusion (${k.outils.slice(0, 6).join(', ')}).`);
+    if (s.categories.length) l.push(`Données présentes sur ce poste, peut-être concernées : ${s.categories.map(x => x.categorie).slice(0, 4).join(', ')} (à confirmer).`);
+    const a = ['Ne pas rallumer ni utiliser le poste concerné sans accord du technicien.', 'Changer les mots de passe listés par le technicien (logiciels en ligne, messagerie, banque).', 'Prévenir votre assureur cyber ; un dépôt de plainte est conseillé.', "Décider avec votre DPO de la notification CNIL avant l'échéance."];
+    return tete + cnil + bloc("Ce qui s'est passé", l.length ? l : ['Analyse en cours.']) + bloc('Ce que vous devez faire', a) + note;
   }
   const t = (cols, lignes) => `<table><tr>${cols.map(c => `<th>${esc(c[0])}</th>`).join('')}</tr>${lignes.map(r => `<tr>${cols.map(c => `<td>${c[1](r)}</td>`).join('')}</tr>`).join('')}</table>`;
   const pid = x => `<span class="pid">${esc(x || '')}</span>`;
   let html = tete + cnil;
-  html += `<h2>Indicateurs</h2><div class="bloc">Sessions depuis Internet / VPN : <b>${k.sessions}</b> · IP publiques avec connexion réussie : <b>${k.ipSucces}</b> · échecs : <b>${T.nb(k.echecs)}</b> · fichiers chiffrés : <b>${T.nb(k.chiffres)}</b> · envoi maximal : <b>${T.nb(k.envoyeMax)} Mo</b> · anti-forensique : <b>${k.anti}</b> · Defender : <b>${k.defender}</b></div>`;
-  html += `<h2>Grille de vérification par canal</h2>` + t([['Statut', g => esc(g.statut)], ['Canal', g => esc(g.canal)], ['Constat', g => esc(g.constat)], ['Preuve', g => pid(g.id)]], v.grille);
-  html += `<h2>IP et origine des connexions</h2>` + t([['IP', e => `<b>${esc(e.ip)}</b>`], ['Pays', e => esc(T.nomPays(e.pays))], ['Opérateur', e => esc(`${e.operateur || ''} ${e.categorie ? '(' + e.categorie + ')' : ''}`)], ['Succès', e => e.succes], ['Échecs', e => e.echecs], ['Période', e => esc(`${T.fcourt(e.premier)} → ${T.fcourt(e.dernier)}`)], ['Attention', e => esc(e.raisons.join(', '))], ['Preuves', e => pid(e.preuves.slice(0, 2).join(' '))]], ip.ips.filter(e => e.type !== 'Privee' && (e.succes || e.score >= 3)).slice(0, 40));
+  const sit = T.situation();
+  html += `<h2>Conclusion</h2><div class="bloc">${bi.incident ? esc(sit.morceaux.map(p => (p.prefixe || '') + (p.texte || '') + (p.fort || '') + (p.suite || '')).join(', ')) + '.' + (bi.graves.length ? '<ul>' + bi.graves.map(a => `<li>${esc(a.texte)}</li>`).join('') + '</ul>' : '')
+    : "Aucune trace d'intrusion, de vol de données ni de chiffrement dans les traces collectées."}${lim ? `<br><span class="note">${esc(lim.phrase)}</span>` : ''}</div>`;
+  html += `<h2>Chiffres clés</h2><div class="bloc">Connexions depuis Internet ou un VPN : <b>${k.sessions}</b> · adresses IP d'Internet qui ont réussi à se connecter : <b>${k.ipSucces}</b> · connexions ratées : <b>${T.nb(k.echecs)}</b> · fichiers chiffrés : <b>${T.nb(k.chiffres)}</b> · envoi maximal : <b>${T.nb(k.envoyeMax)} Mo</b> · traces effacées ou protections coupées : <b>${k.anti}</b> · alertes Defender : <b>${k.defender}</b></div>`;
+  html += `<h2>Points vérifiés</h2>` + t([['Statut', g => esc(T.STATUTS[g.statut] || g.statut)], ['Point vérifié', g => esc(g.canal)], ['Constat', g => esc(g.constat)], ['Preuve', g => pid(g.id)]], v.grille);
+  const ipInternet = ip.ips.filter(e => ['PUBLIQUE', 'VPN/CGNAT'].includes(e.type)), ipRap = ipInternet.filter(e => e.succes || e.echecs || e.listes.length || e.activeSuspecte);
+  const ipHab = ipInternet.filter(e => e.active && !ipRap.includes(e)).length;
+  html += `<h2>Adresses IP et origine des connexions</h2>` + (!ipRap.length ? '' : t([['Adresse IP', e => `<b>${esc(e.ip)}</b>`], ['Pays', e => esc(T.nomPays(e.pays))], ['Opérateur', e => esc(`${e.operateur || ''} ${e.categorie ? '(' + e.categorie + ')' : ''}`)], ['Réussies', e => e.succes], ['Ratées', e => e.echecs], ['Période', e => esc(e.premier ? `${T.fcourt(e.premier)}${e.dernier && e.dernier !== e.premier ? ' → ' + T.fcourt(e.dernier) : ''}` : '–')], ['Pourquoi', e => esc(e.raisons.join(', '))], ['Preuves', e => pid(e.preuves.slice(0, 2).join(' '))]], ipRap.slice(0, 40)));
+  if (!ipRap.length) html += `<div class="bloc">Aucune adresse IP d'Internet à signaler : ni connexion réussie, ni tentative ratée, ni adresse sur une liste malveillante.</div>`;
+  if (ipHab) html += `<p class="note">${ipHab} connexion${ipHab > 1 ? 's' : ''} ouverte${ipHab > 1 ? 's' : ''} par des programmes signés vers des services en ligne (Google, Microsoft, Cloudflare…) au moment de la collecte : habituel, non listé ici.</p>`;
   const b = T.D.bases || {};
   html += `<p class="note">Géolocalisation : ${b.asn ? esc(b.asn.source + ' du ' + b.asn.date) : 'non disponible'}${b.ville ? ' ; ' + esc(b.ville.source) : ''}. Listes publiques à leur date de téléchargement.</p>`;
-  html += `<h2>Exfiltration : volumes et plausibilité</h2>` + ex.fenetres.map(f => `<div class="bloc"><b>${esc(f.id)}</b> ${esc(T.fcourt(f.debut))} → ${esc(T.fcourt(f.fin))} (${f.duree} min) – <b>${esc(T.NIVEAUX[f.niveau].lib)}</b><br>${esc(f.motif)}<ul>${f.constats.map(x => `<li>${esc(x)}</li>`).join('')}</ul>${pid('preuves : ' + [f.preuveFenetre, ...f.preuves.slice(0, 6)].join(' '))}</div>`).join('');
-  html += `<p class="note">Hypothèses (déductions) : base ${T.nb(ex.hyp.taille)} Mo, compression ×${esc(ex.hyp.compression)}, débit montant ${ex.hyp.debit ? esc(ex.hyp.debit) + ' Mbit/s' : 'non renseigné'}. ${T.LIMITES_EXFIL.map(esc).join(' ')}</p>`;
+  html += `<h2>Données sorties du poste : volumes et ce qui était possible</h2>` + (ex.fenetres.length ? '' : '<div class="bloc">Aucune période suspecte : rien à mesurer.</div>') + ex.fenetres.map(f => `<div class="bloc"><b>${esc(f.id)}</b> ${esc(T.fcourt(f.debut))} → ${esc(T.fcourt(f.fin))} (${f.duree} min) – <b>${esc(T.NIVEAUX[f.niveau].lib)}</b><br>${esc(f.motif)}<ul>${f.constats.map(x => `<li>${esc(x)}</li>`).join('')}</ul>${pid('preuves : ' + [f.preuveFenetre, ...f.preuves.slice(0, 6)].join(' '))}</div>`).join('');
+  if (ex.fenetres.length) html += `<p class="note">Hypothèses (déductions) : base ${T.nb(ex.hyp.taille)} Mo, compression ×${esc(ex.hyp.compression)}, débit d'envoi de la box ${ex.hyp.debit ? esc(ex.hyp.debit) + ' Mbit/s' : 'non renseigné'}. ${T.LIMITES_EXFIL.map(esc).join(' ')}</p>`;
   const vis = T.visibilite();
-  html += `<h2>Visibilité des sources</h2>` + vis.fenetres.map(w => `<div class="bloc"><b>${esc(w.id)}</b> : ${w.taux} % des sources couvrent la fenêtre. ${esc(w.sources.filter(x => x.statut !== 'couverte').map(x => x.source + ' : ' + x.statut).join(' · '))}</div>`).join('');
-  if (vis.anti.length) html += `<h3>Traces d'anti-forensique</h3>` + t([['Date', a => esc(a.date)], ['Trace', a => esc(a.trace)], ['Détail', a => esc(a.detail)], ['Preuve', a => pid(a.id)]], vis.anti);
-  html += `<h2>Données de santé potentiellement concernées</h2>` + t([['Catégorie (déduction)', x => esc(x.categorie)], ['Logiciels / sources', x => esc(x.logiciels.join(', '))]], s.categories) + `<p class="note">Catégories déduites des noms de fichiers et de sites : à confirmer avec le cabinet.</p>`;
-  html += `<h2>IOC (hachages)</h2>` + t([['Type', e => e.type], ['Hachage', e => pid(e.hash)], ['Nom', e => esc(e.noms.slice(0, 2).join(', '))], ['Source', e => esc(e.sources.slice(0, 2).join(', '))]], T.hachages().slice(0, 60));
+  html += `<h2>Angles morts : ce que Windows notait</h2>` + (vis.fenetres.length ? '' : `<div class="bloc">${esc(lim ? lim.phrase : 'Les sources attendues enregistraient. Une absence de trace reste une absence de trace, pas une preuve.')}</div>`) + vis.fenetres.map(w => `<div class="bloc"><b>${esc(w.id)}</b> : ${w.taux} % des sources notaient pendant toute la période. ${esc(w.sources.filter(x => x.statut !== 'couverte').map(x => x.source + ' : ' + x.statut).join(' · '))}</div>`).join('');
+  if (vis.anti.length) html += `<h3>Traces effacées, protections coupées</h3>` + t([['Date', a => esc(a.date)], ['Trace', a => esc(a.trace)], ['Détail', a => esc(a.detail)], ['Preuve', a => pid(a.id)]], vis.anti);
+  if (s.categories.length) html += `<h2>${bi.incident ? 'Données de santé potentiellement concernées' : 'Données de santé présentes sur le poste'}</h2>` + t([['Catégorie (déduction)', x => esc(x.categorie)], ['Logiciels / sources', x => esc(x.logiciels.join(', '))]], s.categories)
+    + `<p class="note">Catégories déduites des noms de fichiers et de sites : à confirmer avec le client.${bi.incident ? '' : " Aucune trace ne montre qu'elles ont été consultées ou copiées par un tiers."}</p>`;
+  const hs = T.hachages();
+  html += `<h2>Empreintes des fichiers suspects (IOC)</h2>` + (hs.length ? t([['Type', e => e.type], ['Empreinte', e => pid(e.hash)], ['Nom', e => esc(e.noms.slice(0, 2).join(', '))], ['Source', e => esc(e.sources.slice(0, 2).join(', '))]], hs.slice(0, 60)) : '<div class="bloc">Aucune empreinte relevée.</div>');
   const ia = T.stockage.lire(T.cleStockage() + ':ia');
   if (ia) html += `<h2>Analyse assistée (Claude), phrases vérifiées automatiquement</h2><div class="bloc">${ia.phrases.filter(p => p.statut !== 'vide').map(p => p.statut === 'titre' ? `<h3>${esc(p.texte)}</h3>` : `<div style="border-left:3px solid ${{ verifiee: '#12b76a', a_controler: '#f79009', deduction: '#7a5af8' }[p.statut] || '#f04438'};padding-left:6px;margin:2px 0">${esc(p.texte)}</div>`).join('')}</div><p class="note">Vert = citation vérifiée ; orange = à contrôler ; violet = déduction déclarée ; rouge = non sourcé.</p>`;
   const cites = new Set(); v.grille.forEach(g => cites.add(g.id)); ip.ips.slice(0, 40).forEach(e => e.preuves.slice(0, 2).forEach(x => cites.add(x))); ex.fenetres.forEach(f => [f.preuveFenetre, ...f.preuves.slice(0, 6)].forEach(x => cites.add(x)));
   const fich = [...new Set([...cites].filter(x => x && x.includes('#')).map(x => x.split('#')[0]))].sort();
-  html += `<h2>Index des preuves citées</h2>` + t([['Identifiant', f => esc(f)], ['Fichier source', f => esc((T.infoFichier(f) || {}).chemin || '')], ['SHA256 (manifeste)', f => pid((T.infoFichier(f) || {}).sha256 || 'non listé')]], fich);
+  html += `<h2>Index des preuves citées</h2>` + t([['Identifiant', f => esc(f)], ['Fichier source', f => esc((T.infoFichier(f) || {}).chemin || '')], ['Empreinte SHA-256', f => pid((T.infoFichier(f) || {}).sha256 || 'non listée')]], fich);
   html += `<p class="note">Chaque identifiant [fichier#n] désigne la ligne n (sous l'en-tête) du CSV de la collecte ou de l'analyse ; l'intégrité se vérifie avec le manifeste SHA256. Ce rapport aide l'analyse : il ne remplace pas la conclusion de l'analyste.</p>`;
   return html;
 };
