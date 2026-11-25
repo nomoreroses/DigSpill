@@ -12,8 +12,9 @@ namespace DigSpill
     {
         class Piege { public string Chemin, Empreinte; public long Taille; public DateTime Ecriture; }
 
+        // annee en cours : un appât daté de l'an passé attire moins
         static readonly string[] Noms = {
-            "!!!_0_Dossiers_patients_2026.xlsx", "!!!_0_Ordonnances_a_signer.docx", "!!!_0_Comptabilite_cabinet.pdf", "!!!_0_Scan_cartes_vitale.jpg" };
+            "!!!_0_Dossiers_patients_" + DateTime.Now.Year + ".xlsx", "!!!_0_Ordonnances_a_signer.docx", "!!!_0_Comptabilite_cabinet.pdf", "!!!_0_Scan_cartes_vitale.jpg" };
         static readonly Regex Rancon = new Regex(@"(?i)(read[\s_\-\.]*me|restore|recover|decrypt|how[\s_\-]*to|ransom|unlock).*\.(txt|html?|hta|rtf)$");
 
         readonly List<Piege> pieges = new List<Piege>();

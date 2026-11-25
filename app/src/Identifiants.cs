@@ -21,7 +21,7 @@ namespace DigSpill
             sb.AppendLine("Poste   : " + Environment.MachineName);
             sb.AppendLine("Compte  : " + Environment.UserDomainName + "\\" + Environment.UserName);
             sb.AppendLine("Date    : " + DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"));
-            sb.AppendLine("Outil   : DigSpill.exe " + Programme.Version + " (avant élévation, dans la session de ce compte)");
+            sb.AppendLine("Outil   : DigSpill.exe " + Programme.VersionKit + " (avant élévation, dans la session de ce compte)");
             sb.AppendLine();
             sb.Append(Commande("cmdkey.exe", "/list"));
             sb.AppendLine();

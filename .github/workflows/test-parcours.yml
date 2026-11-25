@@ -6,8 +6,6 @@ name: Test parcours complet
 on:
   workflow_dispatch:
   pull_request:
-  push:
-    branches: [parcours-reel]
 
 permissions:
   contents: read
@@ -37,6 +35,8 @@ jobs:
       - name: Syntaxe JavaScript
         shell: bash
         run: for f in moteur/interface/js/*.js .github/tests/interface.js; do node --check "$f" || exit 1; done
+      - name: Copies des regles identiques (rancongiciel, type d'IP) et Get-Evtx bien utilise
+        run: python -I .github/tests/copies.py
 
   parcours:
     needs: syntaxe

@@ -23,13 +23,6 @@ T.geo = () => T.memo('geo', () => {
     const p = l.split('\t'); if (p.length < 6) continue;
     g[p[0]] = Object.assign(g[p[0]] || {}, { asn: p[3], pays: p[4] === 'None' ? '' : p[4], operateur: p[5] === 'Not routed' ? '' : p.slice(5).join(' ') });
   }
-  for (const l of (T.D.geo_ville || [])) {              // "ip \t debut,fin,pays,region,,ville,cp,lat,lon,tz"
-    const i = l.indexOf('\t'); const ip = l.slice(0, i); const c = T.parseCsv('a,b,c,d,e,f,g,h,i,j\n' + l.slice(i + 1))[0];
-    if (!c) continue;
-    const lat = parseFloat(c.h), lon = parseFloat(c.i);
-    g[ip] = Object.assign(g[ip] || {}, { ville: c.f, region: c.d, lat: isNaN(lat) ? null : lat, lon: isNaN(lon) ? null : lon });
-    if (!g[ip].pays) g[ip].pays = c.c;
-  }
   for (const ip in g) g[ip].categorie = T.classerOperateur(g[ip].operateur);
   return g;
 });
@@ -77,13 +70,13 @@ T.analyseIp = () => T.memo('analyseIp', () => {
   const geo = T.geo(), listes = T.D.listes || {};
   const lignes = Object.values(T.ipCollecte()).map(e0 => {
     const e = Object.assign({}, e0, { comptes: [...e0.comptes].sort().slice(0, 15), sources: [...e0.sources].sort() });
-    Object.assign(e, { pays: '', asn: '', operateur: '', categorie: '', ville: '', lat: null, lon: null }, geo[e.ip] || {});
+    Object.assign(e, { pays: '', asn: '', operateur: '', categorie: '' }, geo[e.ip] || {});
     e.listes = Object.entries(listes).filter(([id, l]) => (l || []).includes(e.ip)).map(([id]) => Object.assign({ id }, T.LISTES[id] || { nom: id, cat: 'Liste', poids: 2 }));
     e.blanche = T.estBlanche(e.ip);
     let s = 0; const r = [];
     if (e.type === 'PUBLIQUE' && e.succes) { s += 3; r.push('connexion réussie depuis Internet'); }
     if (e.type === 'VPN/CGNAT' && e.succes) { s += 1; r.push("connexion réussie depuis une adresse de VPN ou d'opérateur partagé"); }
-    if (/^H[eé]bergeur/.test(e.categorie)) { s += 2; r.push('hébergeur, VPN ou cloud'); }
+    if (e.categorie.startsWith('Hébergeur')) { s += 2; r.push('hébergeur, VPN ou cloud'); }
     if (e.pays && e.pays !== 'FR' && e.type === 'PUBLIQUE') { s += 1; r.push('pays : ' + (T.nomPays(e.pays) || e.pays)); }
     for (const l of e.listes) { s += l.poids; r.push('liste ' + l.nom); }
     if (e.echecs >= 100) { s += 1; r.push(`${e.echecs} connexions ratées (essais de mots de passe en masse)`); }
@@ -108,7 +101,6 @@ T.analyseIp = () => T.memo('analyseIp', () => {
 // adresse e-mail, extension connue) ou document bureautique suivi d'une extension inconnue.
 // Ecartes : « icone@2x.png », « Film.[Groupe Release].torrent », « compte@exemple.fr_identity_provider » (meme regle que la collecte 2.9).
 const RX_RANCON_NOM = /\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(?:locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,}/i;
-T.RX_RANCON_NOM = RX_RANCON_NOM;
 /** Chiffrement retenu : extension dont au moins 20 fichiers au nom typique ont ete modifies en 24 h.
  *  Un rancongiciel chiffre en minutes ou en heures ; une installation de jeu ou des icones etalees sur des mois, non. */
 T.chiffrement = () => T.memo('chiffrement', () => {
@@ -713,16 +705,16 @@ T.vue = () => T.memo('vue', () => {
   const alertes = [];
   if (actives.length) alertes.push({ niv: 3, icone: '', texte: `Connexion encore active vers ${actives.map(a => `${a.ip} (${(a.processus || '?').split('\\').pop()})`).join(', ')} au moment de la collecte : l'attaquant est peut-être toujours là. Isoler le poste du réseau.`, preuves: actives.flatMap(a => a.preuves.filter(x => x.startsWith('tcp_')).slice(0, 2)) });
   if (chiffres) alertes.push({ niv: 3, icone: '', texte: `${T.nb(chiffres)} fichiers chiffrés par un rançongiciel (${T.chiffrement().groupes.slice(0, 3).map(g => g.ext).join(', ')}).`, preuves: T.chiffrement().groupes.slice(0, 2).map(g => g.ids[0]) });
-  for (const f of ex.fenetres) if (f.niveau === 'PLAUSIBLE') alertes.push({ niv: 3, icone: '', texte: `Période ${f.id} : ${T.nb(f.envoye)} Mo envoyés sur Internet, assez pour copier la base patients.`, preuves: f.preuves.slice(0, 3), onglet: 'exfil' });
+  for (const f of ex.fenetres) if (f.niveau === 'PLAUSIBLE') alertes.push({ niv: 3, icone: '', texte: `Période ${f.id} : ${T.nb(f.envoye)} Mo envoyés sur Internet, assez pour copier la base patients.`, preuves: f.preuves.slice(0, 3), onglet: 'details/exfil' });
   const antiVus = new Map(); for (const a of vis.anti) { const x = antiVus.get(a.trace); if (x) x.n++; else antiVus.set(a.trace, Object.assign({ n: 1 }, a)); }
-  for (const a of [...antiVus.values()].slice(0, 3)) alertes.push({ niv: 2, icone: '', texte: `Trace effacée ou protection coupée : ${a.trace}${a.n > 1 ? ` · ${a.n} fois, dès le ${T.fcourt(a.date)}` : a.date ? ' · le ' + T.fcourt(a.date) : ''}`, preuves: a.id.includes('#') ? [a.id] : [], onglet: 'visibilite' });
+  for (const a of [...antiVus.values()].slice(0, 3)) alertes.push({ niv: 2, icone: '', texte: `Trace effacée ou protection coupée : ${a.trace}${a.n > 1 ? ` · ${a.n} fois, dès le ${T.fcourt(a.date)}` : a.date ? ' · le ' + T.fcourt(a.date) : ''}`, preuves: a.id.includes('#') ? [a.id] : [], onglet: 'details/visibilite' });
   const transf = T.table('comptes_transfert').filter(r => r.Outil);
-  if (transf.length) alertes.push({ niv: 3, icone: '', texte: `Compte de stockage ou de transfert configuré sur le poste : ${transf.slice(0, 3).map(r => `${r.Outil} ${r.Type || ''} ${(r.Compte || '').replace(/ ; /g, ', ')}`.replace(/\s+/g, ' ').trim()).join(' ; ')}. Mots de passe non lus.`, preuves: transf.slice(0, 3).map(r => r._id), onglet: 'exfil' });
+  if (transf.length) alertes.push({ niv: 3, icone: '', texte: `Compte de stockage ou de transfert configuré sur le poste : ${transf.slice(0, 3).map(r => `${r.Outil} ${r.Type || ''} ${(r.Compte || '').replace(/ ; /g, ', ')}`.replace(/\s+/g, ' ').trim()).join(' ; ')}. Mots de passe non lus.`, preuves: transf.slice(0, 3).map(r => r._id), onglet: 'details/exfil' });
   const ram = T.memoireVive(), ramActifs = ram.procs.filter(p => p.niveau >= 3 && !p.fin);
-  if (ramActifs.length) alertes.push({ niv: 3, icone: '', texte: `Programme suspect encore en mémoire à la collecte : ${ramActifs.slice(0, 3).map(p => `${p.nom} (n° ${p.pid}, ${p.indices[0]})`).join(' ; ')}.`, preuves: ramActifs.slice(0, 3).map(p => p.id), onglet: 'memoire' });
-  if (deja.length) alertes.push({ niv: 2, icone: '', texte: `Traces déjà vues dans ${deja.length > 1 ? deja.length + ' autres incidents' : 'un autre incident'} : ${deja.map(d => d.client || d.poste).join(', ')}.`, preuves: [], onglet: 'ioc' });
+  if (ramActifs.length) alertes.push({ niv: 3, icone: '', texte: `Programme suspect encore en mémoire à la collecte : ${ramActifs.slice(0, 3).map(p => `${p.nom} (n° ${p.pid}, ${p.indices[0]})`).join(' ; ')}.`, preuves: ramActifs.slice(0, 3).map(p => p.id), onglet: 'details/memoire' });
+  if (deja.length) alertes.push({ niv: 2, icone: '', texte: `Traces déjà vues dans ${deja.length > 1 ? deja.length + ' autres incidents' : 'un autre incident'} : ${deja.map(d => d.client || d.poste).join(', ')}.`, preuves: [], onglet: 'details/ioc' });
   const vict = T.chercherVictimes(R.mots_cles_fuite && R.mots_cles_fuite.length ? R.mots_cles_fuite : (R.client ? [R.client] : []));
-  if (vict.resultats.length) alertes.push({ niv: 3, icone: '', texte: `Nom proche du client publié sur un site de fuite : ${vict.resultats.map(r => `${r.victime} (${r.groupe})`).slice(0, 3).join(', ')}.`, preuves: [], onglet: 'fuites' });
+  if (vict.resultats.length) alertes.push({ niv: 3, icone: '', texte: `Nom proche du client publié sur un site de fuite : ${vict.resultats.map(r => `${r.victime} (${r.groupe})`).slice(0, 3).join(', ')}.`, preuves: [], onglet: 'details/fuites' });
   return { cnil, grille, alertes, actives, deja, vict, kpi: {
     sessions: sessionsDist.length, ipSucces: succes.length, pays: [...new Set(succes.map(e => e.pays).filter(Boolean))],
     echecs: ip.ips.reduce((s, e) => s + e.echecs, 0), ipBrute: ip.ips.filter(e => e.echecs >= 20).length, outils, chiffres,

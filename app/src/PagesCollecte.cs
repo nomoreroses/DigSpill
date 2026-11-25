@@ -28,7 +28,7 @@ namespace DigSpill
                 case "collecte": return new PageCollecte(f);
                 case "fin": return new PageFin(f);
                 case "alerte":
-                    c.RaisonAlerte = "Fichier-appât modifié : !!!_0_Dossiers_patients_2026.xlsx";
+                    c.RaisonAlerte = "Fichier-appât modifié : !!!_0_Dossiers_patients_" + DateTime.Now.Year + ".xlsx";
                     c.ActionsUrgence = new List<string> { "Collecte arrêtée (PowerShell et ses programmes)", "Écriture bloquée sur le disque (lecture seule)", "Volume démonté de force (un autre programme l'utilisait)", "Lettre F: retirée : le support n'est plus visible des programmes" };
                     return new PageAlerte(f);
                 case "analyser": return new PageSource(f);
@@ -639,7 +639,7 @@ namespace DigSpill
             var d = Ctx.Destination;
             Ctx.DossierCollecteRacine = Path.Combine(d.Racine, "Collecte");
             var i = Ctx.Inter;
-            Log(string.Format("DigSpill {0} · {1} · technicien {2} · cabinet {3} · destination {4}", Programme.Version, Environment.MachineName, i.Technicien, i.Cabinet, d.Racine));
+            Log(string.Format("DigSpill {0} · {1} · technicien {2} · cabinet {3} · destination {4}", Programme.VersionKit, Environment.MachineName, i.Technicien, i.Cabinet, d.Racine));
             if (Ctx.FeuVert != null && Verifications.Global(Ctx.FeuVert) == Niveau.Danger) Log("[!] Feu vert en DANGER : le technicien a choisi de continuer.");
 
             // --- pieges

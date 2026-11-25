@@ -4,8 +4,6 @@ name: Test collecte et RAM
 # puis lecture de l'image RAM par Volatility 3. A lancer a la main (Actions > Test collecte et RAM).
 on:
   workflow_dispatch:
-  push:
-    branches: [correction-ram]
 
 permissions:
   contents: read

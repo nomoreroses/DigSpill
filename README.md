@@ -107,7 +107,7 @@ Quatre onglets, trois niveaux de lecture : la phrase en haut (5 secondes), les a
 | 🎯 Résumé | Une phrase de faits (d'où venait la connexion, combien est parti sur Internet, combien de fichiers sont chiffrés), les **actions à faire maintenant** (cases à cocher, compte à rebours CNIL, procédure « Isoler le poste »), ce que la collecte ne peut pas voir |
 | 🕒 Chronologie | La période de l'attaque **racontée en 4 chapitres** : il entre, il s'installe, il emporte les données, il détruit. Chaque étape s'ouvre sur ses preuves : ce que dit la ligne, fichier, n° de ligne, SHA256 du manifeste |
 | 🔎 Détails | Points vérifiés, périodes suspectes, chiffres clés et alertes, adresses IP et pays, données sorties du poste, **mémoire vive**, angles morts, santé et RGPD, mots de passe et fuites, traces à chercher ailleurs (IOC), analyse par IA, tous les événements (frise), résumé de la collecte |
-| 🔏 Preuves | Intégrité des preuves (scellé horodaté, chaîne de possession, vérification des fichiers) et rapports à imprimer (praticien, technique, PV de collecte) |
+| 🔏 Preuves | Intégrité des preuves (scellé horodaté, chaîne de possession, vérification des fichiers) et rapports à imprimer (client, technique, PV de collecte) |
 
 - **Ctrl K** : recherche dans les IP, empreintes, comptes, étapes du récit, rubriques, et identifiants de preuve (`executions_fenetres#14`).
 - Thème sombre par défaut, **thème clair** dans Réglages (engrenage en haut à droite). Le rapport imprimé reste clair.
@@ -155,7 +155,7 @@ Chaque constat renvoie à sa preuve : un identifiant `fichier#ligne` cliquable q
 ### Ce qui part sur Internet (et ce qui ne part pas)
 
 - **Rien ne sort du fichier sans un clic.** Les données de la collecte restent dans le fichier.
-- **Bases publiques** : DigSpill télécharge des listes publiques entières dans `moteur\outils\bases` (pays et opérateur IPtoASN, Tor, FireHOL, blocklist.de, GreenSnow, CINS, Feodo, Spamhaus DROP, victimes publiées sur ransomware.live) et les compare **en local**. Le nom du client et ses IP ne sont jamais envoyés. Option `-AvecVilles` : base des villes DB-IP Lite (~40 Mo). Option `-SansInternet` : utilise seulement les bases déjà présentes.
+- **Bases publiques** : DigSpill télécharge des listes publiques entières dans `moteur\outils\bases` (pays et opérateur IPtoASN, Tor, FireHOL, blocklist.de, GreenSnow, CINS, Feodo, Spamhaus DROP, victimes publiées sur ransomware.live) et les compare **en local**. Le nom du client et ses IP ne sont jamais envoyés. Option `-SansInternet` : utilise seulement les bases déjà présentes.
 - **Horodatage** : seule l'empreinte SHA-256 du scellé part vers l'autorité d'horodatage (désactivable).
 - **Sur clic seulement** : Have I Been Pwned (seuls les 5 premiers caractères du hachage SHA-1 du mot de passe), Shodan InternetDB (l'IP choisie), liens VirusTotal / MalwareBazaar (le hachage choisi), Claude (la synthèse filtrée, affichée avant l'envoi : comptes pseudonymisés U1, U2…, noms de fichiers et dossiers masqués, URL réduites au domaine, e-mails masqués).
 - Sans clé API, le bouton « Copier consignes + synthèse » permet d'utiliser claude.ai, puis de recoller la réponse pour en vérifier les citations.

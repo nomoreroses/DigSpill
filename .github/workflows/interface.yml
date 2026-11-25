@@ -25,7 +25,7 @@ jobs:
       - name: Interface par Generer-Interface.ps1 (Windows PowerShell 5.1, sans Internet)
         shell: powershell
         run: .\moteur\Generer-Interface.ps1 -Collecte moteur\interface\dev\demo\Collecte\SECRETARIAT-01_20261117_150121 -Bases moteur\interface\dev\demo\bases -Sortie ps.html -SansInternet -SansOuvrir -SansHorodatage
-      - name: Comparer les deux fichiers (hors donnees de la collecte)
+      - name: Comparer les deux fichiers (page et donnees de la collecte)
         run: python -I moteur/interface/dev/comparer_generateurs.py py.html ps.html
       - uses: actions/upload-artifact@v4
         if: always()

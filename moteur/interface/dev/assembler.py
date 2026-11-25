@@ -160,15 +160,14 @@ def charge_utile(collecte: Path, bases: Path, demo=False, tsa: Path | None = Non
     fich, analyse = fichiers(collecte)
     ips = ips_collecte(fich)
     asn = bases / "ip2asn-combined.tsv.gz"
-    ville = bases / "dbip-city-ipv4.csv.gz"
     l, meta = listes(bases, ips)
     lire = lambda p: p.read_text(encoding="utf-8-sig", errors="replace") if p.is_file() else ""
     date = lambda p: datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d")
     return {
         "format": 1, "genere_le": datetime.now().strftime("%Y-%m-%d %H:%M"), "generateur": "assembler.py (developpement)" if not demo else "Generer-Interface (demonstration)",
         "demo": demo, "collecte": {"nom": collecte.name, "analyse": analyse}, "fichiers": fich,
-        "geo_asn": plages(asn, ips, "\t"), "geo_ville": plages(ville, [i for i in ips if ":" not in i], ","), "listes": l,
-        "bases": {"asn": {"source": "IPtoASN", "date": date(asn)} if asn.is_file() else None, "ville": {"source": "DB-IP Lite (CC BY 4.0)", "date": date(ville)} if ville.is_file() else None,
+        "geo_asn": plages(asn, ips, "\t"), "listes": l,
+        "bases": {"asn": {"source": "IPtoASN", "date": date(asn)} if asn.is_file() else None,
                   "listes": meta, "ransomware": {"date": date(bases / "ransomware_live_FR.json")} if (bases / "ransomware_live_FR.json").is_file() else None},
         "ransomware_brut": lire(bases / "ransomware_live_FR.json"), "ransomware_recent_brut": lire(bases / "ransomware_live_recent.json"),
         "memoire_brut": lire(bases / "memoire_incidents.json"), "reglages_brut": lire(collecte.parent / (collecte.name + "_reglages.json")),

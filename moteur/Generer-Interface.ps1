@@ -13,7 +13,6 @@
       -Sortie <fichier>     defaut : <dossier Collecte>\<POSTE>_<date>_INTERFACE.html
       -SansInternet         ne telecharge rien (utilise les bases deja presentes dans outils\bases)
       -MajBases             force le telechargement des bases publiques (sinon : si absentes ou > 7 jours)
-      -AvecVilles           telecharge aussi la base des villes DB-IP Lite (~40 Mo, pour placer les IP sur la carte)
       -Proteger             demande un mot de passe et chiffre les donnees du fichier (AES-256 + HMAC, PBKDF2)
       -SansOuvrir           ne pas ouvrir le fichier a la fin
       -SansHorodatage       ne pas faire horodater le scelle par un tiers
@@ -22,7 +21,7 @@
 
     Bases publiques (outils\bases, reutilisees d'une fois sur l'autre) : AUCUNE donnee de la collecte n'est
     envoyee. On telecharge des listes publiques entieres et on les compare ici, en local.
-      - IPtoASN (pays + operateur, domaine public) ; DB-IP Lite (villes, CC BY 4.0) si -AvecVilles
+      - IPtoASN (pays + operateur, domaine public)
       - listes : Tor, FireHOL niveau 1, blocklist.de, GreenSnow, CINS, abuse.ch Feodo, Spamhaus DROP
       - ransomware.live : victimes publiees (France + recentes), cherchees en local par l'interface
     Memoire des incidents (outils\bases\memoire_incidents.json) : IOC de chaque collecte traitee, pour signaler
@@ -40,7 +39,6 @@ param(
     [string]$Sortie,
     [switch]$SansInternet,
     [switch]$MajBases,
-    [switch]$AvecVilles,
     [switch]$Proteger,
     [switch]$SansOuvrir,
     [switch]$SansHorodatage,
@@ -51,7 +49,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$Version = '1.1'
+# version du kit (moteur\VERSION.txt, ecrit par construire-kit.ps1), notee dans les journaux, le scelle et le PV ; 'dev' hors kit
+$Version = 'dev'
+try { $v = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'VERSION.txt') -TotalCount 1 -ErrorAction Stop)[0]; if ("$v".Trim()) { $Version = "$v".Trim() } } catch { }
 $Ici = $PSScriptRoot
 $Interface = Join-Path $Ici 'interface'
 if (-not $Bases) { $Bases = Join-Path $Ici 'outils\bases' }
@@ -140,7 +140,6 @@ $sources = @(
     @{ F = 'ip_spamhaus_drop.txt'; U = 'https://www.spamhaus.org/drop/drop_v4.json'; N = 'Spamhaus DROP' },
     @{ F = 'ransomware_live_FR.json'; U = 'https://api.ransomware.live/v2/countryvictims/FR'; N = 'ransomware.live (victimes France)' },
     @{ F = 'ransomware_live_recent.json'; U = 'https://api.ransomware.live/v2/recentvictims'; N = 'ransomware.live (victimes recentes)' })
-if ($AvecVilles) { $sources += @{ F = 'dbip-city-ipv4.csv.gz'; U = 'https://cdn.jsdelivr.net/npm/@ip-location-db/dbip-city/dbip-city-ipv4.csv.gz'; N = 'DB-IP Lite (villes)' } }
 if (-not $SansInternet) {
     foreach ($s in $sources) {
         $dest = Join-Path $Bases $s.F
@@ -232,11 +231,9 @@ public static class TriageIp {
 }
 
 function Date-Fichier($p) { (Get-Item -LiteralPath $p).LastWriteTime.ToString('yyyy-MM-dd') }
-$geoAsn = @(); $geoVille = @(); $basesJson = New-Object System.Collections.Generic.List[string]
+$geoAsn = @(); $basesJson = New-Object System.Collections.Generic.List[string]
 $fAsn = Join-Path $Bases 'ip2asn-combined.tsv.gz'
-$fVille = Join-Path $Bases 'dbip-city-ipv4.csv.gz'
 if ((Test-Path -LiteralPath $fAsn) -and $ipsTab.Count) { try { $geoAsn = [TriageIp]::Plages($fAsn, $ipsTab, "`t"[0]); Info "[+] pays / operateur : $($geoAsn.Count) correspondance(s)" } catch { Info "[!] base IPtoASN illisible : $($_.Exception.Message)" } }
-if ((Test-Path -LiteralPath $fVille) -and $ipsTab.Count) { try { $geoVille = [TriageIp]::Plages($fVille, $ipsTab, ','); Info "[+] villes : $($geoVille.Count) correspondance(s)" } catch { Info "[!] base des villes illisible : $($_.Exception.Message)" } }
 $listesJson = New-Object System.Collections.Generic.List[string]
 $listesMeta = New-Object System.Collections.Generic.List[string]
 foreach ($l in @(@('tor', 'Noeuds de sortie Tor'), @('firehol1', 'FireHOL niveau 1'), @('blocklistde', 'blocklist.de'), @('greensnow', 'GreenSnow'), @('cins', 'CINS Army'), @('feodo', 'abuse.ch Feodo'), @('spamhaus_drop', 'Spamhaus DROP'))) {
@@ -387,9 +384,8 @@ foreach ($k in $fichiers.Keys) {
     if (-not $premier) { [void]$sb.Append(',') }; $premier = $false
     [void]$sb.Append((J $k) + ':{"chemin":' + (J $f.chemin) + ',"taille":' + $f.taille + ',"tronque":' + (JB $f.tronque) + ',"modifie":' + (J $f.modifie) + ',"texte":' + (J $f.texte) + '}')
 }
-[void]$sb.Append('},"geo_asn":[' + (($geoAsn | ForEach-Object { J $_ }) -join ',') + '],"geo_ville":[' + (($geoVille | ForEach-Object { J $_ }) -join ',') + ']')
+[void]$sb.Append('},"geo_asn":[' + (($geoAsn | ForEach-Object { J $_ }) -join ',') + ']')
 [void]$sb.Append(',"listes":{' + ($listesJson -join ',') + '},"bases":{"asn":' + $(if (Test-Path -LiteralPath $fAsn) { '{"source":"IPtoASN","date":' + (J (Date-Fichier $fAsn)) + '}' } else { 'null' }))
-[void]$sb.Append(',"ville":' + $(if (Test-Path -LiteralPath $fVille) { '{"source":"DB-IP Lite (CC BY 4.0)","date":' + (J (Date-Fichier $fVille)) + '}' } else { 'null' }))
 $fRw = Join-Path $Bases 'ransomware_live_FR.json'
 [void]$sb.Append(',"listes":[' + ($listesMeta -join ',') + '],"ransomware":' + $(if (Test-Path -LiteralPath $fRw) { '{"date":' + (J (Date-Fichier $fRw)) + '}' } else { 'null' }) + '}')
 [void]$sb.Append(',"ransomware_brut":' + (J (Brut 'ransomware_live_FR.json')) + ',"ransomware_recent_brut":' + (J (Brut 'ransomware_live_recent.json')))

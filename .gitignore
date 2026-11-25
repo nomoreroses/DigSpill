@@ -21,3 +21,4 @@ digspill.ini
 # kit assemble par le workflow
 /kit/
 DigSpill*.zip
+__pycache__/

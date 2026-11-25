@@ -89,7 +89,7 @@ namespace DigSpill
                 "Collecte   : " + nomCollecte,
                 "Cree le    : " + maintenant.ToString("yyyy-MM-dd HH:mm:ss ") + decalage + " (horloge de " + Environment.MachineName + ")",
                 "Par        : " + par,
-                "Outil      : DigSpill.exe v" + Programme.Version + " (sur le poste, fin de collecte)", "",
+                "Outil      : DigSpill.exe v" + Programme.VersionKit + " (sur le poste, fin de collecte)", "",
                 "Empreintes SHA256, tailles (octets) et chemins des fichiers scelles :" };
             contenu.AddRange(lignes);
             contenu.AddRange(new[] { "",

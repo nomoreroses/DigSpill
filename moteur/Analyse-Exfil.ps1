@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    DigSpill - Analyse-Exfil.ps1 v2.2 - Analyse d'une collecte (Collecte-Exfil.ps1) orientee EXFILTRATION.
+    DigSpill - Analyse-Exfil.ps1 - Analyse d'une collecte (Collecte-Exfil.ps1) orientee EXFILTRATION.
     Lance automatiquement en fin de collecte, ou a posteriori sur une collecte existante (poste d'analyse) :
 
       powershell -ExecutionPolicy Bypass -File Analyse-Exfil.ps1 -Collecte E:\Collecte\POSTE_20261117_150121
@@ -44,7 +44,9 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
-$Version   = '2.2'
+# version du kit (moteur\VERSION.txt, ecrit par construire-kit.ps1), notee dans les journaux, le scelle et le PV ; 'dev' hors kit
+$Version = 'dev'
+try { $v = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'VERSION.txt') -TotalCount 1 -ErrorAction Stop)[0]; if ("$v".Trim()) { $Version = "$v".Trim() } } catch { }
 $T0        = Get-Date
 $Inv       = [Globalization.CultureInfo]::InvariantCulture
 $Fr        = [Globalization.CultureInfo]::GetCultureInfo('fr-FR')
@@ -680,7 +682,8 @@ Step 'Navigation web complete (Chrome, Edge, Brave, Opera, Firefox) et telecharg
 
 # =================================================================== 5. ACCES AUX FICHIERS : LNK, JUMP LISTS, RECENTDOCS, SHELLBAGS, \\tsclient
 $script:Acc = New-Object System.Collections.Generic.List[object]
-$DataRx = '(?i)Axilog|AXI_DATABASE|AxiSoftware\\Database|\.fdb\b|\.fdp\b|\.gdb\b|\\HNDB\\|Donn[e\u00e9]es? patients?'
+# logiciels metier de sante : meme liste que l'interface (T.REGLES_SANTE, 02_analyse.js), pas seulement Axilog
+$DataRx = '(?i)Axilog|AXI_DATABASE|AxiSoftware\\Database|axisante|\\axi\\|medistory|\.4dd\b|\.4dindx\b|hellodoc|crossway|\bweda\b|logos_?w|\\julie\\|julie\.fdb|desmos|visiodent|veasy|\.fdb\b|\.fdp\b|\.gdb\b|\\HNDB\\|Donn[e\u00e9]es? patients?'
 $TsRx   = '(?i)tsclient'
 Step 'Acces aux fichiers : LNK, Jump Lists, RecentDocs, ShellBags (redirection \\tsclient, donnees metier)' {
     if (-not $Velo) { G 'Fichiers copiés vers le PC de l''attaquant (bureau à distance)' 'NON VERIFIABLE' 'L''outil de lecture des fichiers ouverts (Velociraptor) manque dans le kit : refaites la clé avec le kit complet.' ''; return }
@@ -689,7 +692,7 @@ Step 'Acces aux fichiers : LNK, Jump Lists, RecentDocs, ShellBags (redirection \
         $p = "$path"
         $script:Acc.Add([pscustomobject]@{ Utilisateur = $u; Source = $src; Chemin = $p; Date1 = Fmt $d1; Date1Type = $lbl1; Date2 = Fmt $d2; Date2Type = $lbl2
             Fenetre = ((@((WinOf $d1), (WinOf $d2)) | Where-Object { $_ } | Select-Object -Unique) -join ',')
-            TSCLIENT = $(if ($p -match $TsRx) { 'OUI' }); DONNEES_METIER = $(if ($p -match $DataRx) { 'OUI' }); RESEAU = $(if ($p -match '^\\\\') { 'OUI' }) })
+            TSCLIENT = $(if ($p -match $TsRx) { 'OUI' }); DONNEES_METIER = $(if ($p -match $DataRx -and $p -notmatch '(?i)\.exe$') { 'OUI' }); RESEAU = $(if ($p -match '^\\\\') { 'OUI' }) })
     }
     $missingHives = @()
     foreach ($u in $users) {
@@ -1498,7 +1501,7 @@ Step 'Synthese (SYNTHESE_EXFILTRATION.txt) et lisez-moi' {
         $S.Add('  a qualifier (quelles donnees, quel volume, quels patients).')
     }
     $S.Add('  Ce qui ferait evoluer cette position :')
-    $S.Add('    - journaux / compteurs de la box (volume montant WAN par jour du 14 au 21/10, connexions sortantes inconnues) ;')
+    $S.Add('    - journaux / compteurs de la box (volume envoye vers Internet, jour par jour, sur la periode de l''attaque ; connexions sortantes inconnues) ;')
     $S.Add('    - revendication de vol dans la note ou publication sur un site de fuite (veille : note_rancon_analyse.txt) ;')
     $S.Add('    - journaux des systemes atteignables avec les identifiants exposes (NAS, logiciels web, messagerie) ;')
     $S.Add('    - pairs NetBird et journaux des outils d''acces distant.')
@@ -1506,7 +1509,7 @@ Step 'Synthese (SYNTHESE_EXFILTRATION.txt) et lisez-moi' {
     $S.Add('ELEMENTS A FAIRE FIGURER DANS LE RAPPORT / LA NOTIFICATION (art. 33 RGPD)')
     $S.Add('  [ ] Date et heure de DECOUVERTE de l''incident (depart du delai de 72 h) - voir A_COMPLETER_TECHNICIEN.txt')
     $S.Add('  [ ] Nombre estime de PATIENTS concernes (et non de fichiers) et categories de donnees (identite, NIR, sante...)')
-    $S.Add('  [ ] Fuseau horaire des heures citees (UTC+2 jusqu''au 25/10/2026, UTC+1 ensuite) et verification de l''horloge')
+    $S.Add('  [ ] Fuseau horaire des heures citees (heure d''ete UTC+2 ou d''hiver UTC+1 selon la date) et verification de l''horloge')
     $S.Add('  [ ] IOC complets (ioc_hachages.csv) ; hachage COMPLET des conteneurs (conteneurs_velociraptor.csv)')
     $S.Add('  [ ] Seconde copie des preuves, hachee et conservee separement (Copier-Preuves.ps1)')
     $S | Out-File (P 'SYNTHESE_EXFILTRATION.txt') -Encoding utf8

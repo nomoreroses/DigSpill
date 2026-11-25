@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.9.3 (bêta)
+- **Données du cabinet** : l'analyse reconnaît maintenant les dossiers et bases de MediStory, AxiSanté, HelloDoc, Crossway, Weda, Logos_w, Julie, Desmos, Visiodent/Veasy (avant : Axilog seulement). Dans ces cabinets, « Données du cabinet ouvertes pendant l'attaque » ne dit plus « Rien de suspect » sans avoir regardé. Le lancement du logiciel (.exe) n'est pas compté comme une ouverture de données.
+- **Une seule version partout** : scellé, journaux, PV de collecte et identifiants indiquent la version du kit (ex. 2.9.3) au lieu de « v1.1 », « 2.2 » ou « interface 1.2-beta ».
+- Résumé texte de l'analyse : plus de dates du premier incident (« du 14 au 21/10 », « jusqu'au 25/10/2026 »).
+- Alerte mémoire vive : le lien « Voir → » ouvre bien la page Mémoire vive (il ouvrait le Résumé).
+- Nettoyage : base des villes retirée (jamais fournie par le kit ni l'appli : la carte place les IP par pays), code mort supprimé, déclencheurs de tests sur des branches disparues retirés, nom du fichier-appât à l'année en cours.
+- **Garde-fous dans les tests** : le générateur Python et le générateur PowerShell doivent produire les mêmes données (pas seulement la même page) ; les copies du motif rançongiciel et du classement des IP doivent rester identiques ; `Get-Evtx` ne doit plus être passé directement à un pipeline (cause de l'erreur `op_Subtraction` de la 2.9.1).
+
 ## 2.9.2 (bêta)
 - **Textes du rapport réécrits en clair**, page par page, sans jargon :
   - Rubriques renommées : *Points vérifiés* (ex-grille par canal), *Périodes suspectes* (ex-fenêtres d'analyse), *Adresses IP et pays*, *Données sorties du poste* (ex-exfiltration), *Angles morts* (ex-visibilité), *Mots de passe et fuites*, *Traces à chercher ailleurs* (ex-IOC et chasse), *Résumé de la collecte* (ex-SYNTHESE.txt).

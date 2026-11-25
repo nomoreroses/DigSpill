@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    DigSpill - Collecte-Exfil.ps1 v2.2 - Collecte de triage forensique pour suspicion d'intrusion / exfiltration / rancongiciel.
+    DigSpill - Collecte-Exfil.ps1 - Collecte de triage forensique pour suspicion d'intrusion / exfiltration / rancongiciel.
     A lancer EN ADMINISTRATEUR sur le poste suspect (par DigSpill.exe, ou en secours moteur\secours\LANCER_COLLECTE.bat).
     Les resultats sont ecrits sur la cle : <cle>\Collecte\<NOMPC>_<date>\
 
@@ -47,7 +47,9 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
-$ScriptVersion = '2.2'
+# version du kit (moteur\VERSION.txt, ecrit par construire-kit.ps1), notee dans les journaux, le scelle et le PV ; 'dev' hors kit
+$ScriptVersion = 'dev'
+try { $v = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'VERSION.txt') -TotalCount 1 -ErrorAction Stop)[0]; if ("$v".Trim()) { $ScriptVersion = "$v".Trim() } } catch { }
 $StartTime = Get-Date
 $Full = ($Mode -eq 'Complet')
 
@@ -156,7 +158,7 @@ function Get-EvFields($ev) {
     $h
 }
 function Get-IpType([string]$ip) {
-    if (-not $ip -or $ip -eq '-' ) { return '-' }
+    if (-not $ip -or $ip -eq '-') { return '-' }
     $a = $null
     if (-not [Net.IPAddress]::TryParse($ip, [ref]$a)) { return '?' }
     if ($a.IsIPv4MappedToIPv6) { $a = $a.MapToIPv4() }
