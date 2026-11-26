@@ -1,5 +1,21 @@
 # Journal des versions
 
+## 2.9.4 (bêta)
+Corrections tirées d'une vraie collecte (serveur chiffré par un rançongiciel) :
+- **Chiffrement manqué, maintenant vu** : les fichiers renommés en `<aléatoire>.[e-mail].extension` (sans l'ancienne extension) sont reconnus. Et une extension inconnue à l'aspect aléatoire (ex. `.Fa2a2yMH`) posée sur 500 fichiers ou plus en moins de 2 h est signalée comme chiffrement, même sans e-mail dans le nom.
+- **Fausse alerte supprimée** : les doubles extensions de documents (`facture.pdf.pdf`, `.pdf.xlsx`, copies faites par une mise à jour du logiciel métier) ne comptent plus comme fichiers chiffrés.
+- Dates du chiffrement : la plus récente de création / modification (certains rançongiciels remettent l'ancienne date de modification).
+- **Bases du cabinet** : les fichiers livrés avec Windows (WinSxS…) ne sont plus listés. Le dossier « Données Axilog\Data » (documents patients) apparaît avec sa taille totale.
+- **Notes de rançon** : les fichiers d'aide de Windows, des applis du Store et de OneDrive ne sont plus candidats ; « help » ne prend plus `GetHelpWindow` ni `dbghelp`.
+- **Binaires suspects** : les bibliothèques que Java recopie dans Temp à chaque lancement (carte CPS, USB, SQLite) sont écartées (83 → 14 lignes sur le cas réel) ; un même fichier n'est archivé qu'une fois.
+- **Mémoire vive** : son SHA256 n'est plus recalculé pour le manifeste (plusieurs minutes gagnées).
+- **Nouvelles alertes rouges** (vu sur le serveur : rien ne s'affichait en haut du Résumé à part le chiffrement) :
+  - « Connexion réussie depuis Internet » avec l'adresse, le pays et les comptes, si un autre signe s'ajoute (pays étranger, hébergeur, liste malveillante, essais en masse, compte Invité). Une connexion depuis la France sans autre signe (praticien chez lui) reste dans la page Adresses IP.
+  - « Outil de pirate déposé pendant l'attaque » (scanner de ports…) : sur un serveur, Windows ne garde pas la trace des programmes lancés (Prefetch désactivé), la date de dépôt est souvent le seul indice. Ces outils comptent aussi dans « outils à risque ».
+- Réglages du bureau à distance (copier-coller, disques) : si les ruches ne peuvent pas être lues, l'analyse reprend les valeurs relevées pendant la collecte au lieu d'afficher « Impossible à vérifier ».
+- **Plus de fenêtres CMD en rafale** (#12) : Velociraptor, robocopy et esentutl sont lancés sans fenêtre. Les fichiers verrouillés d'un dossier (quarantaine Defender, journaux Datto RMM, Splashtop, TSplus…) sont lus en une seule fois au lieu d'un lancement par fichier.
+- **Antivirus** (#11) : `Analyse-Exfil.ps1` était mis en quarantaine comme rançongiciel (« Ransom.Rhysida »). Les noms de familles de rançongiciels, motifs de notes de rançon, adresses .onion / Bitcoin et liens de veille sont sortis des scripts, dans `moteur\indicateurs.json` (comme les noms d'outils en 2.9.2). Un test vérifie qu'ils n'y reviennent pas.
+
 ## 2.9.3 (bêta)
 - **Données du cabinet** : l'analyse reconnaît maintenant les dossiers et bases de MediStory, AxiSanté, HelloDoc, Crossway, Weda, Logos_w, Julie, Desmos, Visiodent/Veasy (avant : Axilog seulement). Dans ces cabinets, « Données du cabinet ouvertes pendant l'attaque » ne dit plus « Rien de suspect » sans avoir regardé. Le lancement du logiciel (.exe) n'est pas compté comme une ouverture de données.
 - **Une seule version partout** : scellé, journaux, PV de collecte et identifiants indiquent la version du kit (ex. 2.9.3) au lieu de « v1.1 », « 2.2 » ou « interface 1.2-beta ».

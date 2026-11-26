@@ -100,16 +100,19 @@ T.analyseIp = () => T.memo('analyseIp', () => {
 // Nom typique d'un fichier chiffre : extension d'origine PUIS ajout du rancongiciel (identifiant entre crochets avec un chiffre,
 // adresse e-mail, extension connue) ou document bureautique suivi d'une extension inconnue.
 // Ecartes : « icone@2x.png », « Film.[Groupe Release].torrent », « compte@exemple.fr_identity_provider » (meme regle que la collecte 2.9).
-const RX_RANCON_NOM = /\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(?:locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,}/i;
+const RX_RANCON_NOM = /\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.\[[^\]\s@]+@[^\]\s]+\]\.[a-z0-9]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py|docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|jpe?g|png|gif|tiff?|msg|eml)$)[a-z0-9]{3,12}$|\.(?:locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,}/i;
 /** Chiffrement retenu : extension dont au moins 20 fichiers au nom typique ont ete modifies en 24 h.
  *  Un rancongiciel chiffre en minutes ou en heures ; une installation de jeu ou des icones etalees sur des mois, non. */
+/** extension a l'aspect aleatoire : majuscules et minuscules melangees (ex. .Fa2a2yMH), sensible a la casse */
+const RX_EXT_ALEATOIRE = /^\.(?=[^.]*[a-z])(?=[^.]*[A-Z])[A-Za-z0-9]{5,12}$/;
 T.chiffrement = () => T.memo('chiffrement', () => {
   const parExt = new Map();
   for (const r of T.table('fichiers_chiffres_suspects')) {
     const nom = (r.Chemin || '').split('\\').pop();
     if (!RX_RANCON_NOM.test(nom)) continue;
     const ext = ((/\.[^.]+$/.exec(nom) || [''])[0]).toLowerCase();
-    const d = T.pdate(r.Modification) || T.pdate(r.Creation);
+    // la plus recente des deux dates : certains rancongiciels remettent l'ancienne date de modification
+    const m = T.pdate(r.Modification), c = T.pdate(r.Creation), d = m && c ? (c > m ? c : m) : (m || c);
     const g = parExt.get(ext) || { ext, n: 0, octets: 0, dates: [], exemple: r.Chemin, ids: [] };
     g.n++; g.octets += T.num(r.Taille); if (d) g.dates.push(+d); if (g.ids.length < 3) g.ids.push(r._id);
     parExt.set(ext, g);
@@ -131,6 +134,14 @@ T.chiffrement = () => T.memo('chiffrement', () => {
     if (detail && !tronque) continue;
     if (!RX_RANCON_NOM.test((r.Exemple || '').split('\\').pop())) continue;
     groupes.push({ ext, n, pic: T.num(r.DureeMinutes) <= 1440 ? n : 0, mo: T.num(r.TailleMo), debut: T.pdate(r.Premier), fin: T.pdate(r.Dernier), exemple: r.Exemple || '', ids: [r._id] });
+  }
+  // extension inconnue a l'aspect aleatoire (.Fa2a2yMH) posee sur 500 fichiers ou plus en moins de 2 h, meme sans e-mail dans le nom
+  for (const r of T.table('extensions_fichiers_recents')) {
+    const e = r.Extension || '', n = T.num(r.NbFichiers);
+    if (n < 500 || T.num(r.DureeMinutes) > 120 || !RX_EXT_ALEATOIRE.test(e)) continue;
+    const g = groupes.find(x => x.ext === e.toLowerCase());
+    if (g) { if (g.pic < 20) { g.pic = n; g.n = Math.max(g.n, n); } continue; }
+    groupes.push({ ext: e.toLowerCase(), n, pic: n, mo: T.num(r.TailleMo), debut: T.pdate(r.Premier), fin: T.pdate(r.Dernier), exemple: r.Exemple || '', ids: [r._id] });
   }
   const retenus = groupes.filter(g => g.pic >= 20).sort((a, b) => b.n - a.n);
   return { groupes: retenus, ecartes: groupes.filter(g => g.pic < 20), total: retenus.reduce((s, g) => s + g.n, 0) };
@@ -695,7 +706,12 @@ T.vue = () => T.memo('vue', () => {
   const sessionsDist = T.table('sessions_reconstituees').filter(r => ['PUBLIQUE', 'VPN/CGNAT'].includes(r.TypeIP) && !T.estBlanche(T.nettoyerIp((r.IP || '').split('/')[0])));
   // outils sensibles lances pendant des fenetres qui ne sont pas toutes en liste blanche (ex. NetBird du technicien exclu)
   const legit = new Set(ex.fenetres.filter(f => f.legitime).map(f => f.id));
-  const outils = [...new Set(T.table('executions_fenetres').filter(r => r.OutilSensible === 'OUI' && String(r.Fenetre || '').split(',').some(w => w && !legit.has(w))).map(r => (r.Programme || '').toLowerCase()).filter(Boolean))];
+  const suspecte = f => String(f || '').split(',').some(w => w && !legit.has(w));
+  const outils = [...new Set(T.table('executions_fenetres').filter(r => r.OutilSensible === 'OUI' && suspecte(r.Fenetre)).map(r => (r.Programme || '').toLowerCase()).filter(Boolean))];
+  // outil depose ou modifie pendant une periode suspecte : souvent le seul indice sur un serveur (Prefetch desactive sur Windows Server)
+  const deposes = T.table('outils_suspects').map(r => ({ r, nom: (r.Chemin || '').split('\\').pop(), d: [r.Creation, r.Modification].map(T.pdate).filter(d => d && suspecte(T.fenDe(d))).sort((a, b) => a - b)[0] }))
+    .filter(x => x.nom && x.d && !/\.lnk$/i.test(x.nom)).sort((a, b) => a.d - b.d);
+  for (const x of deposes) if (!outils.includes(x.nom.toLowerCase())) outils.push(x.nom.toLowerCase());
   const actives = ip.ips.filter(e => e.activeSuspecte && !e.blanche);
   const pire = ex.fenetres.reduce((m, f) => (!m || f.envoye > m.envoye) ? f : m, null);
   const R = T.reglages(), dec = T.pdate(R.decouverte);
@@ -704,6 +720,19 @@ T.vue = () => T.memo('vue', () => {
   const grille = T.table('grille_verification').map(r => ({ canal: r.Canal, statut: r.Statut, constat: r.Constat, fichier: r.Fichier, id: r._id })).sort((a, b) => (ordre[a.statut] ?? 5) - (ordre[b.statut] ?? 5));
   const alertes = [];
   if (actives.length) alertes.push({ niv: 3, icone: '', texte: `Connexion encore active vers ${actives.map(a => `${a.ip} (${(a.processus || '?').split('\\').pop()})`).join(', ')} au moment de la collecte : l'attaquant est peut-être toujours là. Isoler le poste du réseau.`, preuves: actives.flatMap(a => a.preuves.filter(x => x.startsWith('tcp_')).slice(0, 2)) });
+  // comptes des connexions REUSSIES seulement (e.comptes melange les essais rates), sans doublon de casse
+  const comptesOk = e => { const vus = new Map();
+    for (const r of T.table('synthese_ip_connexions_reussies')) if (T.nettoyerIp(r.IP) === e.ip) for (const c of String(r.Comptes || '').split(/\s*;\s*/)) {
+      const n = c.split('\\').pop(); if (n && n !== '-' && !/^(ANONYMOUS LOGON|SYSTEM)$/i.test(n) && !vus.has(n.toLowerCase())) vus.set(n.toLowerCase(), n); }
+    return [...vus.values()].slice(0, 3).join(', '); };
+  // en rouge : connexion reussie depuis Internet avec un signe de plus (pays etranger, hebergeur, liste, essais en masse) ou compte Invite.
+  // Une connexion de France sans autre signe (praticien chez lui) reste dans la page Adresses IP.
+  const intrus = succes.filter(e => e.score >= 4 || (e.comptes || []).some(c => /(^|\\)(invit[ée]|guest)$/i.test(c)));
+  if (intrus.length) alertes.push({ niv: 3, icone: '', texte: `Connexion réussie depuis Internet : ${intrus.slice(0, 3).map(e => `${e.ip}${e.pays ? ' (' + (T.nomPays(e.pays) || e.pays) + ')' : ''} avec ${comptesOk(e) || 'compte inconnu'}`).join(' ; ')}${intrus.length > 3 ? ` (+${intrus.length - 3})` : ''}.`,
+    preuves: intrus.slice(0, 3).flatMap(e => (e.preuves || []).slice(0, 1)), onglet: 'details/ip' });
+  const parOutil = new Map(); for (const x of deposes) { const k = x.nom.toLowerCase().replace(/\.exe$/, '').replace(/_console$/, '').replace(/[_ .-]*\d[\d.]*$/, ''); if (!parOutil.has(k)) parOutil.set(k, x); }
+  if (deposes.length) alertes.push({ niv: 3, icone: '', texte: `Outil de pirate déposé pendant l'attaque : ${[...parOutil.values()].slice(0, 3).map(x => `${x.nom} (${T.fcourt(x.d)})`).join(', ')}${parOutil.size > 3 ? ` (+${parOutil.size - 3})` : ''}.`,
+    preuves: deposes.slice(0, 3).map(x => x.r._id), onglet: 'details/ioc' });
   if (chiffres) alertes.push({ niv: 3, icone: '', texte: `${T.nb(chiffres)} fichiers chiffrés par un rançongiciel (${T.chiffrement().groupes.slice(0, 3).map(g => g.ext).join(', ')}).`, preuves: T.chiffrement().groupes.slice(0, 2).map(g => g.ids[0]) });
   for (const f of ex.fenetres) if (f.niveau === 'PLAUSIBLE') alertes.push({ niv: 3, icone: '', texte: `Période ${f.id} : ${T.nb(f.envoye)} Mo envoyés sur Internet, assez pour copier la base patients.`, preuves: f.preuves.slice(0, 3), onglet: 'details/exfil' });
   const antiVus = new Map(); for (const a of vis.anti) { const x = antiVus.get(a.trace); if (x) x.n++; else antiVus.set(a.trace, Object.assign({ n: 1 }, a)); }

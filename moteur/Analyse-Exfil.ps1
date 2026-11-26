@@ -66,11 +66,11 @@ New-Item -ItemType Directory -Force -Path $Work | Out-Null
 $LogFile = Join-Path $Sortie 'analyse.log'
 $EvtxDir = Join-Path $Collecte 'evenements\evtx'
 
-# noms d'outils d'attaque : dans moteur\indicateurs.json, pas dans ce script (sinon Defender le prend pour un outil
-# d'attaque : Trojan:PowerShell/PSAttackTool.A)
+# noms d'outils d'attaque et motifs de rancongiciel : dans moteur\indicateurs.json, pas dans ce script (sinon les antivirus
+# le prennent pour un outil d'attaque ou un rancongiciel : issues PSAttackTool.A en 2.9.2, puis #11)
 $Ind = $null
 try { $Ind = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'indicateurs.json') -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
-$manque = @('outils', 'outils_lancement_4688', 'sites_outils', 'mimikatz', 'menaces_mimikatz', 'detections_mimikatz', 'outils_mots_de_passe', 'outils_envoi') | Where-Object { -not $Ind -or -not $Ind.$_ }
+$manque = @('outils', 'outils_lancement_4688', 'sites_outils', 'mimikatz', 'menaces_mimikatz', 'detections_mimikatz', 'outils_mots_de_passe', 'outils_envoi', 'fichiers_chiffres', 'notes_rancon_noms', 'notes_rancon_profils', 'revendication_vol', 'adresse_onion', 'adresse_bitcoin', 'veille_rancon') | Where-Object { -not $Ind -or -not $Ind.$_ }
 if ($manque) {
     $m = "[!] Fichier moteur\indicateurs.json absent ou incomplet ($($manque -join ', ')) : refaites la clé avec le kit complet."
     Add-Content -LiteralPath $LogFile -Value $m -Encoding UTF8; Write-Output $m; exit 2
@@ -114,7 +114,9 @@ function Out-Csv($rows, [string]$rel) {
     else { 'Aucune ligne' | Out-File (P $rel) -Encoding utf8 }
 }
 # Nom typique d'un fichier chiffre (meme regle que la collecte 2.9 et l'interface)
-$script:RxRanconNom = New-Object Text.RegularExpressions.Regex('(?i)(\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+$script:RxRanconNom = New-Object Text.RegularExpressions.Regex($Ind.fichiers_chiffres, 'Compiled')
+# extension a l'aspect aleatoire (majuscules et minuscules melangees, ex. .Fa2a2yMH) : a comparer avec -cmatch
+$script:RxExtAleatoire = '^\.(?=[^.]*[a-z])(?=[^.]*[A-Z])[A-Za-z0-9]{5,12}$'
 # Chiffrement retenu : au moins 20 fichiers au nom typique, meme extension, modifies en 24 h.
 # Une installation de jeu (icones @2x) ou des fichiers etales sur des mois ne sont pas un chiffrement.
 function Get-Chiffrement {
@@ -126,7 +128,8 @@ function Get-Chiffrement {
         $ext = [IO.Path]::GetExtension($nom).ToLowerInvariant()
         if (-not $g.ContainsKey($ext)) { $g[$ext] = [pscustomobject]@{ N = 0; Dates = (New-Object System.Collections.Generic.List[datetime]) } }
         $g[$ext].N++
-        $d = Parse-Date "$($r.Modification)"; if (-not $d) { $d = Parse-Date "$($r.Creation)" }
+        # la plus recente des deux dates : certains rancongiciels remettent l'ancienne date de modification
+        $d = Parse-Date "$($r.Modification)"; $c = Parse-Date "$($r.Creation)"; if (-not $d -or ($c -and $c -gt $d)) { $d = $c }
         if ($d) { $g[$ext].Dates.Add($d) }
     }
     $res = New-Object System.Collections.Generic.List[object]
@@ -137,6 +140,14 @@ function Get-Chiffrement {
             if ($j - $i + 1 -gt $pic) { $pic = $j - $i + 1; $deb = $t[$i]; $fin = $t[$j] }
         }
         if ($pic -ge 20) { $res.Add([pscustomobject]@{ Extension = $k; NbFichiers = $g[$k].N; Pic = $pic; Premier = $deb.ToString('yyyy-MM-dd HH:mm:ss'); Dernier = $fin.ToString('yyyy-MM-dd HH:mm:ss') }) }
+    }
+    # Extension inconnue a l'aspect aleatoire (.Fa2a2yMH) posee sur 500 fichiers ou plus en moins de 2 h, meme sans e-mail dans le nom
+    foreach ($x in (Read-Csv (C 'rancon\extensions_fichiers_recents.csv'))) {
+        $e = "$($x.Extension)"; $dur = 99999.0; $n = [int64]0; [void][int64]::TryParse("$($x.NbFichiers)", [ref]$n)
+        [void][double]::TryParse(("$($x.DureeMinutes)" -replace ',', '.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$dur)
+        if ($n -ge 500 -and $dur -le 120 -and $e -cmatch $script:RxExtAleatoire -and -not @($res | Where-Object { $_.Extension -eq $e.ToLowerInvariant() }).Count) {
+            $res.Add([pscustomobject]@{ Extension = $e.ToLowerInvariant(); NbFichiers = $n; Pic = $n; Premier = "$($x.Premier)"; Dernier = "$($x.Dernier)" })
+        }
     }
     $script:Chiffrement = @($res | Sort-Object NbFichiers -Descending)
     return $script:Chiffrement
@@ -192,13 +203,29 @@ function Get-EvFields($ev) {
     } catch {}
     $h
 }
+function Start-Cache([string]$exe, [string[]]$arguments, [switch]$AvecErreurs) {
+    # Programme console lance sans fenetre. Avec & programme, une fenetre CMD peut s'ouvrir a chaque appel (issue #12).
+    # Rend les lignes de sortie (et d'erreur avec -AvecErreurs) ; code de retour dans $script:CodeSortie.
+    $psi = New-Object Diagnostics.ProcessStartInfo $exe
+    $psi.Arguments = (@($arguments) | ForEach-Object { '"' + ("$_" -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"' }) -join ' '
+    $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = [Text.Encoding]::UTF8; $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $script:CodeSortie = -1
+    try { $p = [Diagnostics.Process]::Start($psi) } catch { Log "    [!] $exe : $($_.Exception.Message)"; return @() }
+    $err = $p.StandardError.ReadToEndAsync()
+    $out = $p.StandardOutput.ReadToEnd()
+    $p.WaitForExit(); $script:CodeSortie = $p.ExitCode
+    $texte = $out + $(if ($AvecErreurs) { $err.Result } else { '' })
+    return @($texte -split '\r?\n' | Where-Object { $_ -ne '' })
+}
 function Invoke-Vql([string]$vql, [switch]$Json) {
     if (-not $Velo -or -not (Test-Path -LiteralPath $Velo)) { return @() }
     $prev = [Console]::OutputEncoding
     try {
         [Console]::OutputEncoding = [Text.Encoding]::UTF8
         $fmt = if ($Json) { 'jsonl' } else { 'csv' }
-        $o = & $Velo query --format $fmt $vql 2>$null
+        $o = Start-Cache $Velo @('query', '--format', $fmt, $vql)
     } finally { [Console]::OutputEncoding = $prev }
     if (-not $o) { return @() }
     if ($Json) { return @($o | Where-Object { $_ -and $_.StartsWith('{') } | ForEach-Object { $_ | ConvertFrom-Json }) }
@@ -769,6 +796,16 @@ Step 'Parametres de redirection RDP (lecteurs, presse-papier) et usage de rdpcli
     if ($Velo -and $swH -and (Test-Path -LiteralPath "$swH")) {
         foreach ($r in (Invoke-Vql "SELECT Name, Data.value AS V FROM glob(globs='/Policies/Microsoft/Windows NT/Terminal Services/fDisable*', accessor='raw_reg', root=$(RegRoot $swH))")) { $vals["Strategie\$($r.Name)"] = $r.V }
     }
+    # repli : valeurs relevees en direct par la collecte, si Velociraptor n'a rien lu dans les ruches (cas reel : serveur au nom accentue)
+    if (-not $vals.Count) {
+        Log '    [i] ruches SYSTEM / SOFTWARE non lues : valeurs prises dans reseau\rdp_redirections.txt de la collecte'
+        $sec = $null
+        foreach ($l in @(Get-Content -LiteralPath (C 'reseau\rdp_redirections.txt') -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+            if ($l -match '^###.*\\Policies\\') { $sec = 'Strategie' } elseif ($l -match '^###.*\\RDP-Tcp') { $sec = 'RDP-Tcp' } elseif ($l -match '^###') { $sec = $null }
+            elseif ($sec -and $l -match '^(fDisable\w+)\s*:\s*(\d+)\s*$') { $vals["$sec\$($matches[1])"] = $matches[2] }
+        }
+        if ($vals.Count) { $lines.Add('Valeurs relevees en direct pendant la collecte (reseau\rdp_redirections.txt), les ruches n''ont pas pu etre lues.') }
+    }
     $lbl = [ordered]@{ fDisableCdm = 'Redirection des lecteurs (\\tsclient)'; fDisableClip = 'Presse-papier'; fDisableCcm = 'Ports COM'; fDisableLPT = 'Ports LPT'; fDisablePNPRedir = 'Peripheriques PnP / USB'; fDisableCpm = 'Imprimantes' }
     $lines.Add('Valeur 0 ou absente = redirection AUTORISEE ; 1 = interdite. La strategie (GPO) prime sur RDP-Tcp.')
     $driveOk = $true; $clipOk = $true
@@ -786,7 +823,7 @@ Step 'Parametres de redirection RDP (lecteurs, presse-papier) et usage de rdpcli
     $pnp = Get-Evtx 'Microsoft-Windows-TerminalServices-PnPDevices/Admin' @(20001, 20002, 20003, 36, 37) $Since
     $lines.Add("Journal TerminalServices-PnPDevices : $(if (-not (Find-Evtx 'Microsoft-Windows-TerminalServices-PnPDevices/Admin')) { 'absent de la collecte' } else { "$(@($pnp).Count) evenement(s)" })")
     $lines | Out-File (P 'rdp_redirections.txt') -Encoding utf8
-    if (-not $vals.Count) { G 'Copier-coller vers le PC de l''attaquant (bureau à distance)' 'NON VERIFIABLE' 'La configuration de Windows (ruches SYSTEM et SOFTWARE) manque dans la collecte.' '' }
+    if (-not $vals.Count) { G 'Copier-coller vers le PC de l''attaquant (bureau à distance)' 'NON VERIFIABLE' 'Les réglages du bureau à distance sont introuvables : ni ruches SYSTEM et SOFTWARE lisibles, ni relevé fait pendant la collecte.' '' }
     else {
         G 'Copier-coller vers le PC de l''attaquant (bureau à distance)' $(if ($clipW.Count) { 'A LIRE' } else { 'RAS' }) "Le copier-coller en bureau à distance était $(if ($clipOk) { 'autorisé' } else { 'interdit' }). Le programme qui le permet (rdpclip.exe) a tourné $($clipW.Count) fois pendant l'attaque. Windows ne garde pas ce qui a été copié." 'rdp_redirections.txt'
         if (-not $driveOk) { G 'Fichiers copiés vers le PC de l''attaquant (bureau à distance)' 'RAS' 'Windows interdisait l''accès aux disques de l''ordinateur distant pendant le bureau à distance.' 'rdp_redirections.txt' }
@@ -1021,12 +1058,12 @@ Step 'Sources collectees : journal du pare-feu, BITS, USB, SMBServer, DNS-Client
 
 # =================================================================== 9. NOTE DE RANCON ET VEILLE
 Step 'Note de rancon : contacts, revendication de vol de donnees, pistes de veille' {
-    $notes = @(Get-ChildItem -LiteralPath (C 'rancon\notes') -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)recover|readme|decrypt|restore|how.?to|ransom|instruction|unlock|lisez' -and $_.Length -lt 200KB })
-    if (-not $notes.Count) { $notes = @(Get-ChildItem -LiteralPath (C 'utilisateurs') -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)recover|decrypt|how.?to' -and $_.Extension -match '\.(txt|html?|hta)$' } | Select-Object -First 1) }
+    $notes = @(Get-ChildItem -LiteralPath (C 'rancon\notes') -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $Ind.notes_rancon_noms -and $_.Length -lt 200KB })
+    if (-not $notes.Count) { $notes = @(Get-ChildItem -LiteralPath (C 'utilisateurs') -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $Ind.notes_rancon_profils -and $_.Extension -match '\.(txt|html?|hta)$' } | Select-Object -First 1) }
     if (-not $notes.Count) { G 'Demande de rançon : vol de données revendiqué ?' 'NON VERIFIABLE' 'Aucune note de rançon dans la collecte.' ''; return }
     $byHash = $notes | Group-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
     $out = New-Object System.Collections.Generic.List[string]
-    $theftRx = '(?i)(stole|stolen|steal|exfiltrat|download(ed)?\s+(all\s+)?(your|the)\s+data|we\s+have\s+(copied|downloaded|your)|copied|leak|publish|publicly|blog|dark\s?web|tor\s+site|sell\s+(your|the)\s+data|confidential|sensitive\s+data|data\s+will\s+be|personal\s+data|vol[e\u00e9]|t[e\u00e9]l[e\u00e9]charg[e\u00e9]|publi[e\u00e9]|divulg|fuite|donn[e\u00e9]es\s+(personnelles|sensibles|vol))'
+    $theftRx = $Ind.revendication_vol
     $claim = $false
     foreach ($g in $byHash) {
         $f = $g.Group[0]
@@ -1034,10 +1071,10 @@ Step 'Note de rancon : contacts, revendication de vol de donnees, pistes de veil
         $mails = @([regex]::Matches($t, '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}') | ForEach-Object { $_.Value } | Select-Object -Unique)
         $tg    = @([regex]::Matches($t, '(?<![A-Za-z0-9._%+-])@[A-Za-z0-9_]{4,}(?![A-Za-z0-9_]*\.)') | ForEach-Object { $_.Value.Trim() } | Select-Object -Unique)
         $tox   = @([regex]::Matches($t, '\b[0-9A-Fa-f]{76}\b') | ForEach-Object { $_.Value } | Select-Object -Unique)
-        $onion = @([regex]::Matches($t, '(?i)[a-z2-7]{16,56}\.onion\S*') | ForEach-Object { $_.Value } | Select-Object -Unique)
+        $onion = @([regex]::Matches($t, $Ind.adresse_onion) | ForEach-Object { $_.Value } | Select-Object -Unique)
         $urls  = @([regex]::Matches($t, '(?i)https?://\S+') | ForEach-Object { $_.Value } | Select-Object -Unique)
         $ids   = @([regex]::Matches($t, '(?i)(system\s*id|personal\s*id|your\s*id|id)\s*:\s*\S{6,}') | ForEach-Object { $_.Value } | Select-Object -Unique)
-        $btc   = @([regex]::Matches($t, '\b(bc1[a-z0-9]{25,60}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b') | ForEach-Object { $_.Value } | Select-Object -Unique)
+        $btc   = @([regex]::Matches($t, $Ind.adresse_bitcoin) | ForEach-Object { $_.Value } | Select-Object -Unique)
         $th    = @([regex]::Matches($t, "[^\r\n]{0,80}$theftRx[^\r\n]{0,80}") | ForEach-Object { $_.Value.Trim() } | Select-Object -Unique)
         if ($th.Count) { $claim = $true }
         $out.Add("NOTE : $($f.Name)  ($($g.Count) copie(s) identique(s) dans la collecte)")
@@ -1056,17 +1093,7 @@ Step 'Note de rancon : contacts, revendication de vol de donnees, pistes de veil
     $ext = @(Get-Chiffrement | Select-Object -First 3)
     $out.Add("Extension(s) des fichiers chiffres : $(($ext | ForEach-Object { "$($_.Extension) ($($_.NbFichiers) fichiers, $($_.Premier) -> $($_.Dernier))" }) -join ' ; ')")
     $out.Add('')
-    $out.Add('VEILLE A FAIRE A LA MAIN (ne pas automatiser : ne jamais envoyer le nom du cabinet a un service tiers sans accord)')
-    $out.Add('  [ ] ID Ransomware : https://id-ransomware.malwarehunterteam.com/ - soumettre la note + 1 fichier chiffre NON sensible')
-    $out.Add('      (identifie la famille, indique si un dechiffreur existe).')
-    $out.Add('  [ ] ransomware.live : https://www.ransomware.live/ - rechercher le contact (adresse e-mail, @Telegram), l''extension,')
-    $out.Add('      puis la famille identifiee : publie-t-elle des donnees volees (site de fuite / double extorsion) ?')
-    $out.Add('  [ ] ransomlook.io : https://www.ransomlook.io/ - meme recherche, liste des victimes par groupe.')
-    $out.Add('  [ ] Nomoreransom : https://www.nomoreransom.org/fr/decryption-tools.html - dechiffreur disponible ?')
-    $out.Add('  [ ] Rechercher le nom du cabinet et des praticiens sur ransomware.live / ransomlook (victimes recentes).')
-    $out.Add('  [ ] Surveillance dans le temps : refaire la recherche chaque semaine pendant 3 mois (les publications peuvent etre')
-    $out.Add('      tardives), noter date et resultat dans le dossier. Alerte possible via les flux RSS de ransomware.live.')
-    $out.Add('  [ ] Signalement : cybermalveillance.gouv.fr ; plainte (le contact de l''attaquant est un element utile).')
+    foreach ($l in @($Ind.veille_rancon)) { $out.Add($l) }   # liens des sites de veille : dans indicateurs.json (issue #11)
     $out | Out-File (P 'note_rancon_analyse.txt') -Encoding utf8
     G 'Demande de rançon : vol de données revendiqué ?' $(if ($claim) { 'INDICE' } else { 'RAS' }) $(if ($claim) { 'La note de rançon affirme que des données ont été volées ou seront publiées : voir les extraits.' } else { 'La note de rançon ne parle ni de vol ni de publication de données. Cela n''exclut pas un vol : surveillez les sites où les attaquants publient.' }) 'note_rancon_analyse.txt'
 }

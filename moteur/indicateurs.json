@@ -1,5 +1,5 @@
 {
- "_lisez_moi": "Noms d'outils d'attaque cherchés par Analyse-Exfil.ps1 (expressions régulières .NET). Gardés hors du script : écrits en clair dans un .ps1, ils le font prendre pour un outil d'attaque par Defender (Trojan:PowerShell/PSAttackTool.A).",
+ "_lisez_moi": "Motifs cherchés par Analyse-Exfil.ps1 et Collecte-Exfil.ps1 (expressions régulières .NET) : outils d'attaque, noms de fichiers chiffrés, notes de rançon. Gardés hors des scripts : écrits en clair dans un .ps1, ils le font prendre pour un outil d'attaque (Trojan:PowerShell/PSAttackTool.A) ou un rançongiciel (Ransom.Rhysida).",
  "outils_lancement_4688": "(?i)\\\\(rclone|megasync|megacmd|mimikatz|lazagne|procdump|winscp|filezilla|pscp|ngrok|chisel)[^\\\\\\s]*\\.exe",
  "outils": "(?i)mimikatz|chromepass|bulletspass|webbrowserpass|netpass|mailpass|passwordfox|operapass|routerpass|sniffpass|dialupass|wirelesskey|lazagne|procdump|rclone|winscp|filezilla|pscp|psftp|megasync|megacmd|anydesk|rustdesk|ngrok|cloudflared|chisel|7z|winrar|rar\\.exe|advanced_(ip|port)_scanner|netscan|nmap|stub\\.exe|\\\\s\\.exe$|^s\\.exe$|netbird|splashtop|tsplus|teamviewer|screenconnect|psexec|wmic|vssadmin|bcdedit|wbadmin|cipher",
  "sites_outils": "(?i)port-scanner|ip-scanner|nirsoft|mimikatz|github\\.com|raw\\.githubusercontent|anydesk|rustdesk|teamviewer|ngrok|rclone|netbird|splashtop|tsplus|screenconnect|7-zip|winrar|filezilla|winscp|putty",
@@ -7,5 +7,25 @@
  "menaces_mimikatz": "(?i)mimikatz|lsadump|HackTool",
  "detections_mimikatz": "(?i)mimikatz|lsadump",
  "outils_mots_de_passe": "(?i)pass|dialupass|wirelesskey|sniffpass|lazagne|credential",
- "outils_envoi": "rclone|megasync|megacmd|winscp|filezilla|pscp|restic|mimikatz|lazagne|procdump|netpass|webbrowserpass|mailpass|chromepass"
+ "outils_envoi": "rclone|megasync|megacmd|winscp|filezilla|pscp|restic|mimikatz|lazagne|procdump|netpass|webbrowserpass|mailpass|chromepass",
+ "fichiers_chiffres": "(?i)(\\.[a-z0-9]{2,5}\\.\\[(?=[^\\]]*[0-9@])[^\\]\\s]{3,80}\\]\\.[^.]{2,15}$|\\.\\[[^\\]\\s@]+@[^\\]\\s]+\\]\\.[a-z0-9]{2,15}$|\\.[a-z0-9]{2,5}\\.(?:[^@]*[\\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.[a-z]{2,10}[\\]})]?(?:\\.[a-z0-9]{1,15})?$|\\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py|docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|jpe?g|png|gif|tiff?|msg|eml)$)[a-z0-9]{3,12}$|\\.(locked|encrypted|crypted|lockbit\\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\\.id[-_][0-9a-f]{6,})",
+ "notes_rancon_noms": "(?i)recover|readme|decrypt|restore|how.?to|ransom|instruction|unlock|lisez",
+ "notes_rancon_profils": "(?i)recover|decrypt|how.?to",
+ "revendication_vol": "(?i)(stole|stolen|steal|exfiltrat|download(ed)?\\s+(all\\s+)?(your|the)\\s+data|we\\s+have\\s+(copied|downloaded|your)|copied|leak|publish|publicly|blog|dark\\s?web|tor\\s+site|sell\\s+(your|the)\\s+data|confidential|sensitive\\s+data|data\\s+will\\s+be|personal\\s+data|vol[e\\u00e9]|t[e\\u00e9]l[e\\u00e9]charg[e\\u00e9]|publi[e\\u00e9]|divulg|fuite|donn[e\\u00e9]es\\s+(personnelles|sensibles|vol))",
+ "adresse_onion": "(?i)[a-z2-7]{16,56}\\.onion\\S*",
+ "adresse_bitcoin": "\\b(bc1[a-z0-9]{25,60}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\\b",
+ "notes_rancon_evocateur": "(?i)(read.?me|decrypt|restore|recover|how.?to|ransom|instruction|unlock|encrypted|crypted|files?.?back|^info\\.|attention|warning|(^|[^a-z])help|rancon|lisez|lire.?(moi|pour)|restaur|d[eé]chiffr|r[eé]cup[eé]r|vos.?fichiers)",
+ "veille_rancon": [
+  "VEILLE A FAIRE A LA MAIN (ne pas automatiser : ne jamais envoyer le nom du cabinet a un service tiers sans accord)",
+  "  [ ] ID Ransomware : https://id-ransomware.malwarehunterteam.com/ - soumettre la note + 1 fichier chiffre NON sensible",
+  "      (identifie la famille, indique si un dechiffreur existe).",
+  "  [ ] ransomware.live : https://www.ransomware.live/ - rechercher le contact (adresse e-mail, @Telegram), l'extension,",
+  "      puis la famille identifiee : publie-t-elle des donnees volees (site de fuite / double extorsion) ?",
+  "  [ ] ransomlook.io : https://www.ransomlook.io/ - meme recherche, liste des victimes par groupe.",
+  "  [ ] Nomoreransom : https://www.nomoreransom.org/fr/decryption-tools.html - dechiffreur disponible ?",
+  "  [ ] Rechercher le nom du cabinet et des praticiens sur ransomware.live / ransomlook (victimes recentes).",
+  "  [ ] Surveillance dans le temps : refaire la recherche chaque semaine pendant 3 mois (les publications peuvent etre",
+  "      tardives), noter date et resultat dans le dossier. Alerte possible via les flux RSS de ransomware.live.",
+  "  [ ] Signalement : cybermalveillance.gouv.fr ; plainte (le contact de l'attaquant est un element utile)."
+ ]
 }
