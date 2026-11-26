@@ -164,7 +164,7 @@ namespace DigSpill
             bool ro = Ctx.Demo || Supports.LectureSeule(r);
             infoCle.Text = "Outils : " + r + (ro ? "  · lecture seule ✓" : "  · accessible en écriture") + "\r\n" +
                            (Supports.EstAdmin() || Ctx.Demo ? "Administrateur ✓" : "Sans droits administrateur") + "\r\n" +
-                           "DigSpill " + (MiseAJour.VersionKit(Ctx.RacineOutils) ?? Programme.Version) + (Ctx.Demo ? " · démonstration" : "");
+                           "DigSpill " + Programme.VersionKit + (Ctx.Demo ? " · démonstration" : "");
         }
 
         public void Aller(Page p)

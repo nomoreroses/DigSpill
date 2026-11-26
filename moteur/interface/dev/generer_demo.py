@@ -39,9 +39,6 @@ GEO = [("192.0.2.0", "192.0.2.63", "64496", "CN", "DEMO-CHINANET-HOSTING"), ("19
        ("203.0.113.0", "203.0.113.31", "64502", "NL", "DEMO-SERVERIUS-LIKE HOSTING"), ("203.0.113.32", "203.0.113.63", "64503", "RU", "DEMO-AEZA-LIKE VPS"),
        ("203.0.113.64", "203.0.113.127", "64504", "RU", "DEMO-RU-DATACENTER"), ("203.0.113.128", "203.0.113.159", "64505", "CN", "DEMO-CN-CLOUD"),
        ("203.0.113.160", "203.0.113.191", "64506", "RO", "DEMO-M247-LIKE VPN HOSTING"), ("203.0.113.192", "203.0.113.255", "64507", "SG", "DEMO-SG-VPS")]
-VILLES = {"64500": ("Rennes", 48.11, -1.68), "64506": ("Bucarest", 44.43, 26.10), "64503": ("Moscou", 55.75, 37.62), "64504": ("Saint-Petersbourg", 59.93, 30.36),
-          "64502": ("Amsterdam", 52.37, 4.90), "64496": ("Shanghai", 31.23, 121.47), "64497": ("Hanoi", 21.03, 105.85), "64498": ("Sao Paulo", -23.55, -46.63),
-          "64499": ("New York", 40.71, -74.0), "64501": ("Falkenstein", 50.48, 12.37), "64505": ("Pekin", 39.90, 116.40), "64507": ("Singapour", 1.35, 103.82)}
 SHA = {n: hashlib.sha256(f"demo-{n}".encode()).hexdigest().upper() for n in ("rclone", "netscan", "mimi", "netpass", "svhost")}
 SHA1 = {n: hashlib.sha1(f"demo-{n}".encode()).hexdigest().upper() for n in SHA}
 
@@ -474,10 +471,6 @@ def generer(force: bool = False) -> Path:
     with gzip.open(BASES / "ip2asn-combined.tsv.gz", "wt", encoding="utf-8") as g:
         for a, b, asn, cc, lib in GEO:
             g.write(f"{a}\t{b}\t{asn}\t{cc}\t{lib}\n")
-    with gzip.open(BASES / "dbip-city-ipv4.csv.gz", "wt", encoding="utf-8") as g:
-        for a, b, asn, cc, lib in GEO:
-            v, la, lo = VILLES[asn]
-            g.write(f"{a},{b},{cc},,,{v},,{la},{lo},\n")
     (BASES / "ip_tor.txt").write_text("# Demo - noeuds de sortie Tor (fictif)\n203.0.113.40\n203.0.113.41\n", encoding="utf-8")
     (BASES / "ip_blocklistde.txt").write_text("# Demo - blocklist.de (fictif)\n" + "\n".join(ip for ip, n in BRUTE[:12]) + "\n203.0.113.170\n", encoding="utf-8")
     (BASES / "ip_firehol1.txt").write_text("# Demo - FireHOL level 1 (fictif)\n203.0.113.64/27\n192.0.2.0/26\n", encoding="utf-8")

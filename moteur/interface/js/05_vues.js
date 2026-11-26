@@ -24,7 +24,6 @@ T.tableau = (cols, lignes, opts = {}) => {
   return lignes.length > (opts.max || 1000) ? h('div', {}, enveloppe, h('div', { class: 'pale petit' }, `${T.nb(lignes.length - (opts.max || 1000))} ligne(s) non affichée(s)`)) : enveloppe;
 };
 T.kpi = (ic, valeur, libelle, cls = '', titre = '') => h('div', { class: 'kpi ' + cls, title: titre || null }, h('div', {}, h('b', {}, valeur), h('span', {}, libelle)));
-T.nomPays = cc => (T.MONDE.noms && T.MONDE.noms[cc]) || cc || '';
 
 /* ---------------------------------------------------------------- icones SVG (trait 1.8, 16 px) et logo */
 const ICONES = {
@@ -123,7 +122,7 @@ T.fermerModale = () => { const m = T.$('#modale'); if (m) m.classList.remove('ou
 T.ouvrirModale = contenu => { const m = T.$('#modale'); T._focusModale = document.activeElement; m.innerHTML = ''; m.append(contenu); m.classList.add('ouvert'); const f = m.querySelector('input, select, textarea, button.primaire, button'); if (f) f.focus(); };
 T.majEntete = () => { /* l'entete ne porte plus de puce CNIL : l'echeance est dans les actions du Resume */ };
 
-/* ---------------------------------------------------------------- navigation : 4 onglets, anciens liens rediriges */
+/* ---------------------------------------------------------------- navigation : 4 onglets ; liens des versions 1.x (vue, ip, exfil…) redirigés */
 T.ANCIENS = { vue: 'resume', ip: 'details/ip', exfil: 'details/exfil', visibilite: 'details/visibilite', sante: 'details/sante', fuites: 'details/fuites', ioc: 'details/ioc', ia: 'details/ia', integrite: 'preuves/integrite', rapport: 'preuves/rapports' };
 T.route = id => {
   id = decodeURIComponent(String(id || '').replace(/^#/, ''));
@@ -444,7 +443,7 @@ T.ECRANS.ip = c => {
   const carte = h('div', { class: 'graph carte-monde', id: 'gCarte' });
   c.append(T.carte('Origine des connexions', 'rouge = connexion réussie · orange = tentatives ratées seulement', carte,
     h('div', { class: 'pale petit' }, b.asn ? `Base pays/opérateur : ${b.asn.source} du ${b.asn.date}` : 'Base des pays absente : régénérez le rapport avec Internet.',
-      b.ville ? ` · villes : ${b.ville.source} du ${b.ville.date}` : '', ' · ', (b.listes || []).filter(l => l.date).length ? `listes : ${(b.listes || []).filter(l => l.date).map(l => l.nom).join(', ')}` : "listes d'adresses malveillantes non téléchargées")));
+      ' · ', (b.listes || []).filter(l => l.date).length ? `listes : ${(b.listes || []).filter(l => l.date).map(l => l.nom).join(', ')}` : "listes d'adresses malveillantes non téléchargées")));
   requestAnimationFrame(() => T.graphCarte(carte, a));
   const tbl = h('div');
   const rendre = () => {
@@ -454,8 +453,8 @@ T.ECRANS.ip = c => {
     tbl.append(T.tableau([
       { t: 'Risque', l: '60px', v: e => h('span', { class: 'pill ' + (e.blanche ? 'vert' : e.score >= 5 ? 'rouge' : e.score >= 3 ? 'orange' : 'gris'), title: (e.blanche ? 'adresse déclarée légitime\n' : 'note de risque de 0 à 10\n') + e.raisons.join('\n') }, e.blanche ? 'légitime' : e.score) },
       { t: 'Adresse IP', v: e => h('div', {}, h('div', { class: 'mono gras' }, e.ip), h('div', { class: 'pale petit' }, T.typeIpLib(e.type))) },
-      { t: 'Pays', v: e => e.pays ? h('span', {}, T.drapeau(e.pays), ' ', T.nomPays(e.pays), e.ville ? h('div', { class: 'pale petit' }, e.ville) : '') : '–' },
-      { t: 'Opérateur', v: e => h('div', {}, h('div', {}, e.operateur || '–'), e.categorie ? h('span', { class: 'pill ' + (/^H[eé]b/.test(e.categorie) ? 'rouge' : /^(FAI|Fournisseur)/.test(e.categorie) ? 'bleu' : 'gris') }, e.categorie) : '') },
+      { t: 'Pays', v: e => e.pays ? h('span', {}, T.drapeau(e.pays), ' ', T.nomPays(e.pays)) : '–' },
+      { t: 'Opérateur', v: e => h('div', {}, h('div', {}, e.operateur || '–'), e.categorie ? h('span', { class: 'pill ' + (e.categorie.startsWith('Hébergeur') ? 'rouge' : e.categorie.startsWith('Fournisseur') ? 'bleu' : 'gris') }, e.categorie) : '') },
       { t: 'Réussies', l: '70px', v: e => e.succes ? h('b', { style: 'color:var(--red)' }, T.nb(e.succes)) : '0' }, { t: 'Ratées', l: '70px', v: e => T.nb(e.echecs) },
       { t: 'Période', v: e => h('span', { class: 'petit' }, T.fcourt(e.premier), e.dernier && e.dernier !== e.premier ? ' → ' + T.fcourt(e.dernier) : '') },
       { t: 'Comptes', v: e => h('span', { class: 'petit' }, e.comptes.slice(0, 4).join(', ')) },
@@ -468,7 +467,7 @@ T.ECRANS.ip = c => {
   const seg = h('div', { class: 'seg' }, [['interessantes', 'À regarder'], ['succes', 'Connexions réussies'], ['brute', 'Essais de mots de passe'], ['listes', 'Sur une liste'], ['toutes', 'Toutes']].map(([k, l]) =>
     h('button', { class: T.filtreIp === k ? 'actif' : '', onclick: ev => { T.filtreIp = k; T.$$('button', seg).forEach(x => x.classList.remove('actif')); ev.target.classList.add('actif'); rendre(); } }, l)));
   c.append(T.carte('Adresses IP', "« Légitime » : adresse connue (box du cabinet, technicien), plus signalée ensuite · « InternetDB » : ce que Shodan sait de l'adresse", h('div', { class: 'filtres' }, seg,
-    h('button', { class: 'btn', style: 'margin-left:auto', onclick: () => T.telecharger(`${T.identite().poste}_ip.csv`, T.versCsv(a.ips.map(e => ({ IP: e.ip, Type: e.type, Pays: e.pays, Ville: e.ville, ASN: e.asn, Operateur: e.operateur, Categorie: e.categorie, Succes: e.succes, Echecs: e.echecs, Premier: e.premier, Dernier: e.dernier, Score: e.score, Raisons: e.raisons.join(' | '), Listes: e.listes.map(l => l.nom).join(' | ') })))) }, 'Télécharger (CSV)')), tbl));
+    h('button', { class: 'btn', style: 'margin-left:auto', onclick: () => T.telecharger(`${T.identite().poste}_ip.csv`, T.versCsv(a.ips.map(e => ({ IP: e.ip, Type: e.type, Pays: e.pays, ASN: e.asn, Operateur: e.operateur, Categorie: e.categorie, Succes: e.succes, Echecs: e.echecs, Premier: e.premier, Dernier: e.dernier, Score: e.score, Raisons: e.raisons.join(' | '), Listes: e.listes.map(l => l.nom).join(' | ') })))) }, 'Télécharger (CSV)')), tbl));
   rendre();
   const g = h('div', { class: 'graph bas', id: 'gBrute', style: 'height:200px' });
   c.append(T.carte('Connexions ratées, par jour', 'mot de passe ou compte refusé (événement 4625) : un grand nombre = quelqu\'un essaie des mots de passe en masse', g));
@@ -775,7 +774,7 @@ T.rapportHtml = type => {
   const pire = ex.fenetres.reduce((m, f) => (!m || f.envoye > m.envoye) ? f : m, null);
   const note = '<p class="note">Ce document résume une analyse technique. Le rapport technique détaillé et sourcé est disponible auprès de votre prestataire.</p>';
   const bloc = (titre, l) => `<h2>${titre}</h2><div class="bloc">${l.map(x => `<div>${esc(x)}</div>`).join('')}</div>`;
-  if ((type === 'client' || type === 'praticien') && !bi.incident) {
+  if (type === 'client' && !bi.incident) {
     const trouve = ["Aucune trace d'intrusion, de vol de données ni de chiffrement n'a été trouvée sur ce poste."];
     if (k.defender) trouve.push(`L'antivirus Defender a repéré ${k.defender > 1 ? k.defender + ' menaces' : 'une menace'} sur ce poste : le technicien vérifie qu'${k.defender > 1 ? 'elles ont bien été supprimées' : 'elle a bien été supprimée'}.`);
     if (k.anti) trouve.push(`${k.anti > 1 ? k.anti + ' réglages de sécurité ont été modifiés' : 'Un réglage de sécurité a été modifié'} (antivirus ou journaux de Windows) : le technicien vérifie qu'il s'agit d'un changement normal.`);
@@ -785,7 +784,7 @@ T.rapportHtml = type => {
     const a = ["Reprendre l'utilisation normale du poste, sauf avis contraire du technicien.", 'Garder ce rapport avec le procès-verbal de collecte.', 'Au moindre nouveau doute (message étrange, fichiers illisibles, connexion inconnue), prévenir votre prestataire.'];
     return tete + cnil + bloc("Ce que l'examen a trouvé", trouve) + bloc('Limites', limites) + bloc('Ce que vous pouvez faire', a) + note;
   }
-  if (type === 'client' || type === 'praticien') {
+  if (type === 'client') {
     const l = [];
     if (k.sessions) l.push(`Des connexions à distance ont été faites sur ce poste depuis Internet (${k.pays.map(T.nomPays).join(', ') || 'pays non déterminé'}).`);
     if (k.chiffres) l.push(`${T.nb(k.chiffres)} fichiers ont été chiffrés par un rançongiciel.`);
@@ -810,7 +809,7 @@ T.rapportHtml = type => {
   if (!ipRap.length) html += `<div class="bloc">Aucune adresse IP d'Internet à signaler : ni connexion réussie, ni tentative ratée, ni adresse sur une liste malveillante.</div>`;
   if (ipHab) html += `<p class="note">${ipHab} connexion${ipHab > 1 ? 's' : ''} ouverte${ipHab > 1 ? 's' : ''} par des programmes signés vers des services en ligne (Google, Microsoft, Cloudflare…) au moment de la collecte : habituel, non listé ici.</p>`;
   const b = T.D.bases || {};
-  html += `<p class="note">Géolocalisation : ${b.asn ? esc(b.asn.source + ' du ' + b.asn.date) : 'non disponible'}${b.ville ? ' ; ' + esc(b.ville.source) : ''}. Listes publiques à leur date de téléchargement.</p>`;
+  html += `<p class="note">Géolocalisation : ${b.asn ? esc(b.asn.source + ' du ' + b.asn.date) : 'non disponible'}. Listes publiques à leur date de téléchargement.</p>`;
   html += `<h2>Données sorties du poste : volumes et ce qui était possible</h2>` + (ex.fenetres.length ? '' : '<div class="bloc">Aucune période suspecte : rien à mesurer.</div>') + ex.fenetres.map(f => `<div class="bloc"><b>${esc(f.id)}</b> ${esc(T.fcourt(f.debut))} → ${esc(T.fcourt(f.fin))} (${f.duree} min) – <b>${esc(T.NIVEAUX[f.niveau].lib)}</b><br>${esc(f.motif)}<ul>${f.constats.map(x => `<li>${esc(x)}</li>`).join('')}</ul>${pid('preuves : ' + [f.preuveFenetre, ...f.preuves.slice(0, 6)].join(' '))}</div>`).join('');
   if (ex.fenetres.length) html += `<p class="note">Hypothèses (déductions) : base ${T.nb(ex.hyp.taille)} Mo, compression ×${esc(ex.hyp.compression)}, débit d'envoi de la box ${ex.hyp.debit ? esc(ex.hyp.debit) + ' Mbit/s' : 'non renseigné'}. ${T.LIMITES_EXFIL.map(esc).join(' ')}</p>`;
   const vis = T.visibilite();

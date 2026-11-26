@@ -58,7 +58,7 @@ T.chaine = () => T.memo('chaine', () => {
   const qui = champ('Technicien') ? `${champ('Technicien')}${champ('Societe') ? ' (' + champ('Societe') + ')' : ''}` : champ('Lance par');
   const log = T.texte('collecte.log').split(/\r?\n/).filter(Boolean);
   const debut = log[0], fin = log.reverse().find(l => /Collecte terminee/i.test(l)) || '';
-  if (debut) add(debut.slice(0, 19), qui || '?', 'Collecte démarrée sur le poste', `${champ('Poste')} · mode ${champ('Mode') || '?'} · script ${champ('Version script') || '?'}`, 'collecte.log', '');
+  if (debut) add(debut.slice(0, 19), qui || '?', 'Collecte démarrée sur le poste', `${champ('Poste')} · mode ${champ('Mode') || '?'} · DigSpill ${champ('Version script') || '?'}`, 'collecte.log', '');
   const man = (T.D.fichiers || {}).manifeste_sha256;
   if (man) add(man.modifie || T.identite().date, qui || '?', 'Manifeste SHA256 de la collecte', `${T.nb(T.table('manifeste_sha256').length)} fichiers, chacun avec son empreinte`, 'manifeste_sha256#1', '');
   if (fin) add(fin.slice(0, 19), qui || '?', 'Collecte terminée', fin.slice(21).replace(/^=+\s*|\s*=+$/g, ''), 'collecte.log', '');
@@ -201,7 +201,7 @@ T.pvHtml = () => {
   </table>
   <h2>2. Intervenant et méthode</h2><table>
   ${ligne('Technicien', esc(champ('Technicien') || R.technicien || '……………………………………………') + (champ('Societe') ? ' · ' + esc(champ('Societe')) : '') + ' · compte utilisé : ' + esc(champ('Lance par') || '?'))}
-  ${ligne('Outils', `DigSpill (script de collecte ${esc(champ('Version script') || '?')}, interface ${esc(T.VERSION)})` + (champ('Velociraptor') ? '<br>Velociraptor : ' + esc(champ('Velociraptor')) : ''))}
+  ${ligne('Outils', `DigSpill ${esc(champ('Version script') || '?')}` + (champ('Velociraptor') ? '<br>Velociraptor : ' + esc(champ('Velociraptor')) : ''))}
   ${ligne('Méthode', 'Exécution depuis une clé USB dédiée ; copie des journaux et artefacts sans les modifier ; manifeste SHA-256 de chaque fichier collecté ; analyse dans un dossier séparé, la collecte n\'étant pas modifiée.')}
   </table>
   <h2>3. Empreintes</h2><table>

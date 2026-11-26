@@ -129,6 +129,9 @@ namespace DigSpill
     static class Programme
     {
         public const string Version = "1.1";
+        /// <summary>Version écrite dans le scellé, les journaux et la barre latérale : celle du kit (moteur\VERSION.txt),
+        /// sinon celle de l'exe (dépôt non construit). Fixée au démarrage.</summary>
+        public static string VersionKit = Version;
 
         /// <summary>Dossier des scripts : &lt;exe&gt;\moteur (cle rangee), l'exe lui-meme (ancien rangement),
         /// ou un parent (pendant le developpement, app\bin).</summary>
@@ -162,6 +165,7 @@ namespace DigSpill
             var ctx = new Contexte();
             ctx.Demo = args.Contains("--demo");
             ctx.RacineOutils = TrouverOutils();
+            VersionKit = MiseAJour.VersionKit(ctx.RacineOutils) ?? Version;
             // kit extrait d'un zip telecharge : sans cela, Windows demande confirmation a chaque lancement de Velociraptor
             if (!ctx.Demo) Debloquer.Kit(ctx.RacineOutils);
             ctx.Reglages = Reglages.Lire(ctx.RacineOutils);

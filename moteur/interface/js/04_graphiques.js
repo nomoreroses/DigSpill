@@ -76,7 +76,7 @@ T.graphCarte = (el, analyse) => {
   const pts = [], lignes = [];
   for (const e of analyse.ips) {
     if (e.type !== 'PUBLIQUE' || !e.pays) continue;
-    const c = (e.lat !== null && e.lon !== null && e.lat !== undefined) ? [e.lon, e.lat] : centres[e.pays];
+    const c = centres[e.pays];
     if (!c) continue;
     pts.push({ name: e.ip, value: c, e });
     if (e.succes && !e.blanche) lignes.push({ coords: [c, cible], e });
@@ -85,7 +85,7 @@ T.graphCarte = (el, analyse) => {
     tooltip: { trigger: 'item', confine: true, formatter: p => {
       if (p.componentType === 'geo') { const d = parPays[p.name]; return `${T.drapeau(p.name)} <b>${T.esc(noms[p.name] || p.name)}</b>` + (d ? `<br>${d.ip} IP · ${d.succes} avec connexion réussie · ${T.nb(d.echecs)} échecs` : ''); }
       const e = p.data && p.data.e; if (!e) return p.name || '';
-      return `${T.drapeau(e.pays)} <b>${e.ip}</b> ${e.ville ? '· ' + T.esc(e.ville) : ''}<br>${T.esc(e.operateur || '')}<br>${e.succes ? 'connexion réussie · ' : ''}${e.echecs ? T.nb(e.echecs) + ' échecs' : ''}`;
+      return `${T.drapeau(e.pays)} <b>${e.ip}</b><br>${T.esc(e.operateur || '')}<br>${e.succes ? 'connexion réussie · ' : ''}${e.echecs ? T.nb(e.echecs) + ' échecs' : ''}`;
     } },
     geo: { map: 'monde', nameProperty: 'iso2', roam: true, zoom: 1.2, center: [12, 28], tooltip: { show: true },
       itemStyle: { areaColor: T.COUL.panneau2, borderColor: T.COUL.ligne2, borderWidth: 0.6 }, emphasis: { itemStyle: { areaColor: T.COUL.ligne2 }, label: { show: false } }, select: { disabled: true },
