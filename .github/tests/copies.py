@@ -5,6 +5,7 @@ Chaque script doit tourner seul depuis la cle, d'ou ces copies. Ce test echoue s
   2. fonction Get-IpType (privee, VPN/CGNAT, publique) : Collecte-Exfil.ps1 et Analyse-Exfil.ps1
   3. Get-Evtx rend sa liste en un seul objet (return ,@(...)) : la passer directement a un pipeline
      donne toute la liste a chaque $_ (erreur op_Subtraction de la 2.9.1). Ecrire (Get-Evtx ...) | ...
+  4. motif d'extension a l'aspect aleatoire (.Fa2a2yMH) : Collecte-Exfil.ps1, Analyse-Exfil.ps1, 02_analyse.js
 Usage : python -I .github/tests/copies.py   (depuis la racine du depot)
 """
 import re
@@ -43,6 +44,13 @@ if all(fn) and fn[0] != fn[1]:
 for i, ligne in enumerate(analyse.split("\n"), 1):
     if re.search(r"Get-Evtx '[^']*' @\([^)]*\) \$Since(?: \"[^\"]*\")?\s*\|", ligne):
         erreurs.append(f"Analyse-Exfil.ps1:{i} : Get-Evtx passe directement a un pipeline, ecrire (Get-Evtx ...) | ...")
+
+# 4. extension a l'aspect aleatoire
+ea = [un(r"^\$script:RxExtAleatoire = '(.*)'$", analyse, "Analyse-Exfil.ps1"),
+      un(r"^\$RxExtAleatoire = '(.*)'$", collecte, "Collecte-Exfil.ps1"),
+      un(r"^const RX_EXT_ALEATOIRE = /(.*)/;$", js, "02_analyse.js")]
+if all(ea) and len(set(ea)) != 1:
+    erreurs.append("motif d'extension aleatoire different entre Analyse-Exfil.ps1, Collecte-Exfil.ps1 et 02_analyse.js")
 
 for e in erreurs:
     print("::error::" + e)

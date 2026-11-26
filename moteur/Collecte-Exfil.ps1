@@ -50,6 +50,9 @@ $ProgressPreference    = 'SilentlyContinue'
 # version du kit (moteur\VERSION.txt, ecrit par construire-kit.ps1), notee dans les journaux, le scelle et le PV ; 'dev' hors kit
 $ScriptVersion = 'dev'
 try { $v = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'VERSION.txt') -TotalCount 1 -ErrorAction Stop)[0]; if ("$v".Trim()) { $ScriptVersion = "$v".Trim() } } catch { }
+# extension a l'aspect aleatoire (majuscules et minuscules melangees, ex. .Fa2a2yMH) : a comparer avec -cmatch
+$script:HashConnus = @{}   # SHA256 deja calcules (image RAM) : repris par le manifeste au lieu de relire des Go
+$RxExtAleatoire = '^\.(?=[^.]*[a-z])(?=[^.]*[A-Z])[A-Za-z0-9]{5,12}$'
 $StartTime = Get-Date
 $Full = ($Mode -eq 'Complet')
 
@@ -275,6 +278,15 @@ public class FsWalker {
     public Dictionary<string, ExtStat> Ext = new Dictionary<string, ExtStat>(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, ExtStat> RansomExt = new Dictionary<string, ExtStat>(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, NoteStat> Notes = new Dictionary<string, NoteStat>(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, ExtStat> DossiersMetier = new Dictionary<string, ExtStat>(StringComparer.OrdinalIgnoreCase);   // dossier de donnees du logiciel -> total
+    // dossiers de donnees patients sans fichier de base reconnaissable (documents, courriers, pieces jointes)
+    static readonly Regex DossierMetier = new Regex(@"^(.*?\\Donn(?:\u00e9|e)es Axilog\\Data)\\", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    // fichiers livres avec Windows ou une application (WinSxS, WindowsApps, OneDrive) : ni base du client ni note de rancon
+    static bool Systeme(string p) {
+        return (p.Length > 3 && String.Compare(p, 2, @"\Windows\", 0, 9, StringComparison.OrdinalIgnoreCase) == 0)
+            || p.IndexOf(@"\WindowsApps\", StringComparison.OrdinalIgnoreCase) >= 0
+            || p.IndexOf(@"\AppData\Local\Microsoft\OneDrive\", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
     public List<string> Skip = new List<string>();   // dossiers de DigSpill (preuves ou outils sur le disque du poste)
     bool Skipped(string p) { foreach (string x in Skip) { if (String.Equals(p.TrimEnd('\\'), x, StringComparison.OrdinalIgnoreCase)) return true; } return false; }
     static readonly HashSet<string> NoteExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".txt", ".hta", ".html", ".htm", ".rtf", ".url" };
@@ -314,10 +326,15 @@ public class FsWalker {
                         if (String.IsNullOrEmpty(ext)) ext = "(aucune)";
                         DateTime t = m > c ? m : c;
                         if (ransomRx.IsMatch(name)) { ransom.WriteLine(line); RansomHits++; Add(RansomExt, ext, len, t, f.FullName); }
-                        if (baseRx.IsMatch(name)) { bases.WriteLine(line); BaseHits++; }
+                        bool sys = Systeme(f.FullName);
+                        if (!sys && baseRx.IsMatch(name)) { bases.WriteLine(line); BaseHits++; }
+                        if (!sys && f.FullName.IndexOf("Axilog", StringComparison.OrdinalIgnoreCase) >= 0) {
+                            Match dm = DossierMetier.Match(f.FullName);
+                            if (dm.Success) Add(DossiersMetier, dm.Groups[1].Value, len, t, f.FullName);
+                        }
                         if (t < since) continue;
                         Add(Ext, ext, len, t, f.FullName);
-                        if (len < 102400 && NoteExt.Contains(ext)) {
+                        if (len < 102400 && !sys && NoteExt.Contains(ext)) {
                             NoteStat n;
                             if (!Notes.TryGetValue(name, out n)) { n = new NoteStat(); Notes[name] = n; }
                             if (n.Count > 0 && n.Size != len) n.Variee = true;   // une note de rancon est la meme partout
@@ -526,6 +543,7 @@ if ($Full) {
                 $len = (Get-Item -LiteralPath $raw).Length
                 Log '    Calcul du SHA256 de la capture...'
                 $h = (Get-FileHash -LiteralPath $raw -Algorithm SHA256).Hash
+                $script:HashConnus[$raw] = @{ L = $len; T = (Get-Item -LiteralPath $raw).LastWriteTimeUtc; H = $h }
                 $info.Add(('RAM capturee : {0} ({1:N1} Go) de {2} a {3}' -f $raw, ($len / 1GB), $t0.ToString('HH:mm:ss'), (Get-Date).ToString('HH:mm:ss')))
                 $info.Add("SHA256 : $h")
                 $info.Add(('Outil : WinPmem integre a Velociraptor, service {0}, pilote depose {1}' -f $RamService, $(if ($drv) { "sur le support ($drv), retire apres la copie" } else { 'dans le dossier temporaire de Windows, retire apres la copie' })))
@@ -1324,20 +1342,25 @@ Step 'Binaires suspects : hash + archive chiffree (mot de passe : infected) + qu
     } catch {}
     # 2) Executables / scripts recents dans les dossiers a risque, et outils connus, non signes
     $risk = '(?i)\\(Desktop|Downloads|Documents|Music|Pictures|Videos)\\|\\AppData\\Local\\Temp\\|\\AppData\\Roaming\\[^\\]+$|\\Windows\\Temp\\|\\Users\\Public\\|^C:\\ProgramData\\[^\\]+(\\[^\\]+)?$|^C:\\(Temp|tmp|PerfLogs|Intel)\\'
+    # bibliotheques natives que Java extrait a chaque lancement dans Temp (carte CPS, USB, SQLite) : des dizaines de copies identiques, pas un indice
+    $javaTemp = '(?i)\\AppData\\Local\\Temp\\(.*\\)?(jna-?-?\d+\\jna\d+\.dll|pkcs11wrapper\d+\.dll|usb4java\d+\.tmp\\libusb4java\.dll|sqlite-[\d.]+-[0-9a-f-]+-sqlitejdbc\.dll)$'
     foreach ($e in @($script:ToolsFound) + @($script:ExecsFound)) {
         if (-not $e -or $cand.Contains($e.Chemin)) { continue }
+        if ($e.Chemin -match $javaTemp) { continue }
         $isTool = @($script:ToolsFound | Where-Object { $_.Chemin -eq $e.Chemin }).Count -gt 0
         if (($isTool -or $e.Chemin -match $risk) -and $e.Chemin -notmatch '\.lnk$') { $cand[$e.Chemin] = $(if ($isTool) { 'Outil connu' } else { 'Dossier a risque' }) }
     }
     $list = New-Object System.Collections.Generic.List[object]
     $total = [int64]0
+    $hVus = @{}   # meme SHA256 deja archive : une seule copie dans l'archive
     foreach ($p in $cand.Keys) {
         $it = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
         if (-not $it) { continue }
         $sig = $null; try { $sig = Get-AuthenticodeSignature -LiteralPath $p -ErrorAction Stop } catch {}
         if ($cand[$p] -ne 'Defender' -and $sig -and $sig.Status -eq 'Valid') { continue }
         $h = $null; try { $h = (Get-FileHash -LiteralPath $p -Algorithm SHA256 -ErrorAction Stop).Hash } catch {}
-        $take = ($it.Length -le 30MB -and ($total + $it.Length) -le 500MB -and $list.Count -lt 300)
+        $take = ($it.Length -le 30MB -and ($total + $it.Length) -le 500MB -and $list.Count -lt 300 -and -not ($h -and $hVus.ContainsKey($h)))
+        if ($h) { $hVus[$h] = $true }
         if ($take) { $total += $it.Length }
         $list.Add([pscustomobject]@{ Chemin = $p; TailleKo = [math]::Round($it.Length / 1KB, 1); Creation = $it.CreationTime; Modification = $it.LastWriteTime
             SHA256 = $h; Signature = $(if ($sig) { $sig.Status }); Signataire = $(if ($sig) { $sig.SignerCertificate.Subject }); Source = $cand[$p]; Archive = $take })
@@ -1381,7 +1404,7 @@ if ($Full -and -not $SkipFullListing) {
         if (-not $script:CsOk) { Log '    [!] Moteur C# indisponible : listing ignore'; return }
         # nom typique d'un fichier chiffre : extension d'origine PUIS ajout du rancongiciel (identifiant entre crochets avec un chiffre,
         # adresse e-mail, extension connue). Pas « icone@2x.png », « Film.[Groupe Release].torrent », « compte@exemple.fr_identity_provider ».
-        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.\[[^\]\s@]+@[^\]\s]+\]\.[a-z0-9]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py|docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|jpe?g|png|gif|tiff?|msg|eml)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
         $baseRx   = New-Object Text.RegularExpressions.Regex('(?i)(\.(fdp|fdb|gdb|mdf|ldf|ndf|accdb|mdb|4dd|4dindx|dbf)(\.|$)|axi_database)', 'Compiled')
         $enc = New-Object Text.UTF8Encoding($true)
         $hdr = 'Chemin,Taille,Creation,Modification,Acces,Attributs'
@@ -1394,6 +1417,9 @@ if ($Full -and -not $SkipFullListing) {
         try {
             $vols = Get-CimInstance Win32_Volume -Filter 'DriveType=3' | Where-Object { $_.DriveLetter -and $script:UsbLetters -notcontains $_.DriveLetter.ToUpper() }
             foreach ($v in $vols) { Log "    Listing $($v.DriveLetter)..."; $w.Walk($v.DriveLetter + '\', $Since, $ransomRx, $baseRx, $wAll, $wRan, $wBas) }
+            # dossiers de donnees du logiciel metier : une ligne par dossier, taille totale (ce que copierait un voleur)
+            foreach ($k in $w.DossiersMetier.Keys) { $s = $w.DossiersMetier[$k]
+                $wBas.WriteLine(('"{0}",{1},{2},{3},,"Dossier ({4} fichiers)"' -f $k.Replace('"', '""'), $s.Bytes, $s.First.ToString('yyyy-MM-dd HH:mm:ss'), $s.Last.ToString('yyyy-MM-dd HH:mm:ss'), $s.Count)) }
         } finally { $wAll.Close(); $wRan.Close(); $wBas.Close() }
         Log "    $($w.Files) fichiers, $($w.Dirs) dossiers ($($w.Errors) inaccessibles) - $($w.RansomHits) noms de fichiers chiffres suspects - $($w.BaseHits) bases metier"
 
@@ -1405,7 +1431,7 @@ if ($Full -and -not $SkipFullListing) {
         & $fmt $w.Ext | Sort-Object NbFichiers -Descending | Select-Object -First 400 | Export-Csv (P 'rancon\extensions_fichiers_recents.csv') -NoTypeInformation -Encoding UTF8
 
         # Notes de rancon : petits fichiers texte recents au nom evocateur ou repetes dans de nombreux dossiers
-        $noteRx = '(?i)(read.?me|decrypt|restore|recover|how.?to|ransom|instruction|unlock|encrypted|crypted|files?.?back|^info\.|attention|warning|help|rancon|lisez|lire.?(moi|pour)|restaur|d[eé]chiffr|r[eé]cup[eé]r|vos.?fichiers)'
+        $noteRx = '(?i)(read.?me|decrypt|restore|recover|how.?to|ransom|instruction|unlock|encrypted|crypted|files?.?back|^info\.|attention|warning|(^|[^a-z])help|rancon|lisez|lire.?(moi|pour)|restaur|d[eé]chiffr|r[eé]cup[eé]r|vos.?fichiers)'
         $notes = foreach ($k in $w.Notes.Keys) {
             $n = $w.Notes[$k]; $m = $k -match $noteRx
             if (($m -and $n.Count -ge 1) -or $n.Count -ge 5) {
@@ -1515,6 +1541,14 @@ Step 'Synthese automatique (SYNTHESE.txt)' {
         $m = "$($x.NbFichiers) fichiers '$($x.Extension)' ($($x.TailleMo) Mo) du $($x.Premier) au $($x.Dernier)"
         if ($dur -le 720) { A "CHIFFREMENT : $m" } else { I "Noms suspects mais etales dans le temps (faux positif probable) : $m" }
     }
+    # Extension inconnue a l'aspect aleatoire (.Fa2a2yMH) posee sur des centaines de fichiers en moins de 2 h : chiffrement probable meme sans e-mail dans le nom
+    $dejaVues = @(Read-Out 'rancon\fichiers_chiffres_par_extension.csv' | ForEach-Object { "$($_.Extension)".ToLowerInvariant() })
+    foreach ($x in (Read-Out 'rancon\extensions_fichiers_recents.csv')) {
+        $dur = 99999.0; [void][double]::TryParse(("$($x.DureeMinutes)" -replace ',', '.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$dur)
+        if ([int64]$x.NbFichiers -ge 500 -and $dur -le 120 -and "$($x.Extension)" -cmatch $RxExtAleatoire -and $dejaVues -notcontains "$($x.Extension)".ToLowerInvariant()) {
+            A "CHIFFREMENT probable : $($x.NbFichiers) fichiers '$($x.Extension)' ($($x.TailleMo) Mo) crees en $($x.DureeMinutes) min, du $($x.Premier) au $($x.Dernier) (extension inconnue)"
+        }
+    }
     foreach ($n in (Read-Out 'rancon\notes_rancon_candidates.csv' | Where-Object { [int]$_.NbDossiers -ge 10 } | Select-Object -First 5)) {
         # meme taille partout : une note deposee par un rancongiciel ; tailles differentes : aide de logiciels (help.html, README)
         if ($n.NomEvocateur -eq 'True' -and $n.TailleIdentique -ne 'False') { A "Note de rancon probable : $($n.Nom) dans $($n.NbDossiers) dossiers (copie dans rancon\notes)" }
@@ -1526,7 +1560,7 @@ Step 'Synthese automatique (SYNTHESE.txt)' {
     $cmd = Read-Out 'rancon\commandes_destructrices_4688.csv'
     if ($cmd.Count) { A "$($cmd.Count) commande(s) destructrice(s) dans l'audit 4688 (commandes_destructrices_4688.csv)" }
     $bin = Read-Out 'rancon\binaires_suspects.csv'
-    if ($bin.Count) { I "$($bin.Count) binaire(s) suspect(s) hashe(s), echantillons dans rancon\ (mot de passe infected)" }
+    if ($bin.Count) { I "$($bin.Count) binaire(s) suspect(s) hashe(s) ($(@($bin | Where-Object { $_.SHA256 } | Select-Object -ExpandProperty SHA256 -Unique).Count) contenus differents), echantillons dans rancon\ (mot de passe infected)" }
     $S.Add('')
 
     $S.Add('ACCES A DISTANCE  (connexions\, comptes\)')
@@ -1583,9 +1617,12 @@ Step 'Calcul du manifeste SHA256 des elements collectes' {
     $nH = 0; $tH = Get-Date
     $aHacher | ForEach-Object {
         $nH++
-        if ($_.Length -ge 256MB) { Log ('    hachage {0} ({1:N1} Go)' -f $_.FullName.Substring($Out.Length + 1), ($_.Length / 1GB)) }
+        $k = $script:HashConnus[$_.FullName]
+        $deja = ($k -and $k.L -eq $_.Length -and $k.T -eq $_.LastWriteTimeUtc)   # fichier inchange depuis son hachage
+        if ($deja) { Log ('    {0} : SHA256 deja calcule a la copie, repris' -f $_.FullName.Substring($Out.Length + 1)) }
+        elseif ($_.Length -ge 256MB) { Log ('    hachage {0} ({1:N1} Go)' -f $_.FullName.Substring($Out.Length + 1), ($_.Length / 1GB)) }
         elseif (((Get-Date) - $tH).TotalSeconds -ge 60) { Log ('    hachage : {0} / {1} fichiers' -f $nH, $aHacher.Count); $tH = Get-Date }
-        [pscustomobject]@{ Fichier = $_.FullName.Substring($Out.Length + 1); Taille = $_.Length; SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+        [pscustomobject]@{ Fichier = $_.FullName.Substring($Out.Length + 1); Taille = $_.Length; SHA256 = $(if ($deja) { $k.H } else { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }) }
     } | Export-Csv $manifest -NoTypeInformation -Encoding UTF8
     Log "    manifeste : $nH fichiers"
 }

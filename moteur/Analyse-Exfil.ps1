@@ -114,7 +114,9 @@ function Out-Csv($rows, [string]$rel) {
     else { 'Aucune ligne' | Out-File (P $rel) -Encoding utf8 }
 }
 # Nom typique d'un fichier chiffre (meme regle que la collecte 2.9 et l'interface)
-$script:RxRanconNom = New-Object Text.RegularExpressions.Regex('(?i)(\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+$script:RxRanconNom = New-Object Text.RegularExpressions.Regex('(?i)(\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.\[[^\]\s@]+@[^\]\s]+\]\.[a-z0-9]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py|docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|jpe?g|png|gif|tiff?|msg|eml)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+# extension a l'aspect aleatoire (majuscules et minuscules melangees, ex. .Fa2a2yMH) : a comparer avec -cmatch
+$script:RxExtAleatoire = '^\.(?=[^.]*[a-z])(?=[^.]*[A-Z])[A-Za-z0-9]{5,12}$'
 # Chiffrement retenu : au moins 20 fichiers au nom typique, meme extension, modifies en 24 h.
 # Une installation de jeu (icones @2x) ou des fichiers etales sur des mois ne sont pas un chiffrement.
 function Get-Chiffrement {
@@ -126,7 +128,8 @@ function Get-Chiffrement {
         $ext = [IO.Path]::GetExtension($nom).ToLowerInvariant()
         if (-not $g.ContainsKey($ext)) { $g[$ext] = [pscustomobject]@{ N = 0; Dates = (New-Object System.Collections.Generic.List[datetime]) } }
         $g[$ext].N++
-        $d = Parse-Date "$($r.Modification)"; if (-not $d) { $d = Parse-Date "$($r.Creation)" }
+        # la plus recente des deux dates : certains rancongiciels remettent l'ancienne date de modification
+        $d = Parse-Date "$($r.Modification)"; $c = Parse-Date "$($r.Creation)"; if (-not $d -or ($c -and $c -gt $d)) { $d = $c }
         if ($d) { $g[$ext].Dates.Add($d) }
     }
     $res = New-Object System.Collections.Generic.List[object]
@@ -137,6 +140,14 @@ function Get-Chiffrement {
             if ($j - $i + 1 -gt $pic) { $pic = $j - $i + 1; $deb = $t[$i]; $fin = $t[$j] }
         }
         if ($pic -ge 20) { $res.Add([pscustomobject]@{ Extension = $k; NbFichiers = $g[$k].N; Pic = $pic; Premier = $deb.ToString('yyyy-MM-dd HH:mm:ss'); Dernier = $fin.ToString('yyyy-MM-dd HH:mm:ss') }) }
+    }
+    # Extension inconnue a l'aspect aleatoire (.Fa2a2yMH) posee sur 500 fichiers ou plus en moins de 2 h, meme sans e-mail dans le nom
+    foreach ($x in (Read-Csv (C 'rancon\extensions_fichiers_recents.csv'))) {
+        $e = "$($x.Extension)"; $dur = 99999.0; $n = [int64]0; [void][int64]::TryParse("$($x.NbFichiers)", [ref]$n)
+        [void][double]::TryParse(("$($x.DureeMinutes)" -replace ',', '.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$dur)
+        if ($n -ge 500 -and $dur -le 120 -and $e -cmatch $script:RxExtAleatoire -and -not @($res | Where-Object { $_.Extension -eq $e.ToLowerInvariant() }).Count) {
+            $res.Add([pscustomobject]@{ Extension = $e.ToLowerInvariant(); NbFichiers = $n; Pic = $n; Premier = "$($x.Premier)"; Dernier = "$($x.Dernier)" })
+        }
     }
     $script:Chiffrement = @($res | Sort-Object NbFichiers -Descending)
     return $script:Chiffrement

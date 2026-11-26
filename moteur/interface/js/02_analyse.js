@@ -100,16 +100,19 @@ T.analyseIp = () => T.memo('analyseIp', () => {
 // Nom typique d'un fichier chiffre : extension d'origine PUIS ajout du rancongiciel (identifiant entre crochets avec un chiffre,
 // adresse e-mail, extension connue) ou document bureautique suivi d'une extension inconnue.
 // Ecartes : « icone@2x.png », « Film.[Groupe Release].torrent », « compte@exemple.fr_identity_provider » (meme regle que la collecte 2.9).
-const RX_RANCON_NOM = /\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py)$)[a-z0-9]{3,12}$|\.(?:locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,}/i;
+const RX_RANCON_NOM = /\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.\[[^\]\s@]+@[^\]\s]+\]\.[a-z0-9]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py|docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|jpe?g|png|gif|tiff?|msg|eml)$)[a-z0-9]{3,12}$|\.(?:locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,}/i;
 /** Chiffrement retenu : extension dont au moins 20 fichiers au nom typique ont ete modifies en 24 h.
  *  Un rancongiciel chiffre en minutes ou en heures ; une installation de jeu ou des icones etalees sur des mois, non. */
+/** extension a l'aspect aleatoire : majuscules et minuscules melangees (ex. .Fa2a2yMH), sensible a la casse */
+const RX_EXT_ALEATOIRE = /^\.(?=[^.]*[a-z])(?=[^.]*[A-Z])[A-Za-z0-9]{5,12}$/;
 T.chiffrement = () => T.memo('chiffrement', () => {
   const parExt = new Map();
   for (const r of T.table('fichiers_chiffres_suspects')) {
     const nom = (r.Chemin || '').split('\\').pop();
     if (!RX_RANCON_NOM.test(nom)) continue;
     const ext = ((/\.[^.]+$/.exec(nom) || [''])[0]).toLowerCase();
-    const d = T.pdate(r.Modification) || T.pdate(r.Creation);
+    // la plus recente des deux dates : certains rancongiciels remettent l'ancienne date de modification
+    const m = T.pdate(r.Modification), c = T.pdate(r.Creation), d = m && c ? (c > m ? c : m) : (m || c);
     const g = parExt.get(ext) || { ext, n: 0, octets: 0, dates: [], exemple: r.Chemin, ids: [] };
     g.n++; g.octets += T.num(r.Taille); if (d) g.dates.push(+d); if (g.ids.length < 3) g.ids.push(r._id);
     parExt.set(ext, g);
@@ -131,6 +134,14 @@ T.chiffrement = () => T.memo('chiffrement', () => {
     if (detail && !tronque) continue;
     if (!RX_RANCON_NOM.test((r.Exemple || '').split('\\').pop())) continue;
     groupes.push({ ext, n, pic: T.num(r.DureeMinutes) <= 1440 ? n : 0, mo: T.num(r.TailleMo), debut: T.pdate(r.Premier), fin: T.pdate(r.Dernier), exemple: r.Exemple || '', ids: [r._id] });
+  }
+  // extension inconnue a l'aspect aleatoire (.Fa2a2yMH) posee sur 500 fichiers ou plus en moins de 2 h, meme sans e-mail dans le nom
+  for (const r of T.table('extensions_fichiers_recents')) {
+    const e = r.Extension || '', n = T.num(r.NbFichiers);
+    if (n < 500 || T.num(r.DureeMinutes) > 120 || !RX_EXT_ALEATOIRE.test(e)) continue;
+    const g = groupes.find(x => x.ext === e.toLowerCase());
+    if (g) { if (g.pic < 20) { g.pic = n; g.n = Math.max(g.n, n); } continue; }
+    groupes.push({ ext: e.toLowerCase(), n, pic: n, mo: T.num(r.TailleMo), debut: T.pdate(r.Premier), fin: T.pdate(r.Dernier), exemple: r.Exemple || '', ids: [r._id] });
   }
   const retenus = groupes.filter(g => g.pic >= 20).sort((a, b) => b.n - a.n);
   return { groupes: retenus, ecartes: groupes.filter(g => g.pic < 20), total: retenus.reduce((s, g) => s + g.n, 0) };
