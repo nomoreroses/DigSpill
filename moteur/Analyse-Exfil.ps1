@@ -796,6 +796,16 @@ Step 'Parametres de redirection RDP (lecteurs, presse-papier) et usage de rdpcli
     if ($Velo -and $swH -and (Test-Path -LiteralPath "$swH")) {
         foreach ($r in (Invoke-Vql "SELECT Name, Data.value AS V FROM glob(globs='/Policies/Microsoft/Windows NT/Terminal Services/fDisable*', accessor='raw_reg', root=$(RegRoot $swH))")) { $vals["Strategie\$($r.Name)"] = $r.V }
     }
+    # repli : valeurs relevees en direct par la collecte, si Velociraptor n'a rien lu dans les ruches (cas reel : serveur au nom accentue)
+    if (-not $vals.Count) {
+        Log '    [i] ruches SYSTEM / SOFTWARE non lues : valeurs prises dans reseau\rdp_redirections.txt de la collecte'
+        $sec = $null
+        foreach ($l in @(Get-Content -LiteralPath (C 'reseau\rdp_redirections.txt') -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+            if ($l -match '^###.*\\Policies\\') { $sec = 'Strategie' } elseif ($l -match '^###.*\\RDP-Tcp') { $sec = 'RDP-Tcp' } elseif ($l -match '^###') { $sec = $null }
+            elseif ($sec -and $l -match '^(fDisable\w+)\s*:\s*(\d+)\s*$') { $vals["$sec\$($matches[1])"] = $matches[2] }
+        }
+        if ($vals.Count) { $lines.Add('Valeurs relevees en direct pendant la collecte (reseau\rdp_redirections.txt), les ruches n''ont pas pu etre lues.') }
+    }
     $lbl = [ordered]@{ fDisableCdm = 'Redirection des lecteurs (\\tsclient)'; fDisableClip = 'Presse-papier'; fDisableCcm = 'Ports COM'; fDisableLPT = 'Ports LPT'; fDisablePNPRedir = 'Peripheriques PnP / USB'; fDisableCpm = 'Imprimantes' }
     $lines.Add('Valeur 0 ou absente = redirection AUTORISEE ; 1 = interdite. La strategie (GPO) prime sur RDP-Tcp.')
     $driveOk = $true; $clipOk = $true
@@ -813,7 +823,7 @@ Step 'Parametres de redirection RDP (lecteurs, presse-papier) et usage de rdpcli
     $pnp = Get-Evtx 'Microsoft-Windows-TerminalServices-PnPDevices/Admin' @(20001, 20002, 20003, 36, 37) $Since
     $lines.Add("Journal TerminalServices-PnPDevices : $(if (-not (Find-Evtx 'Microsoft-Windows-TerminalServices-PnPDevices/Admin')) { 'absent de la collecte' } else { "$(@($pnp).Count) evenement(s)" })")
     $lines | Out-File (P 'rdp_redirections.txt') -Encoding utf8
-    if (-not $vals.Count) { G 'Copier-coller vers le PC de l''attaquant (bureau à distance)' 'NON VERIFIABLE' 'La configuration de Windows (ruches SYSTEM et SOFTWARE) manque dans la collecte.' '' }
+    if (-not $vals.Count) { G 'Copier-coller vers le PC de l''attaquant (bureau à distance)' 'NON VERIFIABLE' 'Les réglages du bureau à distance sont introuvables : ni ruches SYSTEM et SOFTWARE lisibles, ni relevé fait pendant la collecte.' '' }
     else {
         G 'Copier-coller vers le PC de l''attaquant (bureau à distance)' $(if ($clipW.Count) { 'A LIRE' } else { 'RAS' }) "Le copier-coller en bureau à distance était $(if ($clipOk) { 'autorisé' } else { 'interdit' }). Le programme qui le permet (rdpclip.exe) a tourné $($clipW.Count) fois pendant l'attaque. Windows ne garde pas ce qui a été copié." 'rdp_redirections.txt'
         if (-not $driveOk) { G 'Fichiers copiés vers le PC de l''attaquant (bureau à distance)' 'RAS' 'Windows interdisait l''accès aux disques de l''ordinateur distant pendant le bureau à distance.' 'rdp_redirections.txt' }

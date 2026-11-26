@@ -9,6 +9,10 @@ Corrections tirées d'une vraie collecte (serveur chiffré par un rançongiciel)
 - **Notes de rançon** : les fichiers d'aide de Windows, des applis du Store et de OneDrive ne sont plus candidats ; « help » ne prend plus `GetHelpWindow` ni `dbghelp`.
 - **Binaires suspects** : les bibliothèques que Java recopie dans Temp à chaque lancement (carte CPS, USB, SQLite) sont écartées (83 → 14 lignes sur le cas réel) ; un même fichier n'est archivé qu'une fois.
 - **Mémoire vive** : son SHA256 n'est plus recalculé pour le manifeste (plusieurs minutes gagnées).
+- **Nouvelles alertes rouges** (vu sur le serveur : rien ne s'affichait en haut du Résumé à part le chiffrement) :
+  - « Connexion réussie depuis Internet » avec l'adresse, le pays et les comptes, si un autre signe s'ajoute (pays étranger, hébergeur, liste malveillante, essais en masse, compte Invité). Une connexion depuis la France sans autre signe (praticien chez lui) reste dans la page Adresses IP.
+  - « Outil de pirate déposé pendant l'attaque » (scanner de ports…) : sur un serveur, Windows ne garde pas la trace des programmes lancés (Prefetch désactivé), la date de dépôt est souvent le seul indice. Ces outils comptent aussi dans « outils à risque ».
+- Réglages du bureau à distance (copier-coller, disques) : si les ruches ne peuvent pas être lues, l'analyse reprend les valeurs relevées pendant la collecte au lieu d'afficher « Impossible à vérifier ».
 - **Plus de fenêtres CMD en rafale** (#12) : Velociraptor, robocopy et esentutl sont lancés sans fenêtre. Les fichiers verrouillés d'un dossier (quarantaine Defender, journaux Datto RMM, Splashtop, TSplus…) sont lus en une seule fois au lieu d'un lancement par fichier.
 - **Antivirus** (#11) : `Analyse-Exfil.ps1` était mis en quarantaine comme rançongiciel (« Ransom.Rhysida »). Les noms de familles de rançongiciels, motifs de notes de rançon, adresses .onion / Bitcoin et liens de veille sont sortis des scripts, dans `moteur\indicateurs.json` (comme les noms d'outils en 2.9.2). Un test vérifie qu'ils n'y reviennent pas.
 
