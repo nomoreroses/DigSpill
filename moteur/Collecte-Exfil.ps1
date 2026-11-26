@@ -51,6 +51,11 @@ $ProgressPreference    = 'SilentlyContinue'
 $ScriptVersion = 'dev'
 try { $v = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'VERSION.txt') -TotalCount 1 -ErrorAction Stop)[0]; if ("$v".Trim()) { $ScriptVersion = "$v".Trim() } } catch { }
 # extension a l'aspect aleatoire (majuscules et minuscules melangees, ex. .Fa2a2yMH) : a comparer avec -cmatch
+# motifs de rancongiciel : dans moteur\indicateurs.json, pas dans ce script (un antivirus le prendrait pour un rancongiciel, issue #11)
+$Ind = $null
+try { $Ind = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'indicateurs.json') -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+$IndManque = @('fichiers_chiffres', 'notes_rancon_evocateur') | Where-Object { -not $Ind -or -not $Ind.$_ }
+if ($IndManque) { $Ind = [pscustomobject]@{ fichiers_chiffres = '(?!)'; notes_rancon_evocateur = '(?!)' } }   # ne reconnait rien : signale dans le journal et la synthese
 $script:HashConnus = @{}   # SHA256 deja calcules (image RAM) : repris par le manifeste au lieu de relire des Go
 $RxExtAleatoire = '^\.(?=[^.]*[a-z])(?=[^.]*[A-Z])[A-Za-z0-9]{5,12}$'
 $StartTime = Get-Date
@@ -104,7 +109,7 @@ function Copy-Locked([string]$src, [string]$destDir) {
     try { Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop } catch {}
     if (-not (Test-Path -LiteralPath $dst) -and $IsAdmin) {
         $how = 'VSS'
-        & esentutl.exe /y "$src" /vss /d "$dst" 2>&1 | Out-Null
+        Start-Cache 'esentutl.exe' @('/y', $src, '/vss', '/d', $dst) | Out-Null
     }
     if (-not (Test-Path -LiteralPath $dst) -and $IsAdmin -and (Test-Path -LiteralPath $Velo)) {
         $how = 'NTFS brut'
@@ -113,6 +118,24 @@ function Copy-Locked([string]$src, [string]$destDir) {
     }
     if (Test-Path -LiteralPath $dst) { if ($how -ne 'copie') { Log "    [i] $src copie par $how" } }
     else { Log "    [!] Copie impossible (copie, VSS et NTFS brut en echec$(if (-not $IsAdmin) { ', pas admin' })) : $src" }
+}
+function Copy-NtfsLot($lot, [string]$quoi) {
+    # Fichiers verrouilles d'un dossier : une seule lecture NTFS brute (Velociraptor) pour toute la liste.
+    # Un lancement par fichier ouvrait des milliers de fenetres (issue #12) et un cliche VSS par fichier.
+    if (-not $lot -or -not $lot.Count) { return }
+    if ($IsAdmin -and (Test-Path -LiteralPath $Velo)) {
+        $lst = P ('copie_ntfs_{0}.csv' -f [guid]::NewGuid().ToString('N'))
+        $q = { param($s) '"' + "$s".Replace('"', '""') + '"' }
+        $lignes = @('"Src","Dst"') + @($lot | ForEach-Object {
+            New-Item -ItemType Directory -Force -Path (Split-Path $_.Dst -Parent) | Out-Null
+            (& $q ('\\.\' + $_.Src)) + ',' + (& $q $_.Dst) })
+        [IO.File]::WriteAllLines($lst, [string[]]$lignes, (New-Object Text.UTF8Encoding($false)))   # sans BOM : Velociraptor lirait "\ufeffSrc"
+        Invoke-Vql "SELECT copy(filename=Src, accessor='ntfs', dest=Dst) AS Copie FROM parse_csv(filename='''$lst''')" | Out-Null
+        Remove-Item -LiteralPath $lst -Force -ErrorAction SilentlyContinue
+    }
+    $manque = @($lot | Where-Object { -not (Test-Path -LiteralPath $_.Dst) }).Count
+    if ($manque) { Log "    [!] $quoi : $manque fichier(s) non copie(s)$(if (-not $IsAdmin) { ' (pas admin)' })" }
+    elseif ($lot.Count) { Log "    [i] $quoi : $($lot.Count) fichier(s) verrouille(s) copie(s) par lecture NTFS brute" }
 }
 function Copy-Dir([string]$src, [string]$dst) {
     if (Test-Path -LiteralPath $src) {
@@ -124,18 +147,14 @@ function Copy-Backup([string]$src, [string]$dst) {
     # robocopy en mode sauvegarde (/B) : lit les dossiers proteges par ACL (quarantaine Defender...).
     # Les fichiers verrouilles (journaux en cours d'ecriture) sont ensuite repris via cliche VSS.
     if (-not (Test-Path -LiteralPath $src)) { return }
-    & robocopy.exe "$src" "$dst" /E /B /COPY:DT /R:0 /W:0 /NP /NFL /NDL /NJH /NJS | Out-Null
-    if ($LASTEXITCODE -lt 8) { return }
-    $missing = 0
+    Start-Cache 'robocopy.exe' @($src, $dst, '/E', '/B', '/COPY:DT', '/R:0', '/W:0', '/NP', '/NFL', '/NDL', '/NJH', '/NJS') | Out-Null
+    if ($script:CodeSortie -lt 8) { return }
+    $lot = New-Object System.Collections.Generic.List[object]
     Get-ChildItem -LiteralPath $src -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
-        $rel    = $_.FullName.Substring($src.TrimEnd('\').Length + 1)
-        $target = Join-Path $dst $rel
-        if (-not (Test-Path -LiteralPath $target)) {
-            Copy-Locked $_.FullName (Split-Path $target -Parent)
-            if (-not (Test-Path -LiteralPath $target)) { $missing++ }
-        }
+        $target = Join-Path $dst $_.FullName.Substring($src.TrimEnd('\').Length + 1)
+        if (-not (Test-Path -LiteralPath $target)) { $lot.Add([pscustomobject]@{ Src = $_.FullName; Dst = $target }) }
     }
-    if ($missing) { Log "    [!] $src : $missing fichier(s) non copie(s)" }
+    Copy-NtfsLot $lot $src
 }
 function Find-SystemFile([string]$path) {
     # Get-Item echoue parfois sur pagefile.sys / hiberfil.sys : on passe par l'enumeration du dossier
@@ -175,13 +194,29 @@ function Get-IpType([string]$ip) {
     if ($a.IsIPv6LinkLocal -or $a.IsIPv6SiteLocal -or ($b[0] -band 0xFE) -eq 0xFC) { return 'Privee' }
     return 'PUBLIQUE'
 }
+function Start-Cache([string]$exe, [string[]]$arguments, [switch]$AvecErreurs) {
+    # Programme console lance sans fenetre. Avec & programme, une fenetre CMD peut s'ouvrir a chaque appel (issue #12).
+    # Rend les lignes de sortie (et d'erreur avec -AvecErreurs) ; code de retour dans $script:CodeSortie.
+    $psi = New-Object Diagnostics.ProcessStartInfo $exe
+    $psi.Arguments = (@($arguments) | ForEach-Object { '"' + ("$_" -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"' }) -join ' '
+    $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = [Text.Encoding]::UTF8; $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $script:CodeSortie = -1
+    try { $p = [Diagnostics.Process]::Start($psi) } catch { Log "    [!] $exe : $($_.Exception.Message)"; return @() }
+    $err = $p.StandardError.ReadToEndAsync()
+    $out = $p.StandardOutput.ReadToEnd()
+    $p.WaitForExit(); $script:CodeSortie = $p.ExitCode
+    $texte = $out + $(if ($AvecErreurs) { $err.Result } else { '' })
+    return @($texte -split '\r?\n' | Where-Object { $_ -ne '' })
+}
 function Invoke-Vql([string]$vql) {
     # Velociraptor (collecteur) utilise comme moteur de requete : SQLite, lecture NTFS brute
     if (-not (Test-Path -LiteralPath $Velo)) { return $null }
     $prev = [Console]::OutputEncoding
     try {
         [Console]::OutputEncoding = [Text.Encoding]::UTF8
-        $o = & $Velo query --format csv $vql 2>$null
+        $o = Start-Cache $Velo @('query', '--format', 'csv', $vql)
     } finally { [Console]::OutputEncoding = $prev }
     if ($o) { $o | ConvertFrom-Csv }
 }
@@ -199,7 +234,7 @@ function Save-Ram([string]$raw, [string]$dir, [string]$log) {
         $prev = [Console]::OutputEncoding
         try {
             [Console]::OutputEncoding = [Text.Encoding]::UTF8
-            & $Velo query --format jsonl "SELECT winpmem($arg) AS Info FROM scope()" 2>&1 | ForEach-Object { "$_" } | Out-File $log -Append -Encoding utf8
+            Start-Cache $Velo @('query', '--format', 'jsonl', "SELECT winpmem($arg) AS Info FROM scope()") -AvecErreurs | Out-File $log -Append -Encoding utf8
         } finally { [Console]::OutputEncoding = $prev }
         if ($drv -and (Test-Path -LiteralPath $drv)) { Remove-Item -LiteralPath $drv -Force -ErrorAction SilentlyContinue }
         if ((Test-Path -LiteralPath $raw) -and (Get-Item -LiteralPath $raw).Length -gt 0) { return $drv }
@@ -1116,13 +1151,19 @@ Step "Outils d'acces distant : journaux propres (NetBird, Splashtop, TSplus, Dat
     $script:ToolBytes = [int64]0
     function Copy-ToolLogs([string]$src, [string]$name, [string[]]$inc = @('*.log', '*.txt', '*.log.*', '*.trace', '*.csv', '*.sqlite3', '*.db')) {
         if (-not (Test-Path -LiteralPath $src)) { return }
+        $lot = New-Object System.Collections.Generic.List[object]   # fichiers verrouilles : lus ensemble a la fin
         # -Include est ignore avec -LiteralPath sous PowerShell 5.1 : filtre sur le nom
         Get-ChildItem -LiteralPath $src -Recurse -File -Force -ErrorAction SilentlyContinue |
             Where-Object { $n = $_.Name; @($inc | Where-Object { $n -like $_ }).Count -and $_.LastWriteTime -ge $Since -and $_.Length -lt 50MB -and $_.Name -notmatch '(?i)HowToRecover|readme' -and $_.FullName -notmatch '\\(Packages|Cache|Code Cache)\\' } | ForEach-Object {
                 if (($script:ToolBytes + $_.Length) -gt 400MB) { return }
                 $script:ToolBytes += $_.Length
-                Copy-Locked $_.FullName (Join-Path (P "outils_distants\$name") (Split-Path $_.FullName.Substring($src.TrimEnd('\').Length) -Parent))
+                $f = $_   # dans catch, $_ devient l'erreur
+                $dd = Join-Path (P "outils_distants\$name") (Split-Path $f.FullName.Substring($src.TrimEnd('\').Length) -Parent)
+                $dst = Join-Path $dd $f.Name
+                New-Item -ItemType Directory -Force -Path $dd | Out-Null
+                try { Copy-Item -LiteralPath $f.FullName -Destination $dst -Force -ErrorAction Stop } catch { $lot.Add([pscustomobject]@{ Src = $f.FullName; Dst = $dst }) }
             }
+        Copy-NtfsLot $lot $src
     }
     $pf = $env:ProgramFiles; $pf86 = ${env:ProgramFiles(x86)}; $pd = $env:ProgramData
     Copy-ToolLogs "$pd\Netbird" 'netbird'
@@ -1404,7 +1445,8 @@ if ($Full -and -not $SkipFullListing) {
         if (-not $script:CsOk) { Log '    [!] Moteur C# indisponible : listing ignore'; return }
         # nom typique d'un fichier chiffre : extension d'origine PUIS ajout du rancongiciel (identifiant entre crochets avec un chiffre,
         # adresse e-mail, extension connue). Pas « icone@2x.png », « Film.[Groupe Release].torrent », « compte@exemple.fr_identity_provider ».
-        $ransomRx = New-Object Text.RegularExpressions.Regex('(?i)(\.[a-z0-9]{2,5}\.\[(?=[^\]]*[0-9@])[^\]\s]{3,80}\]\.[^.]{2,15}$|\.\[[^\]\s@]+@[^\]\s]+\]\.[a-z0-9]{2,15}$|\.[a-z0-9]{2,5}\.(?:[^@]*[\[{(=.])?[a-z0-9._%+-]+@[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,10}[\]})]?(?:\.[a-z0-9]{1,15})?$|\.(?:docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|mdb|accdb|fdb)\.(?!(?:lnk|tmp|bak|old|orig|part|crdownload|download|sav|backup|gz|bz2|xz|7z|zip|rar|sig|asc|sha256|md5|json|xml|url|ini|log|dll|exe|data?|cache|db|js|map|config|mui|pdb|resources|sys|bin|idx|meta|lock|html?|txt|cs|py|docx?|xlsx?|xlsm|pptx?|pdf|odt|ods|rtf|jpe?g|png|gif|tiff?|msg|eml)$)[a-z0-9]{3,12}$|\.(locked|encrypted|crypted|lockbit\d?|phobos|elbie|eking|faust|devos|makop|mallox|akira|royal|blacksuit|medusa|basta|8base|rhysida|djvu)$|\.id[-_][0-9a-f]{6,})', 'Compiled')
+        if ($IndManque) { Log "    [!] moteur\indicateurs.json absent ou incomplet : fichiers chiffres et notes de rancon NON recherches (refaire la cle avec le kit complet)" }
+        $ransomRx = New-Object Text.RegularExpressions.Regex($Ind.fichiers_chiffres, 'Compiled')
         $baseRx   = New-Object Text.RegularExpressions.Regex('(?i)(\.(fdp|fdb|gdb|mdf|ldf|ndf|accdb|mdb|4dd|4dindx|dbf)(\.|$)|axi_database)', 'Compiled')
         $enc = New-Object Text.UTF8Encoding($true)
         $hdr = 'Chemin,Taille,Creation,Modification,Acces,Attributs'
@@ -1431,7 +1473,7 @@ if ($Full -and -not $SkipFullListing) {
         & $fmt $w.Ext | Sort-Object NbFichiers -Descending | Select-Object -First 400 | Export-Csv (P 'rancon\extensions_fichiers_recents.csv') -NoTypeInformation -Encoding UTF8
 
         # Notes de rancon : petits fichiers texte recents au nom evocateur ou repetes dans de nombreux dossiers
-        $noteRx = '(?i)(read.?me|decrypt|restore|recover|how.?to|ransom|instruction|unlock|encrypted|crypted|files?.?back|^info\.|attention|warning|(^|[^a-z])help|rancon|lisez|lire.?(moi|pour)|restaur|d[eé]chiffr|r[eé]cup[eé]r|vos.?fichiers)'
+        $noteRx = $Ind.notes_rancon_evocateur
         $notes = foreach ($k in $w.Notes.Keys) {
             $n = $w.Notes[$k]; $m = $k -match $noteRx
             if (($m -and $n.Count -ge 1) -or $n.Count -ge 5) {
@@ -1535,6 +1577,7 @@ Step 'Synthese automatique (SYNTHESE.txt)' {
     $S.Add('')
 
     $S.Add('RANCONGICIEL  (rancon\)')
+    if ($IndManque) { A 'moteur\indicateurs.json absent : fichiers chiffres et notes de rancon NON recherches' }
     # Un chiffrement touche beaucoup de fichiers en peu de temps : fenetre <= 12 h
     foreach ($x in (Read-Out 'rancon\fichiers_chiffres_par_extension.csv' | Where-Object { [int64]$_.NbFichiers -ge 50 })) {
         $dur = 0.0; [void][double]::TryParse(("$($x.DureeMinutes)" -replace ',', '.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$dur)

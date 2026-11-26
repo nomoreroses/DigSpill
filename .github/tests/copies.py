@@ -1,11 +1,13 @@
 """Garde-fous : regles recopiees a la main entre la collecte, l'analyse et l'interface.
 
 Chaque script doit tourner seul depuis la cle, d'ou ces copies. Ce test echoue si elles divergent :
-  1. motif des noms de fichiers chiffres par un rancongiciel : Collecte-Exfil.ps1, Analyse-Exfil.ps1, 02_analyse.js
+  1. motif des noms de fichiers chiffres par un rancongiciel : indicateurs.json (lu par les deux scripts) et 02_analyse.js ;
+     plus aucun nom de famille de rancongiciel ni lien de veille en clair dans les .ps1 (antivirus, issue #11)
   2. fonction Get-IpType (privee, VPN/CGNAT, publique) : Collecte-Exfil.ps1 et Analyse-Exfil.ps1
   3. Get-Evtx rend sa liste en un seul objet (return ,@(...)) : la passer directement a un pipeline
      donne toute la liste a chaque $_ (erreur op_Subtraction de la 2.9.1). Ecrire (Get-Evtx ...) | ...
   4. motif d'extension a l'aspect aleatoire (.Fa2a2yMH) : Collecte-Exfil.ps1, Analyse-Exfil.ps1, 02_analyse.js
+  5. fonction Start-Cache (programme console lance sans fenetre) : Collecte-Exfil.ps1 et Analyse-Exfil.ps1
 Usage : python -I .github/tests/copies.py   (depuis la racine du depot)
 """
 import re
@@ -27,13 +29,16 @@ def un(motif, texte, ou):
 
 
 # 1. motif rancongiciel (en JS, les groupes sont non capturants : meme correspondance)
-rx = [un(r"RxRanconNom = New-Object Text\.RegularExpressions\.Regex\('\(\?i\)\((.*)\)', 'Compiled", analyse, "Analyse-Exfil.ps1"),
-      un(r"\$ransomRx = New-Object Text\.RegularExpressions\.Regex\('\(\?i\)\((.*)\)'", collecte, "Collecte-Exfil.ps1"),
+import json
+ind = json.loads(lire("moteur/indicateurs.json"))
+rx = [un(r"^\(\?i\)\((.*)\)$", ind.get("fichiers_chiffres", ""), "indicateurs.json (fichiers_chiffres)"),
       un(r"^const RX_RANCON_NOM = /(.*)/i;$", js, "02_analyse.js")]
-if all(rx):
-    norm = [x.replace("(?:", "(") for x in rx]
-    if len(set(norm)) != 1:
-        erreurs.append("motif rancongiciel different entre Analyse-Exfil.ps1, Collecte-Exfil.ps1 et 02_analyse.js")
+if all(rx) and len({x.replace("(?:", "(") for x in rx}) != 1:
+    erreurs.append("motif rancongiciel different entre indicateurs.json et 02_analyse.js")
+for t, n in ((collecte, "Collecte-Exfil.ps1"), (analyse, "Analyse-Exfil.ps1")):
+    for mot in ("lockbit", "rhysida", "phobos", "akira", "ransomware.live", "nomoreransom"):
+        if mot in t.lower():
+            erreurs.append(f"{n} : '{mot}' en clair (a mettre dans indicateurs.json, issue #11)")
 
 # 2. Get-IpType identique dans les deux scripts
 fn = [un(r"(?s)^(function Get-IpType\(.*?\n\})", t, n) for t, n in ((collecte, "Collecte-Exfil.ps1"), (analyse, "Analyse-Exfil.ps1"))]
@@ -44,6 +49,15 @@ if all(fn) and fn[0] != fn[1]:
 for i, ligne in enumerate(analyse.split("\n"), 1):
     if re.search(r"Get-Evtx '[^']*' @\([^)]*\) \$Since(?: \"[^\"]*\")?\s*\|", ligne):
         erreurs.append(f"Analyse-Exfil.ps1:{i} : Get-Evtx passe directement a un pipeline, ecrire (Get-Evtx ...) | ...")
+
+# 5. Start-Cache identique dans les deux scripts, et plus aucun & $Velo (une fenetre par appel, issue #12)
+fn = [un(r"(?s)^(function Start-Cache\(.*?\n\})", t, n) for t, n in ((collecte, "Collecte-Exfil.ps1"), (analyse, "Analyse-Exfil.ps1"))]
+if all(fn) and fn[0] != fn[1]:
+    erreurs.append("Start-Cache different entre Collecte-Exfil.ps1 et Analyse-Exfil.ps1")
+for t, n in ((collecte, "Collecte-Exfil.ps1"), (analyse, "Analyse-Exfil.ps1")):
+    for i, ligne in enumerate(t.split("\n"), 1):
+        if re.search(r"&\s*\$Velo\b", ligne):
+            erreurs.append(f"{n}:{i} : & $Velo ouvre une fenetre par appel, utiliser Start-Cache")
 
 # 4. extension a l'aspect aleatoire
 ea = [un(r"^\$script:RxExtAleatoire = '(.*)'$", analyse, "Analyse-Exfil.ps1"),

@@ -9,6 +9,8 @@ Corrections tirées d'une vraie collecte (serveur chiffré par un rançongiciel)
 - **Notes de rançon** : les fichiers d'aide de Windows, des applis du Store et de OneDrive ne sont plus candidats ; « help » ne prend plus `GetHelpWindow` ni `dbghelp`.
 - **Binaires suspects** : les bibliothèques que Java recopie dans Temp à chaque lancement (carte CPS, USB, SQLite) sont écartées (83 → 14 lignes sur le cas réel) ; un même fichier n'est archivé qu'une fois.
 - **Mémoire vive** : son SHA256 n'est plus recalculé pour le manifeste (plusieurs minutes gagnées).
+- **Plus de fenêtres CMD en rafale** (#12) : Velociraptor, robocopy et esentutl sont lancés sans fenêtre. Les fichiers verrouillés d'un dossier (quarantaine Defender, journaux Datto RMM, Splashtop, TSplus…) sont lus en une seule fois au lieu d'un lancement par fichier.
+- **Antivirus** (#11) : `Analyse-Exfil.ps1` était mis en quarantaine comme rançongiciel (« Ransom.Rhysida »). Les noms de familles de rançongiciels, motifs de notes de rançon, adresses .onion / Bitcoin et liens de veille sont sortis des scripts, dans `moteur\indicateurs.json` (comme les noms d'outils en 2.9.2). Un test vérifie qu'ils n'y reviennent pas.
 
 ## 2.9.3 (bêta)
 - **Données du cabinet** : l'analyse reconnaît maintenant les dossiers et bases de MediStory, AxiSanté, HelloDoc, Crossway, Weda, Logos_w, Julie, Desmos, Visiodent/Veasy (avant : Axilog seulement). Dans ces cabinets, « Données du cabinet ouvertes pendant l'attaque » ne dit plus « Rien de suspect » sans avoir regardé. Le lancement du logiciel (.exe) n'est pas compté comme une ouverture de données.
