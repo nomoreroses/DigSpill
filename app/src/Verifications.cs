@@ -73,7 +73,7 @@ namespace DigSpill
             string r = Path.GetPathRoot(racine);
             if (Supports.LectureSeule(r))
                 return new Constat(Niveau.Ok, "Clé OUTILS protégée en écriture", "Le support " + r + " est en lecture seule : un programme malveillant ne peut pas modifier les outils.");
-            return new Constat(Niveau.Attention, "Clé OUTILS accessible en écriture", "Le support " + r + " n'est pas protégé. Idéal : une clé à interrupteur, en position lecture seule avant de la brancher.");
+            return new Constat(Niveau.Attention, "Clé OUTILS non protégée en écriture", "Le support " + r + " n'est pas protégé. Idéal : une clé à interrupteur, en position lecture seule avant de la brancher.");
         }
 
         // ------------------------------------------------------------------ dossiers a examiner

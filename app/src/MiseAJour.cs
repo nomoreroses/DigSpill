@@ -96,9 +96,11 @@ namespace DigSpill
         {
             try
             {
-                string exe = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).TrimEnd('\\');
+                // kit a la racine d'une cle (F:\moteur) : le dossier de DigSpill.exe vaut « F:\ » et le parent de moteur aussi.
+                // Comparer sans la barre finale des deux cotes (avant 2.9.6 : « F: » contre « F:\ », mise a jour refusee).
+                string exe = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
                 string parent = Path.GetDirectoryName(Path.GetFullPath(moteur).TrimEnd('\\'));
-                if (!string.Equals(exe, parent, StringComparison.OrdinalIgnoreCase)) return null;
+                if (parent == null || !string.Equals(exe.TrimEnd('\\'), parent.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) return null;
                 if (!string.Equals(Path.GetFileName(Path.GetFullPath(moteur).TrimEnd('\\')), "moteur", StringComparison.OrdinalIgnoreCase)) return null;
                 return exe;
             }
