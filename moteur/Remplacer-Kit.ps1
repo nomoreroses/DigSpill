@@ -17,6 +17,7 @@ function Renommer([string]$de, [string]$vers) {
 J "attente de la fermeture de DigSpill ($Attendre)"
 try { Wait-Process -Id $Attendre -Timeout 120 -ErrorAction Stop } catch {}
 Start-Sleep -Seconds 1
+if ($Kit -match '^[A-Za-z]:$') { $Kit += '\' }   # kit a la racine de la cle : « F: » seul designerait le dossier courant de F:
 $m = Join-Path $Kit 'moteur'; $mN = "$m.nouveau"; $mA = "$m.ancien"
 $e = Join-Path $Kit 'DigSpill.exe'; $eN = "$e.nouveau"; $eA = "$e.ancien"
 $ok = $false; $etape = 0

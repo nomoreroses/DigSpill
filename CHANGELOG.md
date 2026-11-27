@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.9.6 (bêta)
+- **Mise à jour depuis l'appli refusée quand DigSpill est à la racine de la clé** (`F:\DigSpill.exe` + `F:\moteur`, l'installation conseillée) : « DigSpill ne tourne pas depuis un kit ». Le dossier de DigSpill.exe (`F:`) était comparé à `F:\`. Corrigé ; le script de remplacement accepte aussi une racine de lecteur.
+  - ⚠️ Les versions 2.9.5 et plus anciennes gardent ce défaut : pour passer en 2.9.6, dézipper DigSpill.zip à la main à la racine de la clé OUTILS. Ensuite, le bouton Mises à jour marche.
+- Feu vert : « Clé OUTILS non protégée en écriture » (même mot que le bas de la barre latérale).
+
 ## 2.9.5 (bêta)
 Appli plus lisible (propositions validées sur maquettes) :
 - **Mise à jour signalée** : pastille rouge « 1 » sur « Mises à jour » quand une nouvelle version existe. La recherche se fait au démarrage **seulement sur un PC de bureau** (déjà utilisé pour une analyse ou la page Mises à jour : fichier `%LOCALAPPDATA%\DigSpill\pc_de_bureau.txt`), jamais sur un poste examiné.
