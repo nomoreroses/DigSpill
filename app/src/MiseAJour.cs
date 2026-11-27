@@ -27,6 +27,37 @@ namespace DigSpill
         public static string Dossier { get { return Path.Combine(Path.GetTempPath(), "DigSpill-maj"); } }
         public static string JournalRemplacement { get { return Path.Combine(Dossier, "journal.txt"); } }
 
+        /// <summary>Marque de « PC de bureau » : ecrite quand on ouvre la page Mises a jour ou qu'une analyse se termine.
+        /// Seul un PC qui la porte cherche les mises a jour au demarrage : un poste examine ne va jamais sur Internet tout seul.</summary>
+        static string Marque { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DigSpill", "pc_de_bureau.txt"); } }
+        public static bool PcDeBureau { get { try { return File.Exists(Marque); } catch { return false; } } }
+        public static void MarquerPcDeBureau()
+        {
+            try
+            {
+                if (File.Exists(Marque)) return;
+                Directory.CreateDirectory(Path.GetDirectoryName(Marque));
+                File.WriteAllText(Marque, "PC de bureau DigSpill depuis le " + DateTime.Now.ToString("dd/MM/yyyy HH:mm") + " : recherche des mises à jour au démarrage.\r\nSupprimer ce fichier pour l'arrêter.\r\n");
+            }
+            catch { }
+        }
+
+        /// <summary>Demonstration : une version « suivante » fictive, pour montrer la pastille et la page.</summary>
+        public static Release Demo(string version)
+        {
+            var v = Numero(version) ?? new Version(2, 9, 4);
+            var n = new Version(v.Major, v.Minor, Math.Max(0, v.Build) + 1);
+            return new Release { Tag = "v" + n, Numero = n, Notes = "- Démonstration : notes de version.", Taille = 180L << 20, Date = DateTime.Now, Beta = true };
+        }
+
+        /// <summary>Vrai si la release est plus recente que la version du kit.</summary>
+        public static bool PlusRecente(Release r, string version)
+        {
+            if (r == null || r.Numero == null) return false;
+            var ici = Numero(version);
+            return ici == null || r.Numero > ici;
+        }
+
         public class Release
         {
             public string Tag = "", Notes = "", Url = "", Sha256;
@@ -189,12 +220,12 @@ namespace DigSpill
         public static void Annoncer(string resultat, IWin32Window parent, string version)
         {
             if (resultat == "ok")
-                MessageBox.Show(parent, "Mise à jour installée : DigSpill " + (version ?? "") + ".", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Notif.Afficher(parent as Form, Niveau.Ok, "Mise à jour installée", "DigSpill " + (version ?? ""));
             else
             {
                 string j = "";
                 try { j = File.Exists(JournalRemplacement) ? "\r\n\r\n" + File.ReadAllText(JournalRemplacement) : ""; } catch { }
-                MessageBox.Show(parent, "La mise à jour n'a pas pu être installée : l'ancienne version est conservée." + j, "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                Boite.Informer(parent, Niveau.Attention, "Mise à jour non installée", "L'ancienne version est conservée et fonctionne." + j);
             }
         }
 
@@ -214,7 +245,8 @@ namespace DigSpill
         public PageMiseAJour(Fenetre f) : base(f)
         {
             Titre = "Mises à jour";
-            SousTitre = "Au bureau seulement, jamais sur un poste examiné : DigSpill irait sur Internet depuis ce poste.";
+            SousTitre = "Au bureau seulement, jamais sur un poste examiné.";
+            Details = "Chercher une mise à jour fait aller DigSpill sur Internet depuis ce poste. Une fois cette page ouverte, ce PC est reconnu comme PC de bureau : DigSpill y cherche les nouvelles versions à chaque démarrage (fichier pc_de_bureau.txt dans %LOCALAPPDATA%\\DigSpill, à supprimer pour arrêter).";
             version = MiseAJour.VersionKit(Ctx.RacineOutils);
             var c = Corps.Ajouter(NouvelleCarte());
             c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Version installée : " + (version ?? "antérieure à 2.9.1"), MiseAJour.Kit(Ctx.RacineOutils) ?? Ctx.RacineOutils));
@@ -226,7 +258,7 @@ namespace DigSpill
             notes.Visible = false;
         }
 
-        public override void Affichee() { Chercher(); }
+        public override void Affichee() { if (!Ctx.Demo) MiseAJour.MarquerPcDeBureau(); Chercher(); }
         public override void Quittee() { annule = true; }
 
         void Ui(Action a) { if (IsDisposed) return; if (InvokeRequired) BeginInvoke(a); else a(); }
@@ -235,7 +267,7 @@ namespace DigSpill
         {
             if (Ctx.Demo)
             {
-                trouvee = new MiseAJour.Release { Tag = "v2.9.2", Numero = new Version(2, 9, 2), Notes = "- Démonstration : notes de version.", Taille = 180L << 20, Date = DateTime.Now };
+                trouvee = MiseAJour.Demo(version);
                 Afficher(); return;
             }
             try { trouvee = await Task.Run(() => MiseAJour.Derniere()); Afficher(); }
@@ -246,15 +278,11 @@ namespace DigSpill
             }
         }
 
-        bool PlusRecente()
-        {
-            if (trouvee == null) return false;
-            var ici = MiseAJour.Numero(version);
-            return ici == null || trouvee.Numero > ici;
-        }
+        bool PlusRecente() { return MiseAJour.PlusRecente(trouvee, version); }
 
         void Afficher()
         {
+            F.ResultatMiseAJour(trouvee);
             if (trouvee == null) etat.Definir(Niveau.Attention, "Aucune version publiée", MiseAJour.PageReleases);
             else if (!PlusRecente()) etat.Definir(Niveau.Ok, "DigSpill est à jour", "Dernière version publiée : " + trouvee.Tag + (trouvee.Date > DateTime.MinValue ? " du " + trouvee.Date.ToString("dd/MM/yyyy") : ""));
             else
@@ -291,7 +319,7 @@ namespace DigSpill
             string kit = MiseAJour.Kit(Ctx.RacineOutils);
             if (!Ctx.Demo && kit == null)
             {
-                MessageBox.Show(F, "DigSpill ne tourne pas depuis un kit (DigSpill.exe à côté du dossier moteur) : téléchargez DigSpill.zip sur " + MiseAJour.PageReleases, "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Boite.Informer(F, Niveau.Info, "Mise à jour automatique impossible", "DigSpill ne tourne pas depuis un kit (DigSpill.exe à côté du dossier moteur). Téléchargez DigSpill.zip sur " + MiseAJour.PageReleases + ".");
                 return;
             }
             occupe = true; Occupee = true; F.MajEntete();

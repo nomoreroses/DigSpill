@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 2.9.5 (bêta)
+Appli plus lisible (propositions validées sur maquettes) :
+- **Mise à jour signalée** : pastille rouge « 1 » sur « Mises à jour » quand une nouvelle version existe. La recherche se fait au démarrage **seulement sur un PC de bureau** (déjà utilisé pour une analyse ou la page Mises à jour : fichier `%LOCALAPPDATA%\DigSpill\pc_de_bureau.txt`), jamais sur un poste examiné.
+- **Bas de la barre latérale** : une petite carte en clair (clé protégée en écriture ou non, droits administrateur, version à jour ou non). Orange seulement pendant une collecte, là où ça compte ; neutre au bureau.
+- **Fini les fenêtres grises de Windows** : questions et messages dans des boîtes au thème sombre, boutons qui disent l'action (« Forcer l'éjection », « Continuer la collecte »). « Mise à jour installée » s'affiche en notification qui disparaît seule.
+- **Sous-titres courts** : une phrase d'action en haut de chaque page, le reste dans « En savoir plus ».
+- **Collecte en cours** : étape en cours en grand (« Étape 1 / 4 · Traces du poste »), pourcentage et temps restant estimé, journal technique replié.
+- **Accueil** : deux grandes cartes courtes avec étiquettes ; « Deux clés, c'est plus sûr » devient un lien.
+- **Feu vert** : trois feux, verdict en titre (vert, orange, rouge), d'abord les points à vérifier, les vérifications conformes regroupées en une ligne (détail au clic).
+- **Rapport prêt** : poste et date de la collecte, suites à faire numérotées ; « rapport praticien » devient « rapport client ».
+
 ## 2.9.4 (bêta)
 Corrections tirées d'une vraie collecte (serveur chiffré par un rançongiciel) :
 - **Chiffrement manqué, maintenant vu** : les fichiers renommés en `<aléatoire>.[e-mail].extension` (sans l'ancienne extension) sont reconnus. Et une extension inconnue à l'aspect aléatoire (ex. `.Fa2a2yMH`) posée sur 500 fichiers ou plus en moins de 2 h est signalée comme chiffrement, même sans e-mail dans le nom.

@@ -91,6 +91,8 @@ namespace DigSpill
         /// <summary>Identifiants du compte de la session, lus avant l'elevation (cmdkey, vaultcmd).</summary>
         public string IdentifiantsSession, CompteSession;
         public bool Demo;
+        /// <summary>Tests automatiques : pas de recherche de mise a jour au demarrage.</summary>
+        public bool SansInternetAuDemarrage;
         public Reglages Reglages;
         public Intervention Inter = new Intervention();
         public List<Constat> FeuVert;
@@ -188,6 +190,7 @@ namespace DigSpill
                 Application.ThreadException += (s, e) => { try { File.AppendAllText(Path.Combine(auto, "auto.log"), "[!] erreur inattendue : " + e.Exception + "\r\n"); } catch { } Environment.Exit(11); };
             else
                 Application.ThreadException += (s, e) => MessageBox.Show(e.Exception.ToString(), "DigSpill : erreur inattendue", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            ctx.SansInternetAuDemarrage = auto != null || capture != null;
             var fenetre = new Fenetre(ctx, depart, capture);
             // relance par le script de mise a jour : --maj=ok | --maj=echec
             string maj = null;

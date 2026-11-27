@@ -23,7 +23,8 @@ namespace DigSpill
         public PageSource(Fenetre f) : base(f)
         {
             Titre = "Analyser une collecte";
-            SousTitre = "Sur votre PC, pas sur le poste suspect. Les preuves sont d'abord copiées et vérifiées : l'analyse travaille sur la copie.";
+            SousTitre = "Sur votre PC, pas sur le poste suspect.";
+            Details = "Les preuves sont d'abord copiées et vérifiées : l'analyse travaille sur la copie, l'original reste intact.";
             Parcours = ParcoursAnalyse; Etape = 0;
             collectes = Corps.Ajouter(NouvelleCarte());
 
@@ -68,7 +69,7 @@ namespace DigSpill
                     if (d.ShowDialog(F) == DialogResult.OK)
                     {
                         if (!Motif.IsMatch(Path.GetFileName(d.SelectedPath.TrimEnd('\\'))))
-                            MessageBox.Show(F, "Choisissez le dossier d'une collecte, nommé POSTE_AAAAMMJJ_HHMMSS.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            Boite.Informer(F, Niveau.Info, "Ce dossier n'est pas une collecte", "Choisissez le dossier d'une collecte, nommé POSTE_AAAAMMJJ_HHMMSS.");
                         else { choisie = d.SelectedPath.TrimEnd('\\'); Remplir(); }
                     }
             };
@@ -176,24 +177,24 @@ namespace DigSpill
 
         void Lancer()
         {
-            if (choisie == null) { MessageBox.Show(F, "Choisissez une collecte.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
-            if (travail.Valeur == "") { MessageBox.Show(F, "Indiquez un dossier de travail.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            if (choisie == null) { Boite.Informer(F, Niveau.Info, "Aucune collecte choisie", "Choisissez une collecte dans la liste, ou un dossier avec « Autre dossier… »."); return; }
+            if (travail.Valeur == "") { Boite.Informer(F, Niveau.Info, "Dossier de travail manquant", "Indiquez le dossier où écrire la copie et l'analyse."); return; }
             if (proteger.Checked && (mdp1.Valeur.Length < 10 || mdp1.Valeur != mdp2.Valeur))
-            { MessageBox.Show(F, "Mot de passe : 10 caractères minimum, identique dans les deux champs.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            { Boite.Informer(F, Niveau.Info, "Mot de passe à corriger", "10 caractères minimum, identique dans les deux champs."); return; }
             if (!copie.Checked && !Ctx.Demo && Supports.LectureSeule(Path.GetPathRoot(choisie)))
-            { MessageBox.Show(F, "La collecte est sur un support en lecture seule : l'analyse ne peut pas y écrire. Cochez la copie vérifiée.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            { Boite.Informer(F, Niveau.Info, "Copie vérifiée nécessaire", "La collecte est sur un support en lecture seule : l'analyse ne peut pas y écrire. Cochez la copie vérifiée."); return; }
             if (!Ctx.Demo && string.Equals(Path.GetPathRoot(choisie), Path.GetPathRoot(travail.Valeur), StringComparison.OrdinalIgnoreCase) && copie.Checked
-                && MessageBox.Show(F, "Le dossier de travail est sur le même support que les preuves : la copie ne protège pas contre la perte du support.\r\n\r\nContinuer ?", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+                && !Boite.Confirmer(F, Niveau.Attention, "Même support que les preuves", "Le dossier de travail est sur le même support que les preuves : la copie ne protège pas contre la perte du support.", "Continuer quand même", "Changer de dossier", true)) return;
             if (!Ctx.Demo && AccesControleActif() && DossierProtege(travail.Valeur))
             {
-                var rep = MessageBox.Show(F, "L'« Accès contrôlé aux dossiers » de Windows Defender protège " + travail.Valeur + ".\r\n\r\n" +
-                    "Defender y bloquera PowerShell, 7-Zip et Python, un par un : l'analyse échouerait.\r\n\r\nTravailler plutôt dans " + DossierParDefaut() + " ?",
-                    "DigSpill", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
-                if (rep == DialogResult.Cancel) return;
-                if (rep == DialogResult.Yes) travail.Valeur = DossierParDefaut();
+                int rep = Boite.Choisir(F, Niveau.Attention, "Dossier protégé par Defender", "L'« Accès contrôlé aux dossiers » de Windows Defender protège " + travail.Valeur + ". " +
+                    "Defender y bloquera PowerShell, 7-Zip et Python, un par un : l'analyse échouerait.", 2,
+                    new Reponse("Annuler", BoutonPlat.Genre.Discret), new Reponse("Garder ce dossier", BoutonPlat.Genre.Risque), new Reponse("Travailler dans " + DossierParDefaut(), BoutonPlat.Genre.Primaire));
+                if (rep <= 0) return;
+                if (rep == 2) travail.Valeur = DossierParDefaut();
             }
             string err;
-            if (!Ctx.Demo && !Supports.EssaiEcriture(travail.Valeur, out err)) { MessageBox.Show(F, "Impossible d'écrire dans " + travail.Valeur + " : " + err, "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+            if (!Ctx.Demo && !Supports.EssaiEcriture(travail.Valeur, out err)) { Boite.Informer(F, Niveau.Danger, "Écriture impossible", travail.Valeur + " : " + err); return; }
             Ctx.SourceCollecte = choisie; Ctx.DossierTravail = travail.Valeur;
             Ctx.CopieVerifiee = copie.Checked; Ctx.AnalyseComplete = complete.Checked; Ctx.AvecInternet = internet.Checked;
             Ctx.Proteger = proteger.Checked; Ctx.MotDePasse = proteger.Checked ? mdp1.Valeur : null;
@@ -422,26 +423,29 @@ namespace DigSpill
         public PageRapport(Fenetre f) : base(f)
         {
             Titre = Ctx.ProblemeAnalyse == null ? "Rapport prêt" : "Rapport partiel";
-            SousTitre = "« Ouvrir le rapport » l'affiche dans sa propre fenêtre, sans navigateur autour. Un seul fichier HTML : il s'ouvre sur n'importe quel PC, sans installation ni Internet.";
+            SousTitre = "Ouvrez le rapport, puis faites signer le PV de collecte.";
+            Details = "« Ouvrir le rapport » l'affiche dans sa propre fenêtre, sans navigateur autour. Un seul fichier HTML : il s'ouvre sur n'importe quel PC, sans installation ni Internet.";
             Parcours = ParcoursAnalyse; Etape = 2;
             if (Ctx.ProblemeAnalyse != null) Corps.Ajouter(NouvelleCarte()).Contenu.Ajouter(new LigneInfo(Niveau.Danger, "Analyse en échec", Ctx.ProblemeAnalyse));
             var c = Corps.Ajouter(NouvelleCarte());
             c.Couleurs(Theme.Panneau, Theme.Ligne);
-            c.Contenu.Ajouter(Mise.Texte("INTERFACE", Theme.MonoMoyen(8.5f), Theme.Texte3));
-            c.Contenu.Ajouter(Mise.Texte(Path.GetFileName(Ctx.Interface ?? ""), Theme.Police(14f, FontStyle.Bold), Theme.Texte));
-            c.Contenu.Ajouter(Mise.Texte(Ctx.Interface ?? "", Theme.Mono(8.5f), Theme.Texte3));
-            // actions secondaires dans la carte : le pied n'a de place que pour deux boutons
+            // poste et date de la collecte, lus dans le nom du fichier (POSTE_AAAAMMJJ_HHMMSS_INTERFACE.html)
+            string nom = (Ctx.Interface ?? "").Split('\\', '/').Last(), quoi = nom;
+            var m = System.Text.RegularExpressions.Regex.Match(nom, @"^(.+?)_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})\d{2}");
+            if (m.Success) quoi = string.Format("{0} · collecte du {1}/{2}/{3} à {4}:{5}", m.Groups[1].Value, m.Groups[4].Value, m.Groups[3].Value, m.Groups[2].Value, m.Groups[5].Value, m.Groups[6].Value);
+            c.Contenu.Ajouter(new LigneInfo(Ctx.ProblemeAnalyse == null ? Niveau.Ok : Niveau.Attention, quoi, Ctx.Interface ?? ""));
+            // actions secondaires en liens : « Ouvrir le rapport » reste le seul grand bouton (en bas a droite)
             var r = c.Contenu.Ajouter(new Rangee());
-            var w = new BoutonPlat("Dans le navigateur", BoutonPlat.Genre.Secondaire, Ic.Lecture) { Margin = new Padding(0, 0, 10, 0) };
-            w.Click += delegate { try { if (!Ctx.Demo) Pages.OuvrirRapport(Ctx.Interface, true); } catch (Exception e) { MessageBox.Show(F, e.Message, "DigSpill"); } };
-            var d = new BoutonPlat("Ouvrir le dossier", BoutonPlat.Genre.Secondaire, Ic.Dossier) { Margin = new Padding(0) };
-            d.Click += delegate { if (Ctx.Interface != null) Pages.OuvrirDossier(Path.GetDirectoryName(Ctx.Interface)); };
-            r.Controls.Add(w); r.Controls.Add(d);
+            r.Margin = new Padding(46, 0, 0, 0);
+            var w = Mise.Lien("Dans le navigateur", () => { try { if (!Ctx.Demo) Pages.OuvrirRapport(Ctx.Interface, true); } catch (Exception e) { Boite.Informer(F, Niveau.Danger, "Ouverture impossible", e.Message); } });
+            var d = Mise.Lien("Ouvrir le dossier", () => { if (Ctx.Interface != null) Pages.OuvrirDossier(Path.GetDirectoryName(Ctx.Interface)); });
+            foreach (var l in new[] { w, d }) { l.AutoSize = true; l.Margin = new Padding(0, 0, 24, 0); r.Controls.Add(l); }
             var a = Corps.Ajouter(NouvelleCarte());
             a.Contenu.Ajouter(Intertitre("Ensuite"));
-            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "PV de collecte", "Dans l'interface : onglet Preuves › Rapports › « PV de collecte ». À imprimer et faire signer."));
-            a.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Rapports", "Onglet Preuves › Rapports : rapport praticien (1 page) et rapport technique sourcé, en PDF."));
+            a.Contenu.Ajouter(new LigneInfo(Niveau.EnCours, "Faire signer le PV de collecte", "Dans le rapport : Preuves › Rapports › « PV de collecte ». À imprimer.") { IconeTexte = "1" });
+            a.Contenu.Ajouter(new LigneInfo(Niveau.EnCours, "Envoyer le rapport client", "Preuves › Rapports : rapport client (1 page, sans détail technique) et rapport technique sourcé, en PDF.") { IconeTexte = "2" });
             a.Contenu.Ajouter(new LigneInfo(Niveau.Attention, "Fichier sensible", "Il contient les traces du poste (comptes, chemins, sites). Pour l'envoyer : version protégée par mot de passe, mot de passe par un autre canal."));
+            if (!Ctx.Demo) MiseAJour.MarquerPcDeBureau();   // une analyse se fait au bureau : ce PC cherchera les mises a jour au demarrage
         }
 
         public override IEnumerable<Control> Boutons()
@@ -449,7 +453,7 @@ namespace DigSpill
             var n = new BoutonPlat("Nouvelle analyse", BoutonPlat.Genre.Secondaire, Ic.Actualiser);
             n.Click += delegate { F.Aller(new PageSource(F)); };
             var o = new BoutonPlat("Ouvrir le rapport", BoutonPlat.Genre.Primaire, Ic.Lecture);
-            o.Click += delegate { try { if (!Ctx.Demo) Pages.OuvrirRapport(Ctx.Interface, false); } catch (Exception e) { MessageBox.Show(F, e.Message, "DigSpill"); } };
+            o.Click += delegate { try { if (!Ctx.Demo) Pages.OuvrirRapport(Ctx.Interface, false); } catch (Exception e) { Boite.Informer(F, Niveau.Danger, "Ouverture impossible", e.Message); } };
             return new Control[] { n, o };
         }
     }

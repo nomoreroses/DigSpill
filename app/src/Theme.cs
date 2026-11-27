@@ -157,6 +157,13 @@ namespace DigSpill
             f.HandleCreated += delegate { try { int v = 1; if (DwmSetWindowAttribute(f.Handle, 20, ref v, 4) != 0) DwmSetWindowAttribute(f.Handle, 19, ref v, 4); } catch { } };
         }
 
+        /// <summary>Coins arrondis de Windows 11 pour une fenetre sans bordure (sans effet ailleurs).</summary>
+        public static void CoinsArrondis(System.Windows.Forms.Form f)
+        {
+            if (!SurWindows) return;
+            f.HandleCreated += delegate { try { int v = 2; DwmSetWindowAttribute(f.Handle, 33, ref v, 4); } catch { } };
+        }
+
         public static void Qualite(Graphics g)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;

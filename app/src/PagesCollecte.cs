@@ -146,19 +146,21 @@ namespace DigSpill
         public PageAccueil(Fenetre f) : base(f)
         {
             Titre = "Que voulez-vous faire ?";
-            SousTitre = "DigSpill collecte les traces d'un poste Windows suspect sans les modifier, les scelle, puis produit le rapport sur un autre PC.";
+            SousTitre = "Collecter les traces d'un poste suspect, ou analyser une collecte.";
+            Details = "DigSpill collecte les traces d'un poste Windows suspect sans les modifier, les scelle, puis produit le rapport sur un autre PC.";
             var g = Corps.Ajouter(new Grille { Colonnes = 2, Espace = 20 });
-            var col = new CarteChoix(Ic.Collecter, "Collecter sur ce poste", "Sur le poste suspect. Saisie de l'intervention, contrôle « feu vert », collecte sur la clé PREUVES gardée par des fichiers-appâts, scellé de fin de collecte.", "Droits administrateur demandés");
-            var ana = new CarteChoix(Ic.Analyser, "Analyser une collecte", "Sur votre PC, plus tard. Copie vérifiée des preuves, analyse complète, interface et rapports, PV de collecte à faire signer.", "Sans droits administrateur");
+            var col = new CarteChoix(Ic.Collecter, "Collecter sur ce poste", "Chez le client, sur le poste suspect. Rien n'est modifié, tout est scellé.", Theme.RougeTexte,
+                Tuple.Create("Poste suspect", Niveau.Attente), Tuple.Create("Droits administrateur", Niveau.Attention));
+            var ana = new CarteChoix(Ic.Analyser, "Analyser une collecte", "Au bureau, sur votre PC. Rapport, PV de collecte et rapport client.", Theme.Bleu,
+                Tuple.Create("Votre PC", Niveau.Attente), Tuple.Create("Sans droits administrateur", Niveau.Attente));
             g.Controls.Add(col); g.Controls.Add(ana);
             col.Click += delegate { Collecter(); };
             ana.Click += delegate { F.Aller(new PageSource(F)); };
-
-            var c = Corps.Ajouter(NouvelleCarte());
-            c.Contenu.Ajouter(Intertitre("Deux clés, c'est plus sûr"));
-            c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Clé OUTILS", "DigSpill et ses scripts. Clé à interrupteur, en position lecture seule : rien ne peut la modifier."));
-            c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Clé PREUVES", "Chiffrée, branchée seulement après le feu vert, surveillée pendant la collecte, passée en lecture seule ensuite."));
-            c.Contenu.Ajouter(new LigneInfo(Niveau.Info, "Une seule clé ?", "Possible : DigSpill pose quand même ses fichiers-appâts et coupe la clé au moindre signe de chiffrement."));
+            var l = Corps.Ajouter(Mise.Lien("ⓘ  Pourquoi deux clés (OUTILS et PREUVES) ?", () => Boite.Informer(F, Niveau.Info, "Deux clés, c'est plus sûr",
+                "Clé OUTILS : DigSpill et ses scripts. Clé à interrupteur, en position lecture seule : rien ne peut la modifier.\r\n\r\n" +
+                "Clé PREUVES : chiffrée, branchée seulement après le feu vert, surveillée pendant la collecte, passée en lecture seule ensuite.\r\n\r\n" +
+                "Une seule clé ? Possible : DigSpill pose quand même ses fichiers-appâts et coupe la clé au moindre signe de chiffrement.")));
+            l.Margin = new Padding(4, 4, 0, 0);
         }
 
         public override IEnumerable<Control> Boutons()
@@ -166,7 +168,8 @@ namespace DigSpill
             var b = new BoutonPlat("Identifiants de ce compte", BoutonPlat.Genre.Secondaire, Ic.Personne);
             b.Click += delegate { ListerIdentifiants(); };
             // au bureau : DigSpill va sur Internet (jamais au demarrage, pour ne rien envoyer depuis un poste examine)
-            var m = new BoutonPlat("Mises à jour", BoutonPlat.Genre.Secondaire, Ic.Actualiser);
+            var m = new BoutonPlat("Mises à jour", BoutonPlat.Genre.Secondaire, Ic.Actualiser) { Pastille = F.MiseAJourDispo != null ? 1 : 0 };
+            if (F.MiseAJourDispo != null) m.AccessibleName = "Mises à jour : " + F.MiseAJourDispo.Tag + " disponible";
             m.Click += delegate { F.Aller(new PageMiseAJour(F)); };
             return new Control[] { m, b };
         }
@@ -174,7 +177,7 @@ namespace DigSpill
         /// <summary>Pour les autres comptes du poste : ouvrir leur session, lancer DigSpill.exe, ce bouton.</summary>
         void ListerIdentifiants()
         {
-            if (Ctx.Demo) { MessageBox.Show(F, "Démonstration : en vrai, les cibles du gestionnaire d'identifiants de " + Identifiants.Compte + " seraient écrites dans F:\\Collecte\\Identifiants.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            if (Ctx.Demo) { Boite.Informer(F, Niveau.Info, "Démonstration", "En vrai, les cibles du gestionnaire d'identifiants de " + Identifiants.Compte + " seraient écrites dans F:\\Collecte\\Identifiants."); return; }
             var dossiers = Identifiants.DossiersCollecte(Ctx.RacineOutils);
             string cible = null;
             if (dossiers.Count == 1) cible = dossiers[0];
@@ -190,9 +193,9 @@ namespace DigSpill
             try
             {
                 var f = Identifiants.Ecrire(cible, Identifiants.Lister(), Identifiants.Compte);
-                MessageBox.Show(F, "Cibles enregistrées pour " + Identifiants.Compte + " écrites dans :\r\n" + f + "\r\n\r\nRecommencer dans la session de chaque autre compte du poste.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Boite.Informer(F, Niveau.Ok, "Identifiants de " + Identifiants.Compte + " enregistrés", "Écrits dans " + f + ".\r\n\r\nÀ refaire dans la session de chaque autre compte du poste.");
             }
-            catch (Exception ex) { MessageBox.Show(F, "Écriture impossible dans " + cible + " : " + ex.Message, "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            catch (Exception ex) { Boite.Informer(F, Niveau.Danger, "Écriture impossible", cible + " : " + ex.Message); }
         }
 
         void Collecter()
@@ -203,7 +206,7 @@ namespace DigSpill
             {
                 string texte = Ctx.IdentifiantsSession.Length > 18000 ? Ctx.IdentifiantsSession.Substring(0, 18000) + "\r\n[tronqué]" : Ctx.IdentifiantsSession;
                 try { Programme.Relancer("--collecter --identifiants=" + Identifiants.VersBase64(texte) + " --compte=" + Executeur.Echapper(Ctx.CompteSession), true); Application.Exit(); }
-                catch (Win32Exception) { MessageBox.Show(F, "Les droits administrateur sont nécessaires pour collecter.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+                catch (Win32Exception) { Boite.Informer(F, Niveau.Info, "Droits administrateur nécessaires", "Pour collecter, acceptez la demande de Windows « Autoriser cette application à apporter des modifications »."); }
                 return;
             }
             F.Aller(new PageIntervention(F));
@@ -220,7 +223,8 @@ namespace DigSpill
         public PageIntervention(Fenetre f) : base(f)
         {
             Titre = "Intervention";
-            SousTitre = "Ces informations vont dans infos_collecte.txt, dans le scellé et dans le PV de collecte. Ne branchez pas encore la clé PREUVES.";
+            SousTitre = "Qui intervient, chez qui et pourquoi. Ne branchez pas encore la clé PREUVES.";
+            Details = "Ces informations vont dans infos_collecte.txt, dans le scellé et dans le PV de collecte.";
             Parcours = ParcoursCollecte; Etape = 0;
             var i = Ctx.Inter;
 
@@ -271,10 +275,10 @@ namespace DigSpill
             if (prenom.Valeur == "") manque.Add("prénom");
             if (nom.Valeur == "") manque.Add("nom");
             if (cabinet.Valeur == "") manque.Add("cabinet");
-            if (manque.Count > 0) { MessageBox.Show(F, "À compléter : " + string.Join(", ", manque.ToArray()) + ".", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+            if (manque.Count > 0) { Boite.Informer(F, Niveau.Info, "Champs à compléter", string.Join(", ", manque.ToArray()) + "."); return; }
             DateTime dDec = DateTime.MinValue;
             bool decOk = decouverte.Valeur == "" || DateTime.TryParseExact(decouverte.Valeur, new[] { "dd/MM/yyyy HH:mm", "dd/MM/yyyy H:mm", "dd/MM/yyyy" }, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dDec);
-            if (!decOk) { MessageBox.Show(F, "Date de découverte : écrire JJ/MM/AAAA HH:MM (par exemple 17/11/2026 08:10), ou laisser vide.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); decouverte.Saisie.Focus(); return; }
+            if (!decOk) { Boite.Informer(F, Niveau.Info, "Date de découverte à corriger", "Écrire JJ/MM/AAAA HH:MM (par exemple 17/11/2026 08:10), ou laisser vide."); decouverte.Saisie.Focus(); return; }
             var i = Ctx.Inter;
             i.Prenom = prenom.Valeur; i.Nom = nom.Valeur; i.Societe = societe.Valeur; i.Cabinet = cabinet.Valeur;
             i.Present = present.Valeur; i.Ticket = ticket.Valeur; i.Motif = motif.Saisie.Text;
@@ -289,6 +293,7 @@ namespace DigSpill
     class PageFeuVert : Page
     {
         readonly Carte bandeau, liste;
+        readonly Feux feux = new Feux();
         readonly Label bTitre, bTexte, bEtape;
         readonly Barre barre = new Barre();
         readonly Case malgre;
@@ -298,10 +303,12 @@ namespace DigSpill
         public PageFeuVert(Fenetre f) : base(f)
         {
             Titre = "Feu vert avant de brancher la clé PREUVES";
-            SousTitre = "DigSpill vérifie, sans rien modifier sur le poste, qu'aucun chiffrement n'est en cours. Ne branchez pas encore la clé PREUVES.";
+            SousTitre = "Ne branchez pas encore la clé PREUVES : DigSpill vérifie d'abord qu'aucun chiffrement n'est en cours.";
+            Details = "Rien n'est modifié sur le poste : DigSpill lit les notes de rançon, les fichiers modifiés à l'instant, les programmes qui écrivent sur le disque, l'antivirus et le réseau. Environ 30 secondes.";
             Parcours = ParcoursCollecte; Etape = 1;
             bandeau = Corps.Ajouter(NouvelleCarte());
-            bTitre = bandeau.Contenu.Ajouter(Mise.Texte("Vérifications en cours…", Theme.Police(14f, FontStyle.Bold), Theme.Encre));
+            bandeau.Contenu.Ajouter(feux);
+            bTitre = bandeau.Contenu.Ajouter(Mise.Texte("Vérifications en cours…", Theme.Police(16f, FontStyle.Bold), Theme.Encre));
             bTexte = bandeau.Contenu.Ajouter(Paragraphe(""));
             bEtape = bandeau.Contenu.Ajouter(Mise.Texte("", Theme.Police(9.5f), Theme.Doux));
             bandeau.Contenu.Ajouter(barre);
@@ -341,6 +348,7 @@ namespace DigSpill
             Ctx.FeuVert = null;
             liste.Visible = false; malgre.Visible = false;
             bandeau.Couleurs(Theme.Panneau, Theme.Ligne);
+            feux.Niveau = Niveau.Attente;
             bTitre.Text = "Vérifications en cours…";
             bTexte.Text = "Notes de rançon, fichiers modifiés à l'instant, programmes qui écrivent sur le disque, antivirus, réseau. Environ 30 secondes.";
             barre.Visible = true; barre.Indeterminee = true; bEtape.Visible = true;
@@ -354,9 +362,10 @@ namespace DigSpill
             barre.Indeterminee = false; barre.Visible = false; bEtape.Visible = false;
             var n = Verifications.Global(res);
             bandeau.Couleurs(Niveaux.Fond(n), Niveaux.Couleur(n));
+            feux.Niveau = n == Niveau.Danger || n == Niveau.Attention ? n : Niveau.Ok;
             if (n == Niveau.Danger)
             {
-                bTitre.Text = "Danger : ne branchez pas la clé PREUVES";
+                bTitre.Text = "Feu rouge : ne branchez pas la clé PREUVES";
                 bTexte.Text = "Un chiffrement semble actif. Isolez le poste du réseau sans l'éteindre, prévenez le responsable, le client et l'assureur. Si la collecte reste nécessaire, cochez la case en bas de page.";
                 malgre.Visible = true;
             }
@@ -370,8 +379,29 @@ namespace DigSpill
                 bTitre.Text = "Feu vert : vous pouvez brancher la clé PREUVES";
                 bTexte.Text = "Aucun signe de chiffrement en cours.";
             }
+            // d'abord ce qui demande une action, puis les points conformes regroupes en une ligne (detail au clic)
             liste.Contenu.Controls.Clear();
-            foreach (var c in res.OrderByDescending(x => x.Niveau == Niveau.Danger ? 3 : x.Niveau == Niveau.Attention ? 2 : 0))
+            var aVoir = res.Where(x => x.Niveau == Niveau.Danger || x.Niveau == Niveau.Attention).OrderByDescending(x => x.Niveau == Niveau.Danger).ToList();
+            var bons = res.Where(x => x.Niveau == Niveau.Ok).ToList();
+            if (aVoir.Count > 0) liste.Contenu.Ajouter(Intertitre(aVoir.Count == 1 ? "À vérifier" : aVoir.Count + " points à vérifier"));
+            foreach (var c in aVoir) liste.Contenu.Ajouter(new LigneInfo(c.Niveau, c.Titre, c.Detail));
+            if (bons.Count > 0)
+            {
+                liste.Contenu.Ajouter(new LigneInfo(Niveau.Ok, bons.Count == 1 ? "1 vérification conforme" : bons.Count + " vérifications conformes", string.Join(", ", bons.Select(x => x.Titre).ToArray()) + "."));
+                var detail = new Colonne { Visible = false, Espace = 12 };
+                foreach (var c in bons) detail.Ajouter(new LigneInfo(c.Niveau, c.Titre, c.Detail));
+                Label lien = null;
+                lien = Mise.Lien("▸  Voir le détail des vérifications conformes", () =>
+                {
+                    detail.Visible = !detail.Visible;
+                    lien.Text = (detail.Visible ? "▾  Masquer" : "▸  Voir") + " le détail des vérifications conformes";
+                    Ajuster();
+                });
+                lien.Margin = new Padding(46, 0, 0, 0);
+                liste.Contenu.Ajouter(lien);
+                liste.Contenu.Ajouter(detail);
+            }
+            foreach (var c in res.Where(x => x.Niveau != Niveau.Ok && x.Niveau != Niveau.Danger && x.Niveau != Niveau.Attention))
                 liste.Contenu.Ajouter(new LigneInfo(c.Niveau, c.Titre, c.Detail));
             liste.Visible = true;
             MajBoutons();
@@ -394,7 +424,8 @@ namespace DigSpill
         public PageSupport(Fenetre f) : base(f)
         {
             Titre = "Où écrire les preuves ?";
-            SousTitre = "Clé ou disque externe chiffré, déverrouillé, en lecture-écriture : DigSpill le détecte dès qu'il est branché. Sans clé ni disque externe, un disque de ce poste.";
+            SousTitre = "Branchez la clé ou le disque PREUVES, chiffré et déverrouillé.";
+            Details = "DigSpill le détecte dès qu'il est branché, en lecture-écriture. Sans clé ni disque externe, un disque de ce poste peut servir : à éviter, l'écriture peut effacer des fichiers supprimés récupérables (choix noté dans infos_collecte.txt).";
             Parcours = ParcoursCollecte; Etape = 2;
             liste = Corps.Ajouter(NouvelleCarte());
             remarque = Corps.Ajouter(new LigneInfo(Niveau.Info, "", ""));
@@ -516,13 +547,13 @@ namespace DigSpill
             if (!Ctx.Demo)
             {
                 if (!choisi.Externe &&
-                    MessageBox.Show(F, "Écrire les preuves sur " + choisi.Appellation + " ?\r\n\r\nÀ faire seulement sans clé ni disque externe : l'écriture peut effacer des fichiers supprimés récupérables, " +
-                        "et un rançongiciel actif peut chiffrer les preuves. Pas de fichiers-appâts ni d'éjection.\r\n\r\nCe choix est noté dans infos_collecte.txt.", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+                    !Boite.Confirmer(F, Niveau.Attention, "Écrire les preuves sur " + choisi.Appellation + " ?", "À faire seulement sans clé ni disque externe : l'écriture peut effacer des fichiers supprimés récupérables, " +
+                        "et un rançongiciel actif peut chiffrer les preuves. Pas de fichiers-appâts ni d'éjection.\r\n\r\nCe choix est noté dans infos_collecte.txt.", "Écrire sur ce disque", "Choisir un autre support", true)) return;
                 if (choisi.Systeme.StartsWith("FAT", StringComparison.OrdinalIgnoreCase) &&
-                    MessageBox.Show(F, "Support en FAT32 : la capture de la mémoire et les conteneurs de plus de 4 Go ne pourront pas y être écrits.\r\n\r\nContinuer quand même ?", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+                    !Boite.Confirmer(F, Niveau.Attention, "Support en FAT32", "La capture de la mémoire et les conteneurs de plus de 4 Go ne pourront pas y être écrits.", "Continuer quand même", "Choisir un autre support", true)) return;
                 string err;
                 if (!Supports.EssaiEcriture(Path.Combine(choisi.Racine, "Collecte"), out err))
-                { MessageBox.Show(F, "Impossible d'écrire sur " + choisi.Lettre + " : " + err + "\r\n\r\nVérifiez que le support est déverrouillé et en lecture-écriture.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+                { Boite.Informer(F, Niveau.Danger, "Écriture impossible sur " + choisi.Lettre, err + "\r\n\r\nVérifiez que le support est déverrouillé et en lecture-écriture."); return; }
             }
             Ctx.Destination = choisi;
             Ctx.AvecPieges = choisi.Externe && pieges.Checked;
@@ -534,7 +565,7 @@ namespace DigSpill
     class PageCollecte : Page
     {
         readonly Barre barre = new Barre();
-        readonly Label etat, chrono;
+        readonly Label numero, phase, etat, chrono;
         readonly LigneInfo ePs, eVelo, eAna, eScelle, garde;
         readonly Journal journal = new Journal { Hauteur = 230 };
         readonly System.Windows.Forms.Timer horloge = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -546,24 +577,32 @@ namespace DigSpill
         public PageCollecte(Fenetre f) : base(f)
         {
             Titre = "Collecte en cours";
-            SousTitre = Ctx.Destination != null && !Ctx.Destination.Externe ? "Ne fermez pas DigSpill. Les preuves sont écrites sur " + Ctx.Destination.Appellation + "."
-                : Ctx.AvecPieges ? "Ne retirez pas les clés et ne fermez pas DigSpill. " + (Ctx.Destination != null && Ctx.Destination.Genre == GenreSupport.DisqueExterne ? "Le disque PREUVES est surveillé en continu." : "La clé PREUVES est surveillée en continu.")
-                : "Ne retirez pas les clés et ne fermez pas DigSpill.";
-            SousTitre += " Mise en veille bloquée pendant la collecte (ne fermez pas le capot d'un portable).";
+            SousTitre = Ctx.Destination != null && !Ctx.Destination.Externe ? "Ne fermez pas DigSpill." : "Ne retirez pas les clés et ne fermez pas DigSpill.";
+            Details = (Ctx.Destination != null && !Ctx.Destination.Externe ? "Les preuves sont écrites sur " + Ctx.Destination.Appellation + ". "
+                : Ctx.AvecPieges ? (Ctx.Destination != null && Ctx.Destination.Genre == GenreSupport.DisqueExterne ? "Le disque PREUVES est surveillé en continu. " : "La clé PREUVES est surveillée en continu. ") : "")
+                + "Mise en veille bloquée pendant la collecte (ne fermez pas le capot d'un portable).";
             Parcours = ParcoursCollecte; Etape = 3;
             var c = Corps.Ajouter(NouvelleCarte());
-            etat = c.Contenu.Ajouter(Mise.Texte("Préparation…", Theme.Police(12f, FontStyle.Bold), Theme.Encre));
+            c.Couleurs(Theme.Panneau, Theme.Ligne);
+            numero = c.Contenu.Ajouter(Mise.Texte("", Theme.MonoMoyen(8.5f), Theme.Texte3));
+            phase = c.Contenu.Ajouter(Mise.Texte("Préparation…", Theme.Police(18f, FontStyle.Bold), Theme.Encre));
+            etat = c.Contenu.Ajouter(Mise.Texte("", Theme.Police(10.5f), Theme.Doux));
+            barre.Epaisseur = 10; barre.Couleur = Theme.Rouge;
             c.Contenu.Ajouter(barre);
-            chrono = c.Contenu.Ajouter(Mise.Texte("", Theme.Police(9.5f), Theme.Doux));
+            chrono = c.Contenu.Ajouter(Mise.Texte("", Theme.Police(10f), Theme.Doux));
             garde = Corps.Ajouter(new LigneInfo(Niveau.Attente, "Surveillance de la clé PREUVES", ""));
             var e = Corps.Ajouter(NouvelleCarte());
             e.Contenu.Ajouter(Intertitre("Étapes"));
-            ePs = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "1. Collecte PowerShell", "Mémoire vive, journaux, comptes, connexions, persistance, traces de rançongiciel."));
-            eVelo = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "2. Collecte Velociraptor", "$MFT, journal USN, registre, SRUM, Autoruns (lecture NTFS brute)."));
+            ePs = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "1. Traces du poste", "Mémoire vive, journaux, comptes, connexions, persistance, traces de rançongiciel (PowerShell)."));
+            eVelo = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "2. Disque et registre", "$MFT, journal USN, registre, SRUM, Autoruns, en lecture NTFS brute (Velociraptor)."));
             eAna = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "3. Analyse rapide sur place", "Sessions, volumes envoyés, exécutions et navigation pendant les fenêtres suspectes."));
             eScelle = e.Contenu.Ajouter(new LigneInfo(Niveau.Attente, "4. Scellé de fin de collecte", "Empreinte SHA-256 du manifeste, du journal et des conteneurs ; horodatage si Internet."));
+            // journal technique replie : on suit l'etape en cours, le detail est a un clic
+            Label lien = null;
+            lien = Corps.Ajouter(Mise.Lien("▸  Journal détaillé", () => { journal.Visible = !journal.Visible; lien.Text = (journal.Visible ? "▾" : "▸") + "  Journal détaillé"; Ajuster(); }));
+            journal.Visible = false;
             Corps.Ajouter(journal);
-            horloge.Tick += delegate { MajGarde(); if (Ctx.Debut != DateTime.MinValue) chrono.Text = "Démarrée à " + Ctx.Debut.ToString("HH:mm:ss") + " · " + Pages.Duree(DateTime.Now - Ctx.Debut) + " · destination " + Ctx.Destination.Racine + "Collecte"; };
+            horloge.Tick += delegate { MajGarde(); if (Ctx.Debut != DateTime.MinValue) chrono.Text = Avancement(); };
         }
 
         public override IEnumerable<Control> Boutons()
@@ -571,7 +610,7 @@ namespace DigSpill
             var u = new BoutonPlat("Arrêt d'urgence", BoutonPlat.Genre.Danger, Ic.Arret);
             u.Click += delegate
             {
-                if (MessageBox.Show(F, "Arrêter la collecte et couper la clé PREUVES immédiatement ?", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                if (Boite.Confirmer(F, Niveau.Danger, "Arrêt d'urgence ?", "La collecte s'arrête et la clé PREUVES est coupée immédiatement.", "Arrêter et couper la clé", "Continuer la collecte", false))
                     Urgence("Arrêt d'urgence demandé par le technicien");
             };
             return new Control[] { u };
@@ -601,6 +640,28 @@ namespace DigSpill
 
         void Progression(double v) { Ui(() => barre.Valeur = v); }
 
+        /// <summary>Grande etape en cours (1 a 4) affichee en haut de la page.</summary>
+        void Phase(int n, string nom) { Ui(() => { numero.Text = "ÉTAPE " + n + " / 4"; phase.Text = nom; etat.Text = ""; Ajuster(); }); }
+
+        /// <summary>« 46 % · environ 25 min restantes · démarrée à 11:19 (14 min) · destination F:\Collecte » ; le reste est estime d'apres le temps deja passe.</summary>
+        string Avancement()
+        {
+            var ecoule = DateTime.Now - Ctx.Debut;
+            var l = new List<string>();
+            double v = barre.Valeur;
+            if (!barre.Indeterminee && v > 0) l.Add(Math.Round(v * 100) + " %");
+            if (!barre.Indeterminee && v >= 0.05 && v < 1 && ecoule.TotalSeconds >= 60)
+            {
+                double min = Math.Ceiling(ecoule.TotalMinutes * (1 - v) / v);
+                l.Add(min <= 1 ? "moins d'une minute restante" : min < 90 ? "environ " + min + " min restantes" : string.Format("environ {0} h {1:00} restantes", (int)(min / 60), (int)(min % 60)));
+            }
+            else if (barre.Indeterminee) l.Add("durée de cette étape inconnue");
+            else if (v < 1) l.Add("temps restant en cours d'estimation");
+            l.Add("démarrée à " + Ctx.Debut.ToString("HH:mm") + " (" + Pages.Duree(ecoule) + ")");
+            if (Ctx.Destination != null) l.Add("destination " + Ctx.Destination.Racine + "Collecte");
+            return string.Join(" · ", l.ToArray());
+        }
+
         void Ligne(string l)
         {
             Log(l);
@@ -610,7 +671,7 @@ namespace DigSpill
                 etapesVues++;
                 int prevu = Ctx.Inter.Legere ? 24 : 36;
                 if (etapesVues >= prevu) prevu = etapesVues + 2;
-                Etat("Collecte PowerShell : " + m.Groups[1].Value);
+                Etat(m.Groups[1].Value);
                 Progression(baseProgression + partProgression * etapesVues / prevu);
             }
         }
@@ -657,6 +718,7 @@ namespace DigSpill
 
             // --- 1. PowerShell
             ePs.Etat(Niveau.EnCours);
+            Phase(1, "Traces du poste");
             baseProgression = 0; partProgression = i.Legere ? 0.85 : 0.55;
             // powershell.exe -File perd les arguments vides : on ne passe que les champs remplis
             var ap = new List<string> { "-Mode", i.Legere ? "Leger" : "Complet", "-Destination", Executeur.Echapper(d.Racine) };
@@ -672,15 +734,16 @@ namespace DigSpill
             if (urgence) return;
             Ctx.NomCollecte = TrouverCollecte();
             Ctx.ProblemeCollecte = Ctx.NomCollecte != null ? null : "La collecte PowerShell s'est arrêtée sans créer de dossier (code de sortie " + code + ") : ni journaux, ni mémoire vive, ni manifeste. Relancez la collecte ; le détail est dans le journal de la page Collecte.";
-            ePs.Definir(code == 0 && Ctx.NomCollecte != null ? Niveau.Ok : Niveau.Attention, "1. Collecte PowerShell", Ctx.NomCollecte != null ? "Dossier " + Ctx.NomCollecte + (code == 0 ? "" : " (code de sortie " + code + ", voir collecte.log)") : "Dossier de collecte introuvable : voir le journal ci-dessous.");
+            ePs.Definir(code == 0 && Ctx.NomCollecte != null ? Niveau.Ok : Niveau.Attention, "1. Traces du poste", Ctx.NomCollecte != null ? "Dossier " + Ctx.NomCollecte + (code == 0 ? "" : " (code de sortie " + code + ", voir collecte.log)") : "Dossier de collecte introuvable : voir le journal ci-dessous.");
 
             // --- 2. Velociraptor
-            if (i.Legere) eVelo.Definir(Niveau.Ignore, "2. Collecte Velociraptor", "Pas en collecte légère.");
-            else if (!Ctx.Demo && !File.Exists(Ctx.Velociraptor)) eVelo.Definir(Niveau.Attention, "2. Collecte Velociraptor", "Collecteur-Velociraptor.exe absent de la clé OUTILS : étape sautée.");
+            if (i.Legere) eVelo.Definir(Niveau.Ignore, "2. Disque et registre", "Pas en collecte légère.");
+            else if (!Ctx.Demo && !File.Exists(Ctx.Velociraptor)) eVelo.Definir(Niveau.Attention, "2. Disque et registre", "Collecteur-Velociraptor.exe absent de la clé OUTILS : étape sautée.");
             else
             {
                 eVelo.Etat(Niveau.EnCours);
-                Etat("Collecte Velociraptor : $MFT, registre, journaux (plusieurs minutes)…");
+                Phase(2, "Disque et registre");
+                Etat("$MFT, registre, journaux en lecture NTFS brute (plusieurs minutes)…");
                 Ui(() => barre.Indeterminee = true);
                 string dv = Path.Combine(Ctx.DossierCollecteRacine, "Velociraptor");
                 int cv;
@@ -693,7 +756,7 @@ namespace DigSpill
                     cv = await exec.Lancer(Ctx.Velociraptor, "", dv, System.Text.Encoding.UTF8, null);
                 }
                 if (urgence) return;
-                eVelo.Definir(cv == 0 ? Niveau.Ok : Niveau.Attention, "2. Collecte Velociraptor", cv == 0 ? "Conteneur écrit dans " + dv : "Code de sortie " + cv + " : voir le journal.");
+                eVelo.Definir(cv == 0 ? Niveau.Ok : Niveau.Attention, "2. Disque et registre", cv == 0 ? "Conteneur écrit dans " + dv : "Code de sortie " + cv + " : voir le journal.");
             }
             Progression(0.9);
 
@@ -702,6 +765,7 @@ namespace DigSpill
             else
             {
                 eAna.Etat(Niveau.EnCours);
+                Phase(3, "Analyse rapide sur place");
                 baseProgression = 0.9; partProgression = 0;
                 int ca = await Executer("Analyse-Exfil.ps1", new List<string> { "-Collecte", Executeur.Echapper(Ctx.DossierCollecteRacine), "-DerniereDuPoste", "-SansMFT", "-SansHashConteneurs" }, "Analyse rapide");
                 if (urgence) return;
@@ -710,13 +774,14 @@ namespace DigSpill
 
             // --- 4. scelle
             eScelle.Etat(Niveau.EnCours);
-            Etat("Scellé : calcul des empreintes…");
+            Phase(4, "Scellé de fin de collecte");
+            Etat("Calcul des empreintes…");
             Ui(() => barre.Indeterminee = true);
             string par = i.Technicien + (i.Societe != "" ? " (" + i.Societe + ")" : "") + " - " + Environment.UserDomainName + "\\" + Environment.UserName;
             if (Ctx.Demo) { await Task.Delay(1200); Pages.RemplirDemo(Ctx); }
             else if (Ctx.NomCollecte != null)
             {
-                Ctx.Scelle = await Task.Run(() => Scelle.Creer(Ctx.DossierCollecteRacine, Ctx.NomCollecte, par, Ctx.Debut, s => Etat("Scellé : " + s)));
+                Ctx.Scelle = await Task.Run(() => Scelle.Creer(Ctx.DossierCollecteRacine, Ctx.NomCollecte, par, Ctx.Debut, s => Etat(s)));
                 if (Ctx.Scelle.Erreur == null && i.Horodater)
                 {
                     // l'horodateur peut ne pas repondre (DNS, proxy, pare-feu) : 45 s au plus, secondes affichees
@@ -724,7 +789,7 @@ namespace DigSpill
                     var debutH = DateTime.Now;
                     while (!t.IsCompleted && (DateTime.Now - debutH).TotalSeconds < 45)
                     {
-                        Etat(string.Format("Scellé : horodatage par {0}… ({1:0} s)", Ctx.Horodateur, (DateTime.Now - debutH).TotalSeconds));
+                        Etat(string.Format("Horodatage par {0}… ({1:0} s)", Ctx.Horodateur, (DateTime.Now - debutH).TotalSeconds));
                         await Task.WhenAny(t, Task.Delay(1000));
                     }
                     if (!t.IsCompleted) { Ctx.Scelle.ErreurHorodatage = "l'horodateur n'a pas répondu en 45 s"; Log("[!] Horodatage : pas de réponse en 45 s, à refaire au bureau"); }
@@ -869,7 +934,7 @@ namespace DigSpill
                     if (!Ctx.Demo) await Task.Run(() => Scelle.Horodater(sc, Ctx.Horodateur)); else await Task.Delay(800);
                     horodater.Text = sc.DateJeton != null ? "Horodaté" : "Réessayer l'horodatage";
                     horodater.Enabled = sc.DateJeton == null;
-                    if (sc.DateJeton == null && sc.ErreurHorodatage != null) MessageBox.Show(F, "Horodatage impossible : " + sc.ErreurHorodatage + "\r\n\r\nLe scellé reste valable : il sera horodaté au bureau.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    if (sc.DateJeton == null && sc.ErreurHorodatage != null) Boite.Informer(F, Niveau.Info, "Horodatage impossible", sc.ErreurHorodatage + "\r\n\r\nLe scellé reste valable : il sera horodaté au bureau.");
                     MajPastilles();
                 };
                 l.Add(horodater);
@@ -894,26 +959,24 @@ namespace DigSpill
             if (!Ctx.Demo && Ctx.Destination.EstOutils)
             {
                 // DigSpill.exe tourne depuis cette cle : l'ejecter maintenant ferait planter l'appli
-                var q = MessageBox.Show(F, "Mode une seule clé : DigSpill tourne depuis cette clé et ne peut pas l'éjecter lui-même.\r\n\r\nOui : fermer DigSpill, puis Windows éjecte la clé (quelques secondes).\r\nNon : rester sur cette page.", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-                if (q != DialogResult.Yes) return;
+                if (!Boite.Confirmer(F, Niveau.Info, "Fermer DigSpill pour éjecter la clé ?", "Mode une seule clé : DigSpill tourne depuis cette clé et ne peut pas l'éjecter lui-même. Une fois DigSpill fermé, Windows éjecte la clé (quelques secondes).", "Fermer et éjecter", "Rester sur cette page", false)) return;
                 try { Supports.EjecterApresFermeture(Ctx.Destination.Lettre); }
-                catch (Exception e) { MessageBox.Show(F, "Éjection automatique impossible : " + e.Message + "\r\nFermez DigSpill puis utilisez « Retirer le périphérique en toute sécurité » de Windows.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+                catch (Exception e) { Boite.Informer(F, Niveau.Info, "Éjection automatique impossible", e.Message + "\r\n\r\nFermez DigSpill puis utilisez « Retirer le périphérique en toute sécurité » de Windows."); }
                 F.Close();
                 return;
             }
             string err = Ctx.Demo ? null : Supports.Ejecter(Ctx.Destination.Lettre, false);
             if (err != null)
             {
-                var r = MessageBox.Show(F, err + "\r\n\r\nOui : forcer l'éjection (les données sont déjà écrites).\r\nNon : je ferme les fenêtres et je réessaie.", "DigSpill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (r != DialogResult.Yes) return;
+                if (!Boite.Confirmer(F, Niveau.Attention, "Windows refuse d'éjecter la clé", err + "\r\n\r\nLes données sont déjà écrites : forcer l'éjection ne les abîme pas.", "Forcer l'éjection", "Je ferme les fenêtres et je réessaie", true)) return;
                 err = Supports.Ejecter(Ctx.Destination.Lettre, true);
-                if (err != null) { MessageBox.Show(F, "Éjection impossible : " + err + "\r\nUtilisez « Retirer le périphérique en toute sécurité » de Windows.", "DigSpill", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+                if (err != null) { Boite.Informer(F, Niveau.Danger, "Éjection impossible", err + "\r\n\r\nUtilisez « Retirer le périphérique en toute sécurité » de Windows."); return; }
             }
             ejectee = true;
             bool disque = Ctx.Destination != null && Ctx.Destination.Genre == GenreSupport.DisqueExterne;
             Titre = disque ? "Disque PREUVES éjecté" : "Clé PREUVES éjectée";
-            SousTitre = disque ? "Vous pouvez le débrancher. Passez-le en lecture seule si possible et rangez-le séparément de la clé OUTILS."
-                : "Vous pouvez la débrancher. Passez-la en lecture seule et rangez-la séparément de la clé OUTILS.";
+            SousTitre = disque ? "Vous pouvez le débrancher." : "Vous pouvez la débrancher.";
+            Details = disque ? "Passez-le en lecture seule si possible et rangez-le séparément de la clé OUTILS." : "Passez-la en lecture seule et rangez-la séparément de la clé OUTILS.";
             ejecter.Text = "Fermer DigSpill";
             ejecter.Icone = Ic.Ok;
             pastilles.Controls.Add(new Pastille(disque ? "Disque éjecté" : "Clé éjectée", Niveau.Ok));
