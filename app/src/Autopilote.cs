@@ -165,6 +165,16 @@ namespace DigSpill
         // ------------------------------------------------------------------ le parcours
         void Tic()
         {
+            // boite de dialogue de DigSpill (Dialogue) : memes reponses que pour les anciennes MessageBox
+            var dlg = Application.OpenForms.OfType<Dialogue>().FirstOrDefault(x => x.Visible);
+            if (dlg != null)
+            {
+                var c = dlg.Contenu;
+                if (c.IndexOf("forcer l'éjection", StringComparison.OrdinalIgnoreCase) >= 0 && UneFois("forcer")) { Log("boîte de dialogue : " + c + " -> Forcer"); Capturer("ejection_forcer"); dlg.Repondre("Forcer"); return; }
+                if (c.Contains("Éjection impossible") && UneFois("ejection_impossible")) { Log("[!] boîte de dialogue : " + c + " -> OK"); Capturer("ejection_impossible"); dlg.Repondre("OK"); return; }
+                if (faits.Contains(phase + ":forcer") || faits.Contains(phase + ":ejection_impossible")) return;
+                Log("[!] boîte de dialogue inattendue : " + c); Capturer("dialogue"); Quitter(6); return;
+            }
             Dictionary<string, IntPtr> bt;
             var d = Dialogue(out bt);
             if (d != null)

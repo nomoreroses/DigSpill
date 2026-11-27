@@ -35,6 +35,17 @@ namespace DigSpill
         {
             return new Label { Text = texte, Font = f, ForeColor = c, BackColor = Color.Transparent, AutoSize = false, UseMnemonic = false };
         }
+
+        /// <summary>Lien discret (gris, blanc au survol) qui lance une action.</summary>
+        public static Label Lien(string texte, Action action)
+        {
+            var l = Texte(texte, Theme.Police(10.5f), Theme.Texte2);
+            l.Cursor = Cursors.Hand; l.AccessibleRole = AccessibleRole.Link;
+            l.MouseEnter += delegate { l.ForeColor = Theme.Texte; };
+            l.MouseLeave += delegate { l.ForeColor = Theme.Texte2; };
+            l.Click += delegate { action(); };
+            return l;
+        }
     }
 
     /// <summary>Empile ses enfants de haut en bas, chacun sur toute la largeur.</summary>
@@ -215,10 +226,13 @@ namespace DigSpill
 
     class BoutonPlat : Control
     {
-        public enum Genre { Primaire, Secondaire, Danger, Discret, Succes }
+        public enum Genre { Primaire, Secondaire, Danger, Discret, Succes, Risque }
         Genre genre;
         string icone;
         bool survol, appui;
+        int pastille;
+        /// <summary>Place laissee en haut et a droite pour la pastille (le bouton grandit d'autant).</summary>
+        public const int Debord = 9;
 
         public BoutonPlat(string texte, Genre g) : this(texte, g, null) { }
         public BoutonPlat(string texte, Genre g, string icone)
@@ -238,12 +252,17 @@ namespace DigSpill
         }
 
         public Genre Style { get { return genre; } set { genre = value; Invalidate(); } }
+        /// <summary>Pastille rouge avec un nombre (ex. 1 mise a jour), a cheval sur le coin haut droit ; 0 : aucune.</summary>
+        public int Pastille { get { return pastille; } set { if (value == pastille) return; pastille = value; Ajuster(); Invalidate(); } }
+        public void PerformClickPublic() { OnClick(EventArgs.Empty); }
+        Rectangle Corps { get { return pastille > 0 ? new Rectangle(0, Debord, Width - Debord, Height - Debord) : ClientRectangle; } }
         public string Icone { get { return icone; } set { icone = value; Ajuster(); Invalidate(); } }
 
         void Ajuster()
         {
             var t = TextRenderer.MeasureText(Text ?? "", Font);
-            Width = Math.Max(120, t.Width + 44 + (string.IsNullOrEmpty(icone) ? 0 : 26));
+            Width = Math.Max(120, t.Width + 44 + (string.IsNullOrEmpty(icone) ? 0 : 26)) + (pastille > 0 ? Debord : 0);
+            Height = 44 + (pastille > 0 ? Debord : 0);
         }
 
         protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Ajuster(); Invalidate(); }
@@ -272,12 +291,14 @@ namespace DigSpill
                 case Genre.Danger: fond = Theme.Rouge; texte = Color.White; bord = fond; break;
                 case Genre.Succes: fond = Theme.Texte; texte = Theme.Fond; bord = fond; break;
                 case Genre.Discret: fond = Carte.FondDe(Parent); texte = Theme.Texte2; bord = fond; break;
+                case Genre.Risque: fond = Carte.FondDe(Parent); texte = Theme.RougeTexte; bord = Color.FromArgb(0x5a, 0x24, 0x22); break;
                 default: fond = Carte.FondDe(Parent); texte = Theme.Texte; bord = Theme.Ligne2; break;
             }
-            bool clair = genre == Genre.Secondaire || genre == Genre.Discret;
+            bool clair = genre == Genre.Secondaire || genre == Genre.Discret || genre == Genre.Risque;
             if (Enabled && (survol || appui)) { if (clair) { fond = Theme.Panneau2; if (genre == Genre.Discret) texte = Theme.Texte; } else fond = Melanger(fond, Color.White, appui ? 0.04f : 0.1f); }
             if (!Enabled) { fond = Theme.Panneau2; texte = Theme.Texte3; bord = fond; }
-            var r = new RectangleF(1, 1, Width - 3, Height - 3);
+            var c = Corps;
+            var r = new RectangleF(c.X + 1, c.Y + 1, c.Width - 3, c.Height - 3);
             using (var p = Theme.Arrondi(r, 10))
             using (var b = new SolidBrush(fond))
             {
@@ -287,14 +308,23 @@ namespace DigSpill
             }
             var tt = TextRenderer.MeasureText(Text ?? "", Font);
             int largeurTotale = tt.Width + (string.IsNullOrEmpty(icone) ? 0 : 26);
-            int x = (Width - largeurTotale) / 2;
+            int x = c.X + (c.Width - largeurTotale) / 2;
             if (!string.IsNullOrEmpty(icone))
             {
                 using (var fi = Theme.Icones(11f))
-                    TextRenderer.DrawText(g, icone, fi, new Rectangle(x, 0, 24, Height), texte, TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+                    TextRenderer.DrawText(g, icone, fi, new Rectangle(x, c.Y, 24, c.Height), texte, TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
                 x += 26;
             }
-            TextRenderer.DrawText(g, Text ?? "", Font, new Rectangle(x, 0, tt.Width + 4, Height), texte, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, Text ?? "", Font, new Rectangle(x, c.Y, tt.Width + 4, c.Height), texte, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding);
+            if (pastille > 0)
+            {
+                // rond rouge cerne de la couleur du fond, comme sur un telephone
+                var rp = new RectangleF(Width - 22, 0, 21, 21);
+                using (var b = new SolidBrush(Theme.Rouge)) g.FillEllipse(b, rp);
+                using (var pen = new Pen(Carte.FondDe(Parent), 2f)) g.DrawEllipse(pen, rp);
+                using (var fp = Theme.Police(8.5f, FontStyle.Bold))
+                    TextRenderer.DrawText(g, pastille > 9 ? "9+" : pastille.ToString(), fp, Rectangle.Round(rp), Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            }
         }
 
         static Color Melanger(Color a, Color b, float t)
@@ -403,6 +433,8 @@ namespace DigSpill
             niveau = n; this.titre = titre; this.detail = detail;
         }
         public Niveau Niveau { get { return niveau; } }
+        /// <summary>Texte a la place de l'icone du niveau (numero d'etape : « 1 », « 2 »).</summary>
+        public string IconeTexte;
         public void Definir(Niveau n, string t, string d)
         {
             bool h = (d ?? "") != (detail ?? "") || (t ?? "") != (titre ?? "");
@@ -426,7 +458,9 @@ namespace DigSpill
             Theme.Qualite(g);
             var rond = new Rectangle(0, 1, 32, 32);
             using (var b = new SolidBrush(Niveaux.Fond(niveau))) g.FillEllipse(b, rond);
-            TextRenderer.DrawText(g, Niveaux.Icone(niveau), fIcone, rond, Niveaux.Couleur(niveau), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            if (IconeTexte != null) using (var fn = Theme.Police(10.5f, FontStyle.Bold))
+                TextRenderer.DrawText(g, IconeTexte, fn, rond, Theme.Texte, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            else TextRenderer.DrawText(g, Niveaux.Icone(niveau), fIcone, rond, Niveaux.Couleur(niveau), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             int w = Width - Gauche;
             int ht = Mise.HauteurTexte(titre, fTitre, w);
             TextRenderer.DrawText(g, titre, fTitre, new Rectangle(Gauche, 2, w, ht + 2), Theme.Encre, Mise.Flux);
@@ -443,12 +477,13 @@ namespace DigSpill
         int phase;
         readonly Timer minuterie = new Timer { Interval = 40 };
         public Color Couleur = Theme.Texte;
+        public int Epaisseur = 6;
         public Barre()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
             minuterie.Tick += delegate { phase = (phase + 6) % 1000; Invalidate(); };
         }
-        public int HauteurPour(int largeur) { return 6; }
+        public int HauteurPour(int largeur) { return Epaisseur; }
         public double Valeur { get { return valeur; } set { valeur = Math.Max(0, Math.Min(1, value)); if (indeterminee) Indeterminee = false; Invalidate(); } }
         public bool Indeterminee
         {
@@ -546,20 +581,23 @@ namespace DigSpill
         }
     }
 
-    /// <summary>Grande carte cliquable de l'accueil.</summary>
+    /// <summary>Grande carte cliquable de l'accueil : icone dans un carre teinte, titre, une phrase, etiquettes.</summary>
     class CarteChoix : Control, IHauteur
     {
-        readonly string icone, titre, texte, note;
+        readonly string icone, titre, texte;
+        readonly Color teinte;
+        readonly Tuple<string, Niveau>[] etiquettes;
         bool survol;
-        readonly Font fIcone = Theme.Icones(17f), fTitre = Theme.Police(15f, FontStyle.Bold), fTexte = Theme.Police(10.5f), fNote = Theme.Mono(8.5f);
-        public CarteChoix(string icone, string titre, string texte, string note)
+        readonly Font fIcone = Theme.Icones(17f), fTitre = Theme.Police(16f, FontStyle.Bold), fTexte = Theme.Police(10.5f), fNote = Theme.Police(9f);
+        const int M = 28;
+        public CarteChoix(string icone, string titre, string texte, Color teinte, params Tuple<string, Niveau>[] etiquettes)
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
-            this.icone = icone; this.titre = titre; this.texte = texte; this.note = note;
+            this.icone = icone; this.titre = titre; this.texte = texte; this.teinte = teinte; this.etiquettes = etiquettes ?? new Tuple<string, Niveau>[0];
             Cursor = Cursors.Hand; TabStop = true;
             AccessibleName = titre; AccessibleDescription = texte; AccessibleRole = AccessibleRole.PushButton;
         }
-        public int HauteurPour(int largeur) { return 124 + Mise.HauteurTexte(texte, fTexte, largeur - 56) + (string.IsNullOrEmpty(note) ? 24 : 58); }
+        public int HauteurPour(int largeur) { return M + 52 + 18 + 30 + Mise.HauteurTexte(texte, fTexte, largeur - 2 * M) + (etiquettes.Length > 0 ? 18 + 26 : 0) + M; }
         protected override void OnMouseEnter(EventArgs e) { survol = true; Invalidate(); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { survol = false; Invalidate(); base.OnMouseLeave(e); }
         protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space) OnClick(EventArgs.Empty); base.OnKeyDown(e); }
@@ -575,13 +613,26 @@ namespace DigSpill
             using (var b = new SolidBrush(survol ? Theme.Panneau2 : Theme.Panneau))
             using (var pen = new Pen(Focused && ShowFocusCues ? Theme.Bleu : survol ? Theme.Ligne2 : Theme.Ligne, Focused && ShowFocusCues ? 2f : 1f))
             { g.FillPath(b, p); g.DrawPath(pen, p); }
-            var rond = new Rectangle(28, 28, 44, 44);
-            using (var b = new SolidBrush(survol ? Theme.Ligne2 : Theme.Panneau2)) g.FillEllipse(b, rond);
-            TextRenderer.DrawText(g, icone, fIcone, rond, Theme.Texte, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-            TextRenderer.DrawText(g, titre, fTitre, new Rectangle(28, 88, Width - 56, 34), Theme.Texte, TextFormatFlags.NoPadding);
-            TextRenderer.DrawText(g, texte, fTexte, new Rectangle(28, 124, Width - 56, Mise.HauteurTexte(texte, fTexte, Width - 56) + 4), Theme.Texte2, Mise.Flux);
-            if (!string.IsNullOrEmpty(note))
-                TextRenderer.DrawText(g, note.ToUpperInvariant(), fNote, new Rectangle(28, Height - 36, Width - 56, 24), Theme.Texte3, TextFormatFlags.NoPadding);
+            var carre = new RectangleF(M, M, 52, 52);
+            using (var p = Theme.Arrondi(carre, 13)) using (var b = new SolidBrush(Theme.Teinte(teinte))) g.FillPath(b, p);
+            TextRenderer.DrawText(g, icone, fIcone, Rectangle.Round(carre), teinte, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            int y = M + 52 + 18;
+            TextRenderer.DrawText(g, titre, fTitre, new Rectangle(M, y, Width - 2 * M, 30), Theme.Texte, TextFormatFlags.NoPadding);
+            y += 30;
+            int ht = Mise.HauteurTexte(texte, fTexte, Width - 2 * M);
+            TextRenderer.DrawText(g, texte, fTexte, new Rectangle(M, y, Width - 2 * M, ht + 4), Theme.Texte2, Mise.Flux);
+            y += ht + 18;
+            int x = M;
+            foreach (var et in etiquettes)
+            {
+                // etiquette neutre (gris) ou d'attention (orange), comme les pastilles de l'interface HTML
+                bool neutre = et.Item2 == Niveau.Attente || et.Item2 == Niveau.Info;
+                var s = TextRenderer.MeasureText(et.Item1, fNote);
+                var r2 = new RectangleF(x, y, s.Width + 20, 26);
+                using (var p = Theme.Arrondi(r2, 13)) using (var b = new SolidBrush(neutre ? Theme.Ligne : Niveaux.Fond(et.Item2))) g.FillPath(b, p);
+                TextRenderer.DrawText(g, et.Item1, fNote, Rectangle.Round(r2), neutre ? Theme.Texte2 : Niveaux.Couleur(et.Item2), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                x += (int)r2.Width + 8;
+            }
         }
     }
 
@@ -788,6 +839,97 @@ namespace DigSpill
         {
             e.Graphics.Clear(Carte.FondDe(Parent));
             TextRenderer.DrawText(e.Graphics, Groupes(), f, ClientRectangle, Theme.Texte, Mise.Flux);
+        }
+    }
+
+    /// <summary>Bas de la barre laterale : une petite carte, une ligne par etat (point de couleur, titre, precision).</summary>
+    class EtatPoste : Control
+    {
+        public class Ligne
+        {
+            public readonly Niveau Niveau; public readonly string Titre, Detail;
+            public Ligne(Niveau n, string titre, string detail) { Niveau = n; Titre = titre; Detail = detail; }
+        }
+        List<Ligne> lignes = new List<Ligne>();
+        readonly Font fTitre = Theme.Police(9.5f, FontStyle.Bold), fDetail = Theme.Police(8.5f);
+        const int Pad = 14, Ecart = 12, Retrait = 18;
+
+        public EtatPoste() { SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true); }
+
+        public void Definir(List<Ligne> l)
+        {
+            lignes = l ?? new List<Ligne>();
+            AccessibleName = string.Join(" ; ", lignes.Select(x => x.Titre + " : " + x.Detail).ToArray());
+            Height = HauteurPour(Width > 0 ? Width : 270);
+            Invalidate();
+        }
+
+        int LargeurTexte(int largeur) { return Math.Max(40, largeur - Padding.Horizontal - 2 * Pad - Retrait); }
+        int HauteurLigne(Ligne l, int lt) { return Mise.HauteurTexte(l.Titre, fTitre, lt) + 2 + Mise.HauteurTexte(l.Detail, fDetail, lt); }
+
+        public int HauteurPour(int largeur)
+        {
+            int lt = LargeurTexte(largeur), h = 2 * Pad;
+            for (int i = 0; i < lignes.Count; i++) h += (i > 0 ? Ecart : 0) + HauteurLigne(lignes[i], lt);
+            return h + Padding.Vertical;
+        }
+
+        protected override void OnResize(EventArgs e) { base.OnResize(e); int h = HauteurPour(Width); if (h != Height) Height = h; }
+
+        static Color Point(Niveau n)
+        {
+            switch (n)
+            {
+                case Niveau.Ok: return Theme.Vert;
+                case Niveau.Attention: return Theme.Orange;
+                case Niveau.Danger: return Theme.RougeTexte;
+                default: return Theme.Texte3;
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(Theme.Fond);
+            Theme.Qualite(g);
+            bool alerte = lignes.Any(l => l.Niveau == Niveau.Attention);
+            var cadre = new RectangleF(Padding.Left + 0.5f, Padding.Top + 0.5f, Width - Padding.Horizontal - 1, Height - Padding.Vertical - 1);
+            using (var p = Theme.Arrondi(cadre, 12))
+            using (var b = new SolidBrush(Theme.Panneau))
+            using (var pen = new Pen(alerte ? Color.FromArgb(0x3a, 0x2a, 0x12) : Theme.Ligne, 1f)) { g.FillPath(b, p); g.DrawPath(pen, p); }
+            int lt = LargeurTexte(Width), x = Padding.Left + Pad, y = Padding.Top + Pad;
+            foreach (var l in lignes)
+            {
+                using (var b = new SolidBrush(Point(l.Niveau))) g.FillEllipse(b, x, y + 5, 8, 8);
+                int ht = Mise.HauteurTexte(l.Titre, fTitre, lt), hd = Mise.HauteurTexte(l.Detail, fDetail, lt);
+                TextRenderer.DrawText(g, l.Titre, fTitre, new Rectangle(x + Retrait, y, lt, ht + 2), Theme.Texte, Mise.Flux);
+                TextRenderer.DrawText(g, l.Detail, fDetail, new Rectangle(x + Retrait, y + ht + 2, lt, hd + 2), Theme.Texte2, Mise.Flux);
+                y += ht + 2 + hd + Ecart;
+            }
+        }
+    }
+
+    /// <summary>Trois feux (rouge, orange, vert) : celui du verdict est allume. Niveau.Attente : tous eteints.</summary>
+    class Feux : Control, IHauteur
+    {
+        Niveau niveau = Niveau.Attente;
+        public Feux() { SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true); }
+        public Niveau Niveau { get { return niveau; } set { niveau = value; AccessibleName = Niveaux.Mot(value); Invalidate(); } }
+        public int HauteurPour(int largeur) { return 30; }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            var fond = Carte.FondDe(Parent);
+            g.Clear(fond);
+            Theme.Qualite(g);
+            var feux = new[] { Tuple.Create(Niveau.Danger, Theme.Rouge), Tuple.Create(Niveau.Attention, Theme.Orange), Tuple.Create(Niveau.Ok, Theme.Vert) };
+            for (int i = 0; i < 3; i++)
+            {
+                var r = new RectangleF(4 + i * 34, 4, 22, 22);
+                bool allume = feux[i].Item1 == niveau;
+                if (allume) using (var b = new SolidBrush(Color.FromArgb(70, feux[i].Item2))) g.FillEllipse(b, r.X - 4, r.Y - 4, r.Width + 8, r.Height + 8);
+                using (var b = new SolidBrush(allume ? feux[i].Item2 : Color.FromArgb(0x2b, 0x2b, 0x2f))) g.FillEllipse(b, r);
+            }
         }
     }
 }
